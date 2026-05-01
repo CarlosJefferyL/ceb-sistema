@@ -1,0 +1,2732 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CEB · Gestión de Medicamentos Controlados</title>
+<style>
+:root {
+  --navy: #1B2A4E;
+  --navy-dark: #0F1B33;
+  --navy-light: #2A3E6E;
+  --teal: #2BA89C;
+  --teal-dark: #1F8A80;
+  --teal-light: #D5F0EC;
+  --bg: #F7F8FA;
+  --card: #FFFFFF;
+  --text: #1F2937;
+  --text-muted: #6B7280;
+  --border: #E5E7EB;
+  --warn: #F59E0B;
+  --warn-bg: #FEF3C7;
+  --danger: #DC2626;
+  --danger-bg: #FEE2E2;
+  --success: #059669;
+  --success-bg: #D1FAE5;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+  --shadow: 0 4px 12px rgba(15,27,51,0.08);
+  --shadow-lg: 0 12px 32px rgba(15,27,51,0.12);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Calibri', 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg); color: var(--text);
+  font-size: 14px; line-height: 1.5; min-height: 100vh;
+}
+h1, h2, h3, h4 {
+  font-family: 'Georgia', 'Times New Roman', serif;
+  color: var(--navy); font-weight: 600; letter-spacing: -0.01em;
+}
+
+/* LOGIN */
+.login-screen {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--navy) 0%, var(--navy-dark) 100%); padding: 20px;
+}
+.login-card {
+  background: var(--card); border-radius: 16px; padding: 48px 40px;
+  width: 100%; max-width: 420px; box-shadow: var(--shadow-lg);
+}
+.login-card h1 { font-size: 26px; margin-bottom: 4px; }
+.login-card .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 32px; font-style: italic; }
+.login-logo {
+  width: 56px; height: 56px; border-radius: 14px; background: var(--teal);
+  color: white; display: flex; align-items: center; justify-content: center;
+  font-family: 'Georgia', serif; font-size: 22px; font-weight: bold; margin-bottom: 24px;
+}
+.login-form input {
+  width: 100%; padding: 14px 16px; border: 1px solid var(--border);
+  border-radius: 10px; font-size: 15px; font-family: inherit; margin-bottom: 16px;
+}
+.login-form input:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px var(--teal-light); }
+.login-form button {
+  width: 100%; padding: 14px; background: var(--navy); color: white;
+  border: none; border-radius: 10px; font-size: 15px; font-weight: 600;
+  cursor: pointer; font-family: inherit;
+}
+.login-form button:hover { background: var(--navy-dark); }
+.login-error { color: var(--danger); font-size: 13px; margin: -8px 0 12px; display: none; }
+
+/* LAYOUT */
+.app { display: none; min-height: 100vh; grid-template-columns: 240px 1fr; }
+.app.active { display: grid; }
+.sidebar {
+  background: var(--navy); color: white; padding: 24px 0;
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+}
+.sidebar .brand {
+  padding: 0 24px 24px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 16px;
+}
+.sidebar .brand-title { font-family: 'Georgia', serif; font-size: 16px; font-weight: 600; }
+.sidebar .brand-sub { font-size: 11px; color: rgba(255,255,255,0.6); margin-top: 2px; font-style: italic; }
+.nav-item {
+  display: flex; align-items: center; gap: 12px; padding: 12px 24px;
+  color: rgba(255,255,255,0.75); cursor: pointer; transition: all 0.15s;
+  font-size: 14px; border-left: 3px solid transparent;
+}
+.nav-item:hover { background: rgba(255,255,255,0.05); color: white; }
+.nav-item.active { background: rgba(43,168,156,0.15); color: white; border-left-color: var(--teal); }
+.nav-item .icon { width: 20px; text-align: center; font-size: 16px; }
+.nav-section-title {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: rgba(255,255,255,0.4); padding: 16px 24px 8px; font-weight: 600;
+}
+.user-card {
+  margin: 24px 16px 16px; padding: 12px;
+  background: rgba(255,255,255,0.05); border-radius: 10px; font-size: 12px;
+}
+.user-card .uname { font-weight: 600; color: white; }
+.user-card .urol { color: var(--teal); margin-top: 2px; font-size: 11px; }
+.user-card button {
+  margin-top: 8px; width: 100%; background: transparent;
+  border: 1px solid rgba(255,255,255,0.2); color: rgba(255,255,255,0.8);
+  padding: 6px; border-radius: 6px; cursor: pointer; font-size: 11px; font-family: inherit;
+}
+.user-card button:hover { background: rgba(255,255,255,0.1); }
+.main { padding: 32px 40px; overflow-x: hidden; }
+.page-header {
+  display: flex; justify-content: space-between; align-items: flex-end;
+  margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border);
+}
+.page-header h1 { font-size: 24px; }
+.page-header .subtitle { color: var(--text-muted); font-size: 13px; margin-top: 4px; font-style: italic; }
+
+/* COMPONENTES */
+.btn {
+  padding: 10px 18px; border: none; border-radius: 8px; font-size: 14px;
+  font-weight: 600; cursor: pointer; transition: all 0.15s; font-family: inherit;
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.btn-primary { background: var(--navy); color: white; }
+.btn-primary:hover { background: var(--navy-dark); }
+.btn-accent { background: var(--teal); color: white; }
+.btn-accent:hover { background: var(--teal-dark); }
+.btn-secondary { background: white; color: var(--navy); border: 1px solid var(--border); }
+.btn-secondary:hover { background: var(--bg); }
+.btn-sm { padding: 6px 12px; font-size: 12px; }
+.btn-pill { background: white; color: var(--navy); border: 1px solid var(--border); padding: 6px 14px; border-radius: 999px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s; font-family: inherit; }
+.btn-pill:hover { background: var(--teal-light); border-color: var(--teal); }
+.btn-pill.active { background: var(--teal); color: white; border-color: var(--teal); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.card {
+  background: var(--card); border-radius: 12px; padding: 24px;
+  box-shadow: var(--shadow-sm); border: 1px solid var(--border); margin-bottom: 20px;
+}
+.card-title {
+  font-family: 'Georgia', serif; font-size: 16px; font-weight: 600;
+  color: var(--navy); margin-bottom: 16px; padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center;
+}
+
+/* DASHBOARD */
+.dashboard-toolbar {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 20px; flex-wrap: wrap; gap: 12px;
+}
+.horizon-selector {
+  display: flex; gap: 6px; align-items: center; background: white;
+  padding: 4px; border-radius: 999px; border: 1px solid var(--border);
+}
+.horizon-selector label { font-size: 11px; color: var(--text-muted); padding: 0 10px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+.horizon-btn {
+  padding: 6px 14px; border-radius: 999px; cursor: pointer; font-size: 12px;
+  font-weight: 600; background: transparent; border: none; color: var(--text-muted); transition: all 0.15s;
+}
+.horizon-btn:hover { color: var(--navy); }
+.horizon-btn.active { background: var(--navy); color: white; }
+
+.stats-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px; margin-bottom: 20px;
+}
+.stat-card {
+  background: var(--card); border-radius: 12px; padding: 18px;
+  border: 1px solid var(--border); border-left: 4px solid var(--teal);
+}
+.stat-card.warn { border-left-color: var(--warn); }
+.stat-card.danger { border-left-color: var(--danger); }
+.stat-card.success { border-left-color: var(--success); }
+.stat-label {
+  font-size: 11px; color: var(--text-muted); text-transform: uppercase;
+  letter-spacing: 0.04em; margin-bottom: 6px; font-weight: 600;
+}
+.stat-value {
+  font-family: 'Georgia', serif; font-size: 28px; color: var(--navy);
+  font-weight: 600; line-height: 1;
+}
+.stat-sub { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+
+.pendientes-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;
+}
+@media (max-width: 1100px) { .pendientes-grid { grid-template-columns: 1fr; } }
+
+.pendiente-list { list-style: none; padding: 0; margin: 0; }
+.pendiente-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.pendiente-item:last-child { border-bottom: none; }
+.pendiente-item .info strong { color: var(--navy); }
+.pendiente-item .info small { color: var(--text-muted); display: block; margin-top: 2px; }
+.pendiente-item .meta { font-size: 11px; color: var(--warn); font-weight: 600; }
+
+.timeline-day {
+  border-left: 3px solid var(--teal); padding: 4px 0 4px 16px; margin-bottom: 14px;
+}
+.timeline-day-title {
+  font-family: 'Georgia', serif; font-size: 14px; font-weight: 600; color: var(--navy);
+  margin-bottom: 8px;
+}
+.timeline-cirugia {
+  background: var(--bg); padding: 10px 14px; border-radius: 8px;
+  margin-bottom: 6px; font-size: 13px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.timeline-cirugia .info strong { color: var(--navy); }
+.timeline-cirugia .info small { color: var(--text-muted); }
+
+table { width: 100%; border-collapse: collapse; background: white; font-size: 13px; }
+th {
+  text-align: left; padding: 12px 14px; background: var(--bg); color: var(--navy);
+  font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em;
+  border-bottom: 2px solid var(--border); white-space: nowrap;
+}
+td { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+tr:hover td { background: rgba(43,168,156,0.04); }
+
+.badge {
+  display: inline-block; padding: 3px 10px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em;
+}
+.badge-programada { background: #DBEAFE; color: #1E40AF; }
+.badge-receta-vinculada { background: #FEF3C7; color: #92400E; }
+.badge-realizada { background: var(--success-bg); color: var(--success); }
+.badge-cancelada { background: var(--danger-bg); color: var(--danger); }
+.badge-vinculada { background: var(--success-bg); color: var(--success); }
+.badge-consumida { background: var(--success-bg); color: var(--success); }
+
+label {
+  display: block; font-size: 12px; font-weight: 600; color: var(--navy);
+  margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.02em;
+}
+input, select, textarea {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--border);
+  border-radius: 8px; font-size: 14px; font-family: inherit; background: white;
+}
+input:focus, select:focus, textarea:focus {
+  outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px var(--teal-light);
+}
+textarea { resize: vertical; min-height: 70px; }
+.form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 16px; }
+.form-grid .full { grid-column: 1 / -1; }
+.form-actions {
+  display: flex; gap: 12px; justify-content: flex-end;
+  padding-top: 16px; border-top: 1px solid var(--border); margin-top: 16px;
+}
+
+/* MODAL */
+.modal-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(15,27,51,0.6);
+  backdrop-filter: blur(4px); z-index: 100; align-items: center; justify-content: center; padding: 20px;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+  background: white; border-radius: 14px; width: 100%; max-width: 720px;
+  max-height: 90vh; overflow-y: auto; padding: 28px 32px; box-shadow: var(--shadow-lg);
+}
+.modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding-bottom: 16px; border-bottom: 1px solid var(--border); margin-bottom: 20px;
+}
+.modal-header h2 { font-size: 18px; }
+.modal-close {
+  background: none; border: none; font-size: 22px; cursor: pointer;
+  color: var(--text-muted); width: 32px; height: 32px; border-radius: 8px;
+}
+.modal-close:hover { background: var(--bg); }
+
+.toast {
+  position: fixed; top: 20px; right: 20px; background: white; border-radius: 10px;
+  padding: 14px 18px; box-shadow: var(--shadow-lg); border-left: 4px solid var(--success);
+  z-index: 200; max-width: 360px; font-size: 14px; display: none; animation: slideIn 0.3s ease;
+}
+.toast.error { border-left-color: var(--danger); }
+.toast.warn { border-left-color: var(--warn); }
+@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+.spinner {
+  display: inline-block; width: 16px; height: 16px;
+  border: 2px solid var(--border); border-top-color: var(--teal);
+  border-radius: 50%; animation: spin 0.6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading { text-align: center; padding: 40px 20px; color: var(--text-muted); }
+
+.page { display: none; }
+.page.active { display: block; }
+.empty-state { text-align: center; padding: 40px 20px; color: var(--text-muted); }
+.empty-state .icon { font-size: 40px; opacity: 0.3; margin-bottom: 12px; }
+
+.toolbar {
+  display: flex; align-items: center; margin-bottom: 16px; gap: 10px; flex-wrap: wrap;
+  padding: 14px; background: white; border-radius: 10px; border: 1px solid var(--border);
+}
+.toolbar-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; flex: 1; }
+.toolbar input[type="search"], .toolbar input[type="date"], .toolbar select {
+  width: auto; min-width: 160px; padding: 8px 10px; font-size: 13px;
+}
+.toolbar-label { font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.quick-filters { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.alerts-banner {
+  background: var(--warn-bg); border-left: 4px solid var(--warn);
+  padding: 14px 18px; border-radius: 8px; margin-bottom: 20px; font-size: 13px; color: #78350F;
+}
+.alerts-banner strong { color: #78350F; }
+
+/* TABLERO DE PROGRAMACIÓN */
+.tablero-grid {
+  display: grid; gap: 12px; margin-top: 16px;
+}
+.tablero-quirofano {
+  background: white; border-radius: 12px; padding: 16px;
+  border: 1px solid var(--border); box-shadow: var(--shadow-sm);
+}
+.tablero-quirofano-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding-bottom: 12px; border-bottom: 2px solid var(--teal); margin-bottom: 12px;
+}
+.tablero-quirofano-titulo {
+  font-family: 'Georgia', serif; font-size: 18px; font-weight: 600; color: var(--navy);
+}
+.tablero-quirofano-sub {
+  font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600;
+}
+.tablero-cirugia {
+  background: linear-gradient(135deg, var(--teal-light) 0%, #E8F8F5 100%);
+  border-left: 4px solid var(--teal); border-radius: 8px;
+  padding: 12px 14px; margin-bottom: 8px; cursor: pointer;
+  transition: all 0.15s; position: relative;
+}
+.tablero-cirugia:hover {
+  transform: translateX(2px); box-shadow: var(--shadow);
+}
+.tablero-cirugia.estado-realizada { border-left-color: var(--success); background: linear-gradient(135deg, var(--success-bg) 0%, #ECFDF5 100%); }
+.tablero-cirugia.estado-receta-vinculada { border-left-color: var(--warn); background: linear-gradient(135deg, var(--warn-bg) 0%, #FFFBEB 100%); }
+.tablero-cirugia.estado-cancelada { border-left-color: var(--danger); background: var(--danger-bg); opacity: 0.6; }
+.tablero-hora {
+  font-family: 'Georgia', serif; font-size: 16px; font-weight: 700; color: var(--navy); display: inline-block;
+}
+.tablero-hora-rango {
+  font-size: 11px; color: var(--text-muted); margin-left: 6px;
+}
+.tablero-paciente {
+  font-weight: 600; font-size: 14px; color: var(--navy); margin-top: 4px;
+}
+.tablero-tipo {
+  font-size: 13px; color: var(--text); margin-top: 2px;
+}
+.tablero-meta {
+  font-size: 11px; color: var(--text-muted); margin-top: 6px; line-height: 1.5;
+}
+.tablero-meta strong { color: var(--navy); font-weight: 600; }
+.tablero-tqx-badge {
+  position: absolute; top: 12px; right: 12px;
+  background: var(--navy); color: white; border-radius: 6px;
+  padding: 2px 8px; font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
+}
+.tablero-empty {
+  text-align: center; padding: 24px; color: var(--text-muted);
+  font-style: italic; font-size: 13px;
+  border: 2px dashed var(--border); border-radius: 8px;
+}
+
+/* CALENDARIO */
+.calendario-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-top: 12px;
+}
+.cal-dow {
+  text-align: center; font-size: 11px; font-weight: 600;
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 8px 0;
+}
+.cal-dia {
+  background: white; border: 1px solid var(--border); border-radius: 8px;
+  min-height: 100px; padding: 8px; cursor: pointer; transition: all 0.15s;
+  display: flex; flex-direction: column;
+}
+.cal-dia:hover { border-color: var(--teal); box-shadow: var(--shadow-sm); }
+.cal-dia.fuera-mes { opacity: 0.35; cursor: default; }
+.cal-dia.hoy { background: var(--teal-light); border-color: var(--teal); }
+.cal-dia-num {
+  font-family: 'Georgia', serif; font-size: 14px; font-weight: 600; color: var(--navy);
+  margin-bottom: 4px;
+}
+.cal-dia.hoy .cal-dia-num { color: var(--teal-dark); }
+.cal-cirugia {
+  font-size: 10px; padding: 2px 5px; border-radius: 4px;
+  background: var(--teal); color: white; margin-bottom: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cal-cirugia.q1 { background: #2BA89C; }
+.cal-cirugia.q2 { background: #5B6CFF; }
+.cal-cirugia.q3 { background: #F59E0B; }
+.cal-cirugia.estado-realizada { background: var(--success); }
+.cal-cirugia.estado-cancelada { background: var(--text-muted); text-decoration: line-through; }
+
+@media print {
+  .sidebar, .toolbar, .page-header button, .nav-item { display: none !important; }
+  .main { padding: 0 !important; }
+  .app { display: block !important; }
+  .tablero-quirofano { page-break-inside: avoid; box-shadow: none; border: 2px solid #000; }
+  .tablero-cirugia { box-shadow: none; }
+}
+
+/* HABITACIONES */
+.hab-ocupacion-bar {
+  display: flex; gap: 16px; flex-wrap: wrap; padding: 14px 18px;
+  background: white; border-radius: 10px; border: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+.hab-ocupacion-item {
+  display: flex; align-items: center; gap: 8px; font-size: 13px;
+}
+.hab-ocupacion-dots { display: flex; gap: 3px; }
+.hab-ocupacion-dot {
+  width: 10px; height: 10px; border-radius: 50%; background: var(--border);
+}
+.hab-ocupacion-dot.ocupada { background: var(--teal); }
+.hab-ocupacion-dot.alerta { background: var(--danger); }
+
+.hab-section { margin-bottom: 28px; }
+.hab-section-title {
+  font-family: 'Georgia', serif; font-size: 16px; font-weight: 600;
+  color: var(--navy); margin-bottom: 12px; display: flex; align-items: center; gap: 10px;
+}
+.hab-section-title .badge-tipo {
+  display: inline-block; width: 12px; height: 12px; border-radius: 4px;
+}
+.hab-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px;
+}
+.hab-card {
+  background: white; border-radius: 10px; padding: 14px;
+  border: 1px solid var(--border); cursor: pointer; transition: all 0.15s;
+  min-height: 140px; position: relative;
+}
+.hab-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+.hab-card.disponible {
+  border: 2px dashed var(--border); background: #FAFBFC;
+}
+.hab-card.disponible:hover { border-color: var(--teal); background: var(--teal-light); }
+.hab-card.ocupada {
+  border-left: 4px solid var(--teal);
+}
+.hab-card.privada.ocupada { border-left-color: #5B9BD5; }
+.hab-card.sala_general.ocupada { border-left-color: #D4A017; }
+.hab-card.urgencias.ocupada { border-left-color: #C4729A; }
+.hab-card-numero {
+  font-family: 'Georgia', serif; font-size: 14px; font-weight: 700;
+  color: var(--navy); text-transform: uppercase; letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+.hab-card.disponible .hab-card-numero { color: var(--text-muted); }
+.hab-card-paciente {
+  font-weight: 600; font-size: 14px; color: var(--navy); margin-bottom: 4px; line-height: 1.3;
+}
+.hab-card-paciente small {
+  font-weight: normal; color: var(--text-muted); font-size: 12px;
+}
+.hab-card-meta {
+  font-size: 11px; color: var(--text-muted); line-height: 1.5; margin-top: 4px;
+}
+.hab-card-meta strong { color: var(--navy); font-weight: 600; }
+.hab-card-dias {
+  position: absolute; top: 12px; right: 12px;
+  background: var(--navy); color: white; border-radius: 999px;
+  padding: 2px 10px; font-size: 11px; font-weight: 600;
+}
+.hab-card-dias.alerta { background: var(--warn); }
+.hab-card-dias.alta { background: var(--danger); }
+.hab-card-empty {
+  text-align: center; padding: 24px 12px; color: var(--text-muted);
+  font-style: italic; font-size: 12px;
+}
+.hab-nota-especial {
+  display: inline-block; background: var(--warn-bg); color: #78350F;
+  padding: 2px 8px; border-radius: 4px; font-size: 10px;
+  font-weight: 600; text-transform: uppercase; margin-top: 6px;
+}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginScreen" class="login-screen">
+  <div class="login-card">
+    <div class="login-logo">CEB</div>
+    <h1>Clínica Estar Bien</h1>
+    <p class="subtitle">Sistema de Gestión de Medicamentos Controlados</p>
+    <div class="login-form">
+      <label for="codigoAcceso">Código de acceso</label>
+      <input type="password" id="codigoAcceso" placeholder="Ingresa tu código" autocomplete="off">
+      <div id="loginError" class="login-error">Código inválido</div>
+      <button onclick="doLogin()">Ingresar</button>
+    </div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app" class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-title">Estar Bien</div>
+      <div class="brand-sub">Medicamentos Controlados</div>
+    </div>
+    <div class="nav-section-title">Operación</div>
+    <div class="nav-item active" data-page="dashboard"><span class="icon">▣</span>Inicio</div>
+    <div class="nav-item" data-page="programacion"><span class="icon">▦</span>Programación Q.X.</div>
+    <div class="nav-item" data-page="cirugias"><span class="icon">⚕</span>Cirugías</div>
+    <div class="nav-item" data-page="habitaciones"><span class="icon">🛏</span>Habitaciones</div>
+    <div class="nav-item" data-page="recetas"><span class="icon">℞</span>Recetas</div>
+    <div class="nav-item" data-page="consumos"><span class="icon">◉</span>Consumos</div>
+    <div class="nav-section-title">Inventario</div>
+    <div class="nav-item" data-page="inventario"><span class="icon">▦</span>Saldos</div>
+    <div class="nav-item" data-page="entradas"><span class="icon">↓</span>Entradas</div>
+    <div class="nav-section-title">Bitácora</div>
+    <div class="nav-item" data-page="libro"><span class="icon">📕</span>Libro COFEPRIS</div>
+    <div class="nav-section-title" id="adminSection" style="display:none;">Admin</div>
+    <div class="nav-item admin-only" data-page="catalogos" style="display:none;"><span class="icon">⚙</span>Catálogos</div>
+    <div class="user-card">
+      <div class="uname" id="userName">—</div>
+      <div class="urol" id="userRol">—</div>
+      <button onclick="doLogout()">Cerrar sesión</button>
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <!-- DASHBOARD -->
+    <div id="page-dashboard" class="page active">
+      <div class="page-header">
+        <div>
+          <h1>Inicio</h1>
+          <div class="subtitle">Resumen operativo · <span id="hoyLabel"></span></div>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="loadDashboard()">↻ Actualizar</button>
+      </div>
+
+      <div class="dashboard-toolbar">
+        <div class="horizon-selector">
+          <label>Horizonte:</label>
+          <button class="horizon-btn" data-horizon="1">Hoy</button>
+          <button class="horizon-btn" data-horizon="3">3 días</button>
+          <button class="horizon-btn active" data-horizon="7">7 días</button>
+          <button class="horizon-btn" data-horizon="14">14 días</button>
+        </div>
+      </div>
+
+      <div id="alertsBanner"></div>
+
+      <div class="stats-grid" id="statsGrid">
+        <div class="loading"><div class="spinner"></div> Cargando...</div>
+      </div>
+
+      <div class="pendientes-grid">
+        <div class="card">
+          <div class="card-title">⚠ Cirugías sin receta vinculada</div>
+          <div id="pendientesReceta">—</div>
+        </div>
+        <div class="card">
+          <div class="card-title">⚠ Inventario en alerta</div>
+          <div id="pendientesInventario">—</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">📅 Cirugías próximas <span id="horizonteLabel" style="font-size:11px;color:var(--text-muted);font-weight:normal;font-family:'Calibri',sans-serif;text-transform:uppercase;letter-spacing:0.04em;"></span></div>
+        <div id="cirugiasProximas">—</div>
+      </div>
+    </div>
+
+    <!-- PROGRAMACIÓN DE QUIRÓFANOS -->
+    <div id="page-programacion" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Programación de Quirófanos</h1>
+          <div class="subtitle">Tablero de cirugías por quirófano y día</div>
+        </div>
+        <button class="btn btn-primary capturista-only" onclick="openModalProgramar()">+ Programar cirugía</button>
+      </div>
+
+      <div class="toolbar">
+        <div class="toolbar-row">
+          <span class="toolbar-label">Vista:</span>
+          <div class="quick-filters">
+            <button class="btn-pill active" data-view="tablero" onclick="cambiarVistaProg('tablero')">📋 Tablero diario</button>
+            <button class="btn-pill" data-view="calendario" onclick="cambiarVistaProg('calendario')">📅 Calendario mensual</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- VISTA TABLERO -->
+      <div id="vista-tablero">
+        <div class="toolbar">
+          <div class="toolbar-row">
+            <button class="btn btn-secondary btn-sm" onclick="cambiarDiaProg(-1)">◀ Anterior</button>
+            <input type="date" id="fechaProgDia" onchange="loadProgramacionDia()" style="font-size:14px;font-weight:600;">
+            <button class="btn btn-secondary btn-sm" onclick="cambiarDiaProg(1)">Siguiente ▶</button>
+            <button class="btn-pill" onclick="irHoyProg()">Hoy</button>
+            <button class="btn-pill" onclick="irMananaProg()">Mañana</button>
+            <div style="margin-left:auto;display:flex;gap:8px;">
+              <button class="btn btn-secondary btn-sm" onclick="loadProgramacionDia()">↻ Actualizar</button>
+              <button class="btn btn-secondary btn-sm" onclick="imprimirTablero()">🖨 Imprimir tablero</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="programacionDia">
+          <div class="loading"><div class="spinner"></div> Cargando programación...</div>
+        </div>
+      </div>
+
+      <!-- VISTA CALENDARIO -->
+      <div id="vista-calendario" style="display:none;">
+        <div class="toolbar">
+          <div class="toolbar-row">
+            <button class="btn btn-secondary btn-sm" onclick="cambiarMesProg(-1)">◀ Mes anterior</button>
+            <strong id="labelMesProg" style="font-family:'Georgia',serif;font-size:18px;color:var(--navy);min-width:200px;text-align:center;">—</strong>
+            <button class="btn btn-secondary btn-sm" onclick="cambiarMesProg(1)">Mes siguiente ▶</button>
+            <button class="btn-pill" onclick="irMesActualProg()">Mes actual</button>
+          </div>
+        </div>
+
+        <div id="programacionMes" class="card">
+          <div class="loading"><div class="spinner"></div> Cargando calendario...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CIRUGÍAS -->
+    <div id="page-cirugias" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Cirugías</h1>
+          <div class="subtitle">Programación y seguimiento</div>
+        </div>
+        <button class="btn btn-primary capturista-only" onclick="openModalCirugia()">+ Nueva cirugía</button>
+      </div>
+
+      <div class="toolbar">
+        <div class="toolbar-row">
+          <span class="toolbar-label">Vista rápida:</span>
+          <div class="quick-filters">
+            <button class="btn-pill" data-filter="hoy">Hoy</button>
+            <button class="btn-pill" data-filter="manana">Mañana</button>
+            <button class="btn-pill" data-filter="semana">Esta semana</button>
+            <button class="btn-pill" data-filter="proximas">Próximas</button>
+            <button class="btn-pill active" data-filter="todas">Todas</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <div class="toolbar-row">
+          <input type="search" id="searchCirugias" placeholder="Buscar paciente o folio..." oninput="renderCirugias()">
+          <input type="date" id="filtroFechaDesde" onchange="renderCirugias()">
+          <span style="color:var(--text-muted);font-size:12px;">a</span>
+          <input type="date" id="filtroFechaHasta" onchange="renderCirugias()">
+          <select id="filterCirugias" onchange="renderCirugias()">
+            <option value="">Todos los estados</option>
+            <option value="PROGRAMADA">Programadas</option>
+            <option value="RECETA_VINCULADA">Con receta vinculada</option>
+            <option value="REALIZADA">Realizadas</option>
+            <option value="CANCELADA">Canceladas</option>
+          </select>
+          <select id="filterMedico" onchange="renderCirugias()">
+            <option value="">Todos los médicos</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="clearFilters()">Limpiar</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div id="cirugiasTable">Cargando...</div>
+      </div>
+    </div>
+
+    <!-- HABITACIONES -->
+    <div id="page-habitaciones" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Habitaciones</h1>
+          <div class="subtitle">Tablero de ocupación y gestión de hospitalizaciones</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-secondary btn-sm" onclick="loadHabitaciones()">↻ Actualizar</button>
+          <button class="btn btn-primary capturista-only" onclick="openModalIngresar()">+ Ingresar paciente</button>
+        </div>
+      </div>
+
+      <div id="hab-ocupacion-summary"></div>
+      <div id="hab-tablero">
+        <div class="loading"><div class="spinner"></div> Cargando habitaciones...</div>
+      </div>
+    </div>
+
+    <!-- RECETAS -->
+    <div id="page-recetas" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Recetas físicas vinculadas</h1>
+          <div class="subtitle">Folios del recetario oficial COFEPRIS asociados a cada cirugía</div>
+        </div>
+      </div>
+      <div class="toolbar">
+        <div class="toolbar-row">
+          <input type="search" id="searchRecetas" placeholder="Buscar por folio o paciente..." oninput="renderRecetas()">
+        </div>
+      </div>
+      <div class="card">
+        <div id="recetasTable">Cargando...</div>
+      </div>
+    </div>
+
+    <!-- CONSUMOS -->
+    <div id="page-consumos" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Consumos</h1>
+          <div class="subtitle">Registro de uso real en cirugía</div>
+        </div>
+        <button class="btn btn-accent capturista-only" onclick="openModalConsumo()">+ Registrar consumo</button>
+      </div>
+      <div class="toolbar">
+        <div class="toolbar-row">
+          <input type="date" id="consumosDesde" onchange="renderConsumos()">
+          <input type="date" id="consumosHasta" onchange="renderConsumos()">
+          <input type="search" id="searchConsumos" placeholder="Buscar..." oninput="renderConsumos()">
+        </div>
+      </div>
+      <div class="card"><div id="consumosTable">Cargando...</div></div>
+    </div>
+
+    <!-- INVENTARIO -->
+    <div id="page-inventario" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Saldos de Inventario</h1>
+          <div class="subtitle">Existencias en tiempo real</div>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="loadInventario()">↻ Actualizar</button>
+      </div>
+      <div class="card"><div id="inventarioTable">Cargando...</div></div>
+    </div>
+
+    <!-- ENTRADAS -->
+    <div id="page-entradas" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Entradas de Inventario</h1>
+          <div class="subtitle">Recepciones del proveedor</div>
+        </div>
+        <button class="btn btn-primary capturista-only" onclick="openModalEntrada()">+ Nueva entrada</button>
+      </div>
+      <div class="card">
+        <div class="card-title">¿Cómo registrar una entrada?</div>
+        <p style="color:var(--text-muted);font-size:13px;line-height:1.6;">
+          Cuando llega medicamento del proveedor, registra una entrada con la cantidad recibida,
+          el lote, la fecha de caducidad y la referencia (orden de compra o folio de receta de respaldo).
+          El saldo se actualiza automáticamente.
+        </p>
+      </div>
+    </div>
+
+    <!-- LIBRO COFEPRIS -->
+    <div id="page-libro" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Libro COFEPRIS</h1>
+          <div class="subtitle">Bitácora oficial — alimentada automáticamente desde Consumos</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-secondary btn-sm" onclick="exportLibro()">⬇ Exportar CSV</button>
+          <button class="btn btn-secondary btn-sm" onclick="window.print()">🖨 Imprimir</button>
+        </div>
+      </div>
+      <div class="toolbar">
+        <div class="toolbar-row">
+          <input type="date" id="libroDesde" onchange="renderLibro()">
+          <input type="date" id="libroHasta" onchange="renderLibro()">
+        </div>
+      </div>
+      <div class="card"><div id="libroTable">Cargando...</div></div>
+    </div>
+
+    <!-- CATÁLOGOS -->
+    <div id="page-catalogos" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Catálogos</h1>
+          <div class="subtitle">Administración de medicamentos, médicos y tipos de cirugía</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Medicamentos <button class="btn btn-accent btn-sm" onclick="openModalMedicamento()">+ Alta</button></div>
+        <div id="medicamentosTable">—</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Médicos <button class="btn btn-accent btn-sm" onclick="openModalMedico()">+ Alta</button></div>
+        <div id="medicosTable">—</div>
+      </div>
+      <p style="color:var(--text-muted);font-size:13px;font-style:italic;">
+        Para editar o desactivar registros, accede al Google Sheet en CAT_Medicamentos y CAT_Medicos.
+      </p>
+    </div>
+
+  </main>
+</div>
+
+<div id="modalContainer"></div>
+<div id="toast" class="toast"></div>
+
+<script>
+// ============================================================
+// CONFIGURACIÓN
+// ============================================================
+const API_URL = 'https://script.google.com/macros/s/AKfycbxcRMBm2-dz1GlXgDwMyCU5Ne_2_57V1Ka4Vgr_90-6Lcdcq730g3PthIRNcXWlaIMT/exec';
+
+let currentUser = null;
+let catalogos = { medicamentos: [], medicos: [], cirugiasTipo: [], pacientes: [], config: {} };
+let cache = { cirugias: [], recetas: [], consumos: [], libro: [], inventario: [] };
+let currentHorizonte = 7;
+let currentQuickFilter = 'todas';
+
+// ============================================================
+// API HELPER
+// ============================================================
+async function apiGet(action, params = {}) {
+  const url = new URL(API_URL);
+  url.searchParams.set('action', action);
+  Object.entries(params).forEach(([k,v]) => v != null && v !== '' && url.searchParams.set(k, v));
+  const res = await fetch(url, { method: 'GET' });
+  return res.json();
+}
+async function apiPost(action, data) {
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    body: JSON.stringify({ action, data })
+  });
+  return res.json();
+}
+
+// ============================================================
+// LOGIN
+// ============================================================
+async function doLogin() {
+  const codigo = document.getElementById('codigoAcceso').value.trim();
+  if (!codigo) return;
+  if (API_URL.includes('PEGAR_AQUI')) {
+    showToast('Falta configurar API_URL en el código HTML', 'error');
+    return;
+  }
+  try {
+    const resp = await apiGet('login', { codigo });
+    if (resp.ok) {
+      currentUser = resp.usuario;
+      document.getElementById('userName').textContent = currentUser.nombre;
+      document.getElementById('userRol').textContent = currentUser.rol;
+      document.getElementById('loginScreen').style.display = 'none';
+      document.getElementById('app').classList.add('active');
+      document.getElementById('hoyLabel').textContent = new Date().toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+      applyRoleVisibility();
+      await loadCatalogos();
+      loadDashboard();
+    } else {
+      document.getElementById('loginError').style.display = 'block';
+      document.getElementById('loginError').textContent = resp.error || 'Código inválido';
+    }
+  } catch (err) {
+    showToast('Error de conexión: ' + err.message, 'error');
+  }
+}
+
+function doLogout() { currentUser = null; location.reload(); }
+
+function applyRoleVisibility() {
+  const isAdmin = currentUser.rol === 'ADMIN';
+  const isCapturista = currentUser.rol === 'CAPTURISTA' || isAdmin;
+  document.querySelectorAll('.capturista-only').forEach(el => el.style.display = isCapturista ? '' : 'none');
+  document.querySelectorAll('.admin-only').forEach(el => el.style.display = isAdmin ? '' : 'none');
+  document.getElementById('adminSection').style.display = isAdmin ? '' : 'none';
+}
+
+document.getElementById('codigoAcceso').addEventListener('keypress', e => { if (e.key === 'Enter') doLogin(); });
+
+// ============================================================
+// NAVEGACIÓN
+// ============================================================
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    const page = item.dataset.page;
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+    item.classList.add('active');
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById('page-' + page).classList.add('active');
+    loadPage(page);
+  });
+});
+
+function loadPage(page) {
+  switch (page) {
+    case 'dashboard': loadDashboard(); break;
+    case 'programacion': loadProgramacion(); break;
+    case 'cirugias': loadCirugias(); break;
+    case 'habitaciones': loadHabitaciones(); break;
+    case 'recetas': loadRecetas(); break;
+    case 'consumos': loadConsumos(); break;
+    case 'inventario': loadInventario(); break;
+    case 'libro': loadLibro(); break;
+    case 'catalogos': loadCatalogosPage(); break;
+  }
+}
+
+// ============================================================
+// PROGRAMACIÓN DE QUIRÓFANOS
+// ============================================================
+let progVista = 'tablero'; // 'tablero' o 'calendario'
+let progFechaActual = todayISO();
+let progAnioMes = { anio: new Date().getFullYear(), mes: new Date().getMonth() + 1 };
+
+function loadProgramacion() {
+  if (!document.getElementById('fechaProgDia').value) {
+    document.getElementById('fechaProgDia').value = progFechaActual;
+  }
+  if (progVista === 'tablero') loadProgramacionDia();
+  else loadProgramacionMes();
+}
+
+function cambiarVistaProg(v) {
+  progVista = v;
+  document.querySelectorAll('[data-view]').forEach(b => b.classList.remove('active'));
+  document.querySelector('[data-view="' + v + '"]').classList.add('active');
+  document.getElementById('vista-tablero').style.display = v === 'tablero' ? '' : 'none';
+  document.getElementById('vista-calendario').style.display = v === 'calendario' ? '' : 'none';
+  if (v === 'tablero') loadProgramacionDia();
+  else loadProgramacionMes();
+}
+
+function cambiarDiaProg(delta) {
+  const f = document.getElementById('fechaProgDia').value || todayISO();
+  const d = new Date(f + 'T12:00:00');
+  d.setDate(d.getDate() + delta);
+  progFechaActual = d.toISOString().split('T')[0];
+  document.getElementById('fechaProgDia').value = progFechaActual;
+  loadProgramacionDia();
+}
+
+function irHoyProg() {
+  progFechaActual = todayISO();
+  document.getElementById('fechaProgDia').value = progFechaActual;
+  loadProgramacionDia();
+}
+
+function irMananaProg() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  progFechaActual = d.toISOString().split('T')[0];
+  document.getElementById('fechaProgDia').value = progFechaActual;
+  loadProgramacionDia();
+}
+
+async function loadProgramacionDia() {
+  progFechaActual = document.getElementById('fechaProgDia').value || todayISO();
+  const cont = document.getElementById('programacionDia');
+  cont.innerHTML = '<div class="loading"><div class="spinner"></div> Cargando programación...</div>';
+
+  const resp = await apiGet('getProgramacionDia', { fecha: progFechaActual });
+  if (!resp.ok) { cont.innerHTML = '<div class="empty-state">Error: ' + resp.error + '</div>'; return; }
+
+  if (!resp.quirofanos || resp.quirofanos.length === 0) {
+    cont.innerHTML = '<div class="empty-state"><div class="icon">▦</div>Sin quirófanos en el catálogo. Ve a Catálogos para dar de alta.</div>';
+    return;
+  }
+
+  // Header con fecha
+  const fechaLabel = formatDateLong(progFechaActual);
+  let html = `<h2 style="margin-bottom:16px;font-size:20px;">${fechaLabel}</h2>`;
+  html += '<div class="tablero-grid">';
+
+  resp.quirofanos.forEach(q => {
+    html += `<div class="tablero-quirofano">
+      <div class="tablero-quirofano-header">
+        <div>
+          <div class="tablero-quirofano-titulo">Quirófano ${q.numero}</div>
+          ${q.caracteristicas ? `<div class="tablero-quirofano-sub">${q.caracteristicas}</div>` : ''}
+        </div>
+        <div class="tablero-quirofano-sub">${q.cirugias.length} cirugía${q.cirugias.length === 1 ? '' : 's'}</div>
+      </div>
+    `;
+
+    if (q.cirugias.length === 0) {
+      html += '<div class="tablero-empty">Sin cirugías programadas</div>';
+    } else {
+      q.cirugias.forEach(c => {
+        const estadoClass = 'estado-' + (c.estado || '').toLowerCase().replace('_', '-');
+        html += `<div class="tablero-cirugia ${estadoClass}" onclick="verDetalleProgramacion('${c.folio}')">
+          <div class="tablero-tqx-badge">TQX ${c.tqxHoras}h</div>
+          <span class="tablero-hora">${c.horaInicio || '--:--'}</span>
+          ${c.horaFin ? `<span class="tablero-hora-rango">→ ${c.horaFin}</span>` : ''}
+          <div class="tablero-paciente">${c.paciente || '—'}${c.edad ? ` <span style="font-weight:normal;color:var(--text-muted);font-size:12px;">(${c.edad} años)</span>` : ''}</div>
+          <div class="tablero-tipo">${c.tipoCirugia || '—'}</div>
+          <div class="tablero-meta">
+            <strong>Cirujano:</strong> ${c.medico || '—'}<br>
+            ${c.ayudante ? `<strong>Ayudante:</strong> ${c.ayudante}<br>` : ''}
+            ${c.anestesiologo ? `<strong>Anestesiólogo:</strong> ${c.anestesiologo}<br>` : ''}
+            ${c.materialEspecial ? `<strong>Material:</strong> ${c.materialEspecial}` : ''}
+          </div>
+        </div>`;
+      });
+    }
+    html += '</div>';
+  });
+
+  html += '</div>';
+  cont.innerHTML = html;
+}
+
+function cambiarMesProg(delta) {
+  progAnioMes.mes += delta;
+  if (progAnioMes.mes < 1) { progAnioMes.mes = 12; progAnioMes.anio--; }
+  if (progAnioMes.mes > 12) { progAnioMes.mes = 1; progAnioMes.anio++; }
+  loadProgramacionMes();
+}
+
+function irMesActualProg() {
+  const hoy = new Date();
+  progAnioMes = { anio: hoy.getFullYear(), mes: hoy.getMonth() + 1 };
+  loadProgramacionMes();
+}
+
+async function loadProgramacionMes() {
+  const cont = document.getElementById('programacionMes');
+  cont.innerHTML = '<div class="loading"><div class="spinner"></div> Cargando calendario...</div>';
+
+  const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  document.getElementById('labelMesProg').textContent = meses[progAnioMes.mes - 1] + ' ' + progAnioMes.anio;
+
+  const resp = await apiGet('getProgramacionMes', { anio: progAnioMes.anio, mes: progAnioMes.mes });
+  if (!resp.ok) { cont.innerHTML = '<div class="empty-state">Error: ' + resp.error + '</div>'; return; }
+
+  // Construir grid del mes
+  const primerDia = new Date(progAnioMes.anio, progAnioMes.mes - 1, 1);
+  const ultimoDia = new Date(progAnioMes.anio, progAnioMes.mes, 0);
+  const diaSemanaInicio = primerDia.getDay(); // 0=domingo
+  const totalDias = ultimoDia.getDate();
+  const hoyStr = todayISO();
+
+  const dows = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  let html = '<div class="calendario-grid">';
+  dows.forEach(d => html += `<div class="cal-dow">${d}</div>`);
+
+  // Días del mes anterior (relleno)
+  for (let i = 0; i < diaSemanaInicio; i++) {
+    html += '<div class="cal-dia fuera-mes"></div>';
+  }
+
+  // Días del mes
+  for (let d = 1; d <= totalDias; d++) {
+    const fechaStr = `${progAnioMes.anio}-${String(progAnioMes.mes).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const cirugiasDia = resp.dias[fechaStr] || [];
+    const esHoy = fechaStr === hoyStr;
+    html += `<div class="cal-dia ${esHoy ? 'hoy' : ''}" onclick="irADiaTablero('${fechaStr}')">
+      <div class="cal-dia-num">${d}</div>
+    `;
+    cirugiasDia.slice(0, 4).forEach(c => {
+      const qClass = (c.idQuirofano || '').toLowerCase();
+      const eClass = 'estado-' + (c.estado || '').toLowerCase().replace('_', '-');
+      html += `<div class="cal-cirugia ${qClass} ${eClass}" title="${c.horaInicio} ${c.paciente} - ${c.tipoCirugia}">${c.horaInicio} ${c.paciente.substring(0, 14)}</div>`;
+    });
+    if (cirugiasDia.length > 4) {
+      html += `<div style="font-size:10px;color:var(--text-muted);text-align:center;margin-top:2px;">+${cirugiasDia.length - 4} más</div>`;
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+  cont.innerHTML = html;
+}
+
+function irADiaTablero(fecha) {
+  progFechaActual = fecha;
+  document.getElementById('fechaProgDia').value = fecha;
+  cambiarVistaProg('tablero');
+}
+
+async function verDetalleProgramacion(folio) {
+  const c = cache.cirugias.find(x => x.Folio_Cirugia === folio);
+  if (!c) {
+    // Refrescar y reintentar
+    await loadCirugias();
+    const c2 = cache.cirugias.find(x => x.Folio_Cirugia === folio);
+    if (!c2) { showToast('Cirugía no encontrada', 'error'); return; }
+    return verDetalleProgramacion(folio);
+  }
+  let medsHtml = '';
+  if (Array.isArray(c.Medicamentos_Array) && c.Medicamentos_Array.length > 0) {
+    medsHtml = '<ul style="margin:6px 0 0 16px;font-size:13px;">' +
+      c.Medicamentos_Array.map(m => `<li>${m.nombreMedicamento} <strong>×${m.cantidad}</strong> ${m.unidad||''}</li>`).join('') +
+      '</ul>';
+  } else {
+    medsHtml = '<small style="color:var(--text-muted);">Sin medicamentos estimados</small>';
+  }
+
+  let acciones = '';
+  if (currentUser.rol !== 'CONSULTA') {
+    if (c.Estado === 'PROGRAMADA') {
+      acciones += `<button class="btn btn-accent btn-sm" onclick="closeModal();openModalReceta('${folio}')">Vincular receta</button>`;
+    } else if (c.Estado === 'RECETA_VINCULADA') {
+      acciones += `<button class="btn btn-primary btn-sm" onclick="closeModal();openModalConsumo('${folio}')">Registrar consumo</button>`;
+    } else if (c.Estado === 'REALIZADA') {
+      acciones += `<button class="btn btn-secondary btn-sm" onclick="closeModal();verConsumosCirugia('${folio}')">Ver consumos</button>`;
+    }
+  }
+
+  openModal('Cirugía ' + folio, `
+    <div style="font-size:13px;line-height:1.7;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;background:var(--bg);padding:16px;border-radius:8px;margin-bottom:16px;">
+        <div><strong>Fecha:</strong> ${formatDateShort(c.Fecha_Programada)}</div>
+        <div><strong>Hora:</strong> ${c.Hora_Programada || '—'} ${c.Hora_Fin_Calculada ? '→ ' + (c.Hora_Fin_Calculada || '').replace(/^'/, '') : ''}</div>
+        <div><strong>Quirófano:</strong> ${c.Numero_Quirofano || '—'}</div>
+        <div><strong>TQX:</strong> ${c.TQX_Horas || '—'} hrs</div>
+        <div><strong>Estado:</strong> <span class="badge badge-${badgeClass(c.Estado)}">${formatEstado(c.Estado)}</span></div>
+        <div><strong>Receta física:</strong> ${c.Folio_Receta_Asociada || '<em>sin vincular</em>'}</div>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <strong>Paciente:</strong> ${c.Nombre_Paciente || '—'} ${c.Edad_Paciente ? `(${c.Edad_Paciente} años)` : ''}<br>
+        <strong>Tipo de cirugía:</strong> ${c.Tipo_Cirugia || '—'}
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <strong>Cirujano:</strong> ${c.Nombre_Medico || '—'}<br>
+        ${c.Nombre_Ayudante ? `<strong>Ayudante:</strong> ${c.Nombre_Ayudante}<br>` : ''}
+        ${c.Nombre_Anestesiologo ? `<strong>Anestesiólogo:</strong> ${c.Nombre_Anestesiologo}<br>` : ''}
+        ${c.Material_Especial ? `<strong>Material especial:</strong> ${c.Material_Especial}<br>` : ''}
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <strong>Medicamentos estimados:</strong>
+        ${medsHtml}
+      </div>
+
+      ${c.Observaciones ? `<div style="margin-bottom:16px;"><strong>Observaciones:</strong><br>${c.Observaciones}</div>` : ''}
+    </div>
+    <div class="form-actions">
+      ${acciones}
+      <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+    </div>
+  `);
+}
+
+function imprimirTablero() {
+  window.print();
+}
+
+// MODAL: PROGRAMAR CIRUGÍA (con todos los campos del Excel actual)
+let medsProgBuffer = [];
+
+function openModalProgramar() {
+  medsProgBuffer = [];
+  const medicosOpts = catalogos.medicos.map(m => `<option value="${m.ID_Medico}">${m.Nombre_Completo} (${m.Especialidad})</option>`).join('');
+  const tiposOpts = catalogos.cirugiasTipo.map(c => `<option value="${c.ID_Cirugia_Tipo}">${c.Nombre_Cirugia}</option>`).join('');
+  const quirofanosOpts = (catalogos.quirofanos || []).map(q =>
+    `<option value="${q.ID_Quirofano}" data-numero="${q.Numero}">Quirófano ${q.Numero}${q.Caracteristicas ? ' - ' + q.Caracteristicas : ''}</option>`
+  ).join('');
+  const medsOpts = catalogos.medicamentos.map(m =>
+    `<option value="${m.ID_Medicamento}" data-nombre="${m.Nombre_Comercial}" data-unidad="${m.Unidad}">${m.Nombre_Comercial}</option>`
+  ).join('');
+
+  openModal('Programar cirugía', `
+    <form onsubmit="event.preventDefault();crearCirugia()">
+      <div class="form-grid">
+        <!-- Quirófano y horario -->
+        <div><label>Quirófano</label><select id="cx_quirofano" required><option value="">— Seleccionar —</option>${quirofanosOpts}</select></div>
+        <div><label>Fecha</label><input type="date" id="cx_fecha" value="${progFechaActual || todayISO()}" required></div>
+        <div><label>Hora de inicio</label><input type="time" id="cx_hora" required></div>
+        <div><label>TQX (horas)</label><input type="number" id="cx_tqx" min="0.5" step="0.5" placeholder="Ej: 5" required onchange="calcularHoraFin()"></div>
+        <div class="full" style="background:var(--teal-light);padding:10px 14px;border-radius:6px;display:flex;align-items:center;gap:10px;">
+          <span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;font-weight:600;">Bloqueará el quirófano hasta:</span>
+          <strong id="cx_hora_fin" style="font-family:'Georgia',serif;font-size:16px;color:var(--navy);">--:--</strong>
+        </div>
+
+        <!-- Paciente -->
+        <div><label>Paciente</label><input type="text" id="cx_paciente" placeholder="Nombre completo" required></div>
+        <div><label>Edad</label><input type="number" id="cx_edad" min="0" max="120" placeholder="años"></div>
+
+        <!-- Personal -->
+        <div><label>Tipo de cirugía</label><select id="cx_tipo" required><option value="">—</option>${tiposOpts}</select></div>
+        <div><label>Médico cirujano</label><select id="cx_medico" required><option value="">—</option>${medicosOpts}</select></div>
+        <div><label>Ayudante</label><select id="cx_ayudante"><option value="">— Opcional —</option>${medicosOpts}</select></div>
+        <div><label>Anestesiólogo</label><select id="cx_anestesiologo"><option value="">— Opcional —</option>${medicosOpts}</select></div>
+
+        <!-- Material y meds -->
+        <div class="full"><label>Material especial</label><input type="text" id="cx_material" placeholder="Ej: Fluoroscopio, navegador, lente"></div>
+
+        <div class="full" style="background:var(--teal-light);padding:14px;border-radius:8px;border:1px solid var(--teal);">
+          <label style="color:var(--navy);">Medicamentos controlados estimados</label>
+          <div id="meds_lista" style="margin-bottom:10px;"></div>
+          <div style="display:grid;grid-template-columns:1fr 100px 90px;gap:8px;align-items:end;">
+            <div><label style="font-size:10px;">Medicamento</label><select id="med_select_temp" style="font-size:13px;padding:8px;"><option value="">—</option>${medsOpts}</select></div>
+            <div><label style="font-size:10px;">Cantidad</label><input type="number" id="med_cantidad_temp" min="1" step="1" placeholder="0" style="font-size:13px;padding:8px;"></div>
+            <button type="button" class="btn btn-accent btn-sm" onclick="agregarMedicamentoEstimado()" style="padding:8px;">+ Agregar</button>
+          </div>
+        </div>
+
+        <div class="full"><label>Observaciones</label><textarea id="cx_obs"></textarea></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Programar cirugía</button>
+      </div>
+    </form>
+  `);
+  // El buffer compartido entre cirugías y consumos: usar el mismo del v3
+  medsEstimadosBuffer = medsProgBuffer;
+  renderMedsEstimadosBuffer();
+}
+
+function calcularHoraFin() {
+  const hora = document.getElementById('cx_hora').value;
+  const tqx = parseFloat(document.getElementById('cx_tqx').value);
+  if (!hora || !tqx) {
+    document.getElementById('cx_hora_fin').textContent = '--:--';
+    return;
+  }
+  const [h, m] = hora.split(':').map(n => parseInt(n, 10));
+  const totalMin = h * 60 + m + Math.round(tqx * 60);
+  const nh = Math.floor(totalMin / 60) % 24;
+  const nm = totalMin % 60;
+  document.getElementById('cx_hora_fin').textContent =
+    String(nh).padStart(2, '0') + ':' + String(nm).padStart(2, '0');
+}
+
+async function crearCirugia() {
+  const nombre = document.getElementById('cx_paciente').value.trim();
+  const idQuirofano = document.getElementById('cx_quirofano').value;
+  const numeroQuirofano = document.getElementById('cx_quirofano').selectedOptions[0]?.dataset.numero || '';
+  const idMedico = document.getElementById('cx_medico').value;
+  const idTipo = document.getElementById('cx_tipo').value;
+  const idAyudante = document.getElementById('cx_ayudante').value;
+  const idAnestesiologo = document.getElementById('cx_anestesiologo').value;
+  const tqx = parseFloat(document.getElementById('cx_tqx').value);
+  const fecha = document.getElementById('cx_fecha').value;
+  const hora = document.getElementById('cx_hora').value;
+
+  const medico = catalogos.medicos.find(m => m.ID_Medico === idMedico);
+  const tipo = catalogos.cirugiasTipo.find(c => c.ID_Cirugia_Tipo === idTipo);
+  const ayudante = idAyudante ? catalogos.medicos.find(m => m.ID_Medico === idAyudante) : null;
+  const anestesiologo = idAnestesiologo ? catalogos.medicos.find(m => m.ID_Medico === idAnestesiologo) : null;
+
+  if (medsEstimadosBuffer.length === 0) {
+    if (!confirm('No has agregado medicamentos estimados. ¿Crear la cirugía sin medicamentos? (Podrás agregarlos al registrar el consumo).')) {
+      return;
+    }
+  }
+
+  let paciente = catalogos.pacientes.find(p => (p.Nombre_Completo||'').toLowerCase() === nombre.toLowerCase());
+  if (!paciente) {
+    const altaResp = await apiPost('altaPaciente', { nombre });
+    if (!altaResp.ok) { showToast('Error: ' + altaResp.error, 'error'); return; }
+    paciente = { ID_Paciente: altaResp.idPaciente, Nombre_Completo: nombre };
+    catalogos.pacientes.push(paciente);
+  }
+  const data = {
+    fechaProgramada: fecha, horaProgramada: hora, tqxHoras: tqx,
+    idQuirofano, numeroQuirofano,
+    idPaciente: paciente.ID_Paciente, nombrePaciente: paciente.Nombre_Completo,
+    edadPaciente: parseInt(document.getElementById('cx_edad').value, 10) || '',
+    idMedico, nombreMedico: medico.Nombre_Completo,
+    idCirugiaTipo: idTipo, tipoCirugia: tipo.Nombre_Cirugia,
+    idAyudante: idAyudante || '', nombreAyudante: ayudante ? ayudante.Nombre_Completo : '',
+    idAnestesiologo: idAnestesiologo || '', nombreAnestesiologo: anestesiologo ? anestesiologo.Nombre_Completo : '',
+    materialEspecial: document.getElementById('cx_material').value,
+    medicamentosSolicitados: medsEstimadosBuffer,
+    observaciones: document.getElementById('cx_obs').value,
+    capturadoPor: currentUser.nombre
+  };
+  const resp = await apiPost('crearCirugia', data);
+  if (resp.ok) {
+    showToast('Cirugía programada: ' + resp.folio);
+    medsEstimadosBuffer = [];
+    closeModal();
+    if (progVista === 'tablero') loadProgramacionDia();
+    loadCirugias();
+  }
+  else { showToast(resp.error, 'error'); }
+}
+
+// Selector de horizonte
+document.querySelectorAll('.horizon-btn').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.horizon-btn').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    currentHorizonte = parseInt(b.dataset.horizon, 10);
+    loadDashboard();
+  });
+});
+
+// Filtros rápidos cirugías
+document.querySelectorAll('.quick-filters .btn-pill').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.quick-filters .btn-pill').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    currentQuickFilter = b.dataset.filter;
+    applyQuickFilter();
+  });
+});
+
+function applyQuickFilter() {
+  const today = new Date();
+  const dStr = d => d.toISOString().split('T')[0];
+  const desde = document.getElementById('filtroFechaDesde');
+  const hasta = document.getElementById('filtroFechaHasta');
+  switch (currentQuickFilter) {
+    case 'hoy':
+      desde.value = dStr(today);
+      hasta.value = dStr(today);
+      break;
+    case 'manana':
+      const m = new Date(today.getTime() + 86400000);
+      desde.value = dStr(m); hasta.value = dStr(m);
+      break;
+    case 'semana':
+      const finSem = new Date(today.getTime() + 6*86400000);
+      desde.value = dStr(today); hasta.value = dStr(finSem);
+      break;
+    case 'proximas':
+      desde.value = dStr(today); hasta.value = '';
+      break;
+    case 'todas':
+    default:
+      desde.value = ''; hasta.value = '';
+  }
+  renderCirugias();
+}
+
+function clearFilters() {
+  document.getElementById('searchCirugias').value = '';
+  document.getElementById('filtroFechaDesde').value = '';
+  document.getElementById('filtroFechaHasta').value = '';
+  document.getElementById('filterCirugias').value = '';
+  document.getElementById('filterMedico').value = '';
+  document.querySelectorAll('.quick-filters .btn-pill').forEach(x => x.classList.remove('active'));
+  document.querySelector('.quick-filters .btn-pill[data-filter="todas"]').classList.add('active');
+  currentQuickFilter = 'todas';
+  renderCirugias();
+}
+
+// ============================================================
+// CATÁLOGOS
+// ============================================================
+async function loadCatalogos() {
+  const resp = await apiGet('getCatalogos');
+  if (resp.ok) {
+    catalogos = resp;
+    // Llenar selector de médicos en filtros
+    const sel = document.getElementById('filterMedico');
+    sel.innerHTML = '<option value="">Todos los médicos</option>' +
+      catalogos.medicos.map(m => `<option value="${m.ID_Medico}">${m.Nombre_Completo}</option>`).join('');
+  }
+}
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+async function loadDashboard() {
+  const grid = document.getElementById('statsGrid');
+  grid.innerHTML = '<div class="loading"><div class="spinner"></div> Cargando...</div>';
+  document.getElementById('horizonteLabel').textContent = '· próximos ' + currentHorizonte + ' días';
+
+  const resp = await apiGet('getDashboard', { horizonte: currentHorizonte });
+  if (!resp.ok) { grid.innerHTML = '<div class="empty-state">Error: ' + resp.error + '</div>'; return; }
+
+  const c = resp.contadores;
+  grid.innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Hoy</div>
+      <div class="stat-value">${c.cirugiasHoy}</div>
+      <div class="stat-sub">cirugías programadas</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Mañana</div>
+      <div class="stat-value">${c.cirugiasManana}</div>
+      <div class="stat-sub">cirugías programadas</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Próximos ${currentHorizonte} días</div>
+      <div class="stat-value">${c.cirugiasHorizonte}</div>
+      <div class="stat-sub">total en horizonte</div>
+    </div>
+    <div class="stat-card ${c.sinReceta>0?'warn':'success'}">
+      <div class="stat-label">Sin receta</div>
+      <div class="stat-value">${c.sinReceta}</div>
+      <div class="stat-sub">cirugías por vincular</div>
+    </div>
+    <div class="stat-card ${c.alertasInventario>0?'danger':'success'}">
+      <div class="stat-label">Inventario</div>
+      <div class="stat-value">${c.alertasInventario}</div>
+      <div class="stat-sub">medicamentos en alerta</div>
+    </div>
+    ${c.ocupacionTotal ? `
+    <div class="stat-card ${c.alertasOcupacion && c.alertasOcupacion.length > 0 ? 'warn' : ''}">
+      <div class="stat-label">Hospitalización</div>
+      <div class="stat-value">${c.ocupacionTotal.ocupadas}/${c.ocupacionTotal.total}</div>
+      <div class="stat-sub">camas ocupadas</div>
+    </div>
+    ` : ''}
+  `;
+
+  // Banner si hay urgencias críticas
+  const banner = document.getElementById('alertsBanner');
+  const urgencias = [];
+  if (c.sinReceta > 0) urgencias.push(`<strong>${c.sinReceta}</strong> cirugía(s) sin receta vinculada en los próximos ${currentHorizonte} días`);
+  if (c.alertasInventario > 0) urgencias.push(`<strong>${c.alertasInventario}</strong> medicamento(s) bajo stock mínimo`);
+  if (c.alertasOcupacion && c.alertasOcupacion.length > 0) {
+    c.alertasOcupacion.forEach(a => {
+      const lbl = a.tipo === 'PRIVADA' ? 'Privadas' : a.tipo === 'SALA_GENERAL' ? 'Sala general' : 'Urgencias';
+      urgencias.push(`${lbl} al <strong>${a.porcentaje}%</strong> de ocupación`);
+    });
+  }
+  banner.innerHTML = urgencias.length
+    ? `<div class="alerts-banner">⚠ <strong>Atención:</strong> ${urgencias.join(' · ')}</div>`
+    : '';
+
+  // Pendientes: sin receta
+  const pr = document.getElementById('pendientesReceta');
+  if (resp.pendientes.sinReceta.length === 0) {
+    pr.innerHTML = '<div class="empty-state" style="padding:20px;"><div class="icon">✓</div>Todas las cirugías del horizonte tienen receta vinculada</div>';
+  } else {
+    pr.innerHTML = '<ul class="pendiente-list">' + resp.pendientes.sinReceta.map(p => `
+      <li class="pendiente-item">
+        <div class="info">
+          <strong>${p.paciente}</strong>
+          <small>${p.tipo} · ${p.medico}</small>
+        </div>
+        <div class="meta">${formatDateShort(p.fecha)}</div>
+      </li>
+    `).join('') + '</ul>';
+  }
+
+  // Pendientes: inventario
+  const pi = document.getElementById('pendientesInventario');
+  if (resp.pendientes.inventario.length === 0) {
+    pi.innerHTML = '<div class="empty-state" style="padding:20px;"><div class="icon">✓</div>Inventario en niveles adecuados</div>';
+  } else {
+    pi.innerHTML = '<ul class="pendiente-list">' + resp.pendientes.inventario.map(p => `
+      <li class="pendiente-item">
+        <div class="info">
+          <strong>${p.nombre}</strong>
+          <small>${p.sustancia || ''} · Fr. ${p.fraccion}</small>
+        </div>
+        <div class="meta" style="color:var(--danger);">${p.saldo} ${p.unidad} (mín ${p.minimo})</div>
+      </li>
+    `).join('') + '</ul>';
+  }
+
+  // Cirugías próximas (timeline agrupado por día)
+  const cp = document.getElementById('cirugiasProximas');
+  if (resp.cirugiasProximas.length === 0) {
+    cp.innerHTML = '<div class="empty-state"><div class="icon">📅</div>Sin cirugías programadas en el horizonte</div>';
+  } else {
+    const grupos = {};
+    resp.cirugiasProximas.forEach(c => {
+      if (!grupos[c.fecha]) grupos[c.fecha] = [];
+      grupos[c.fecha].push(c);
+    });
+    cp.innerHTML = Object.keys(grupos).sort().map(fecha => {
+      const items = grupos[fecha].map(c => `
+        <div class="timeline-cirugia">
+          <div class="info">
+            <strong>${c.paciente}</strong> · <span style="color:var(--text-muted);">${c.tipo}</span><br>
+            <small>${c.folio} · ${c.medico} ${c.hora ? '· ' + c.hora : ''}</small>
+          </div>
+          <span class="badge badge-${badgeClass(c.estado)}">${formatEstado(c.estado)}</span>
+        </div>
+      `).join('');
+      return `<div class="timeline-day">
+        <div class="timeline-day-title">${formatDateLong(fecha)}</div>
+        ${items}
+      </div>`;
+    }).join('');
+  }
+}
+
+// ============================================================
+// CIRUGÍAS
+// ============================================================
+async function loadCirugias() {
+  document.getElementById('cirugiasTable').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  const resp = await apiGet('getCirugias');
+  cache.cirugias = resp.data || [];
+  renderCirugias();
+}
+
+function renderCirugias() {
+  let list = cache.cirugias.slice();
+  const search = (document.getElementById('searchCirugias').value || '').toLowerCase();
+  const filter = document.getElementById('filterCirugias').value;
+  const idMedico = document.getElementById('filterMedico').value;
+  const desde = document.getElementById('filtroFechaDesde').value;
+  const hasta = document.getElementById('filtroFechaHasta').value;
+
+  if (search) list = list.filter(c => (c.Nombre_Paciente||'').toLowerCase().includes(search) || (c.Folio_Cirugia||'').toLowerCase().includes(search));
+  if (filter) list = list.filter(c => c.Estado === filter);
+  if (idMedico) list = list.filter(c => c.ID_Medico === idMedico);
+  if (desde) list = list.filter(c => (c.Fecha_Programada || '') >= desde);
+  if (hasta) list = list.filter(c => (c.Fecha_Programada || '') <= hasta);
+
+  // Ordenar por fecha
+  list.sort((a, b) => (a.Fecha_Programada || '').localeCompare(b.Fecha_Programada || ''));
+
+  document.getElementById('cirugiasTable').innerHTML = list.length
+    ? renderTableCirugias(list)
+    : '<div class="empty-state"><div class="icon">⚕</div>Sin cirugías que coincidan con los filtros</div>';
+}
+
+function renderTableCirugias(list) {
+  const rows = list.map(c => {
+    // Mostrar medicamentos estructurados si existen, si no el resumen viejo
+    let medsCell = '<span style="color:var(--text-muted);font-size:11px;">—</span>';
+    if (Array.isArray(c.Medicamentos_Array) && c.Medicamentos_Array.length > 0) {
+      medsCell = c.Medicamentos_Array.map(m =>
+        `<div style="font-size:12px;">• ${m.nombreMedicamento} <strong>×${m.cantidad}</strong> ${m.unidad||''}</div>`
+      ).join('');
+    } else if (c.Medicamentos_Resumen) {
+      medsCell = `<small style="color:var(--text-muted);">${c.Medicamentos_Resumen}</small>`;
+    }
+    return `
+    <tr>
+      <td><strong>${c.Folio_Cirugia||'—'}</strong></td>
+      <td>${formatDateShort(c.Fecha_Programada)}<br><small style="color:var(--text-muted);">${c.Hora_Programada||''}</small></td>
+      <td>${c.Nombre_Paciente||'—'}</td>
+      <td>${c.Nombre_Medico||'—'}</td>
+      <td>${c.Tipo_Cirugia||'—'}</td>
+      <td>${medsCell}</td>
+      <td><span class="badge badge-${badgeClass(c.Estado)}">${formatEstado(c.Estado)}</span></td>
+      <td>${c.Folio_Receta_Asociada || '<span style="color:var(--text-muted);font-size:11px;">sin vincular</span>'}</td>
+      <td>${renderCirugiaActions(c)}</td>
+    </tr>
+  `;
+  }).join('');
+  return `<table>
+    <thead><tr><th>Folio</th><th>Fecha</th><th>Paciente</th><th>Médico</th><th>Cirugía</th><th>Medicamentos est.</th><th>Estado</th><th>Receta física</th><th>Acciones</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function renderCirugiaActions(c) {
+  if (currentUser.rol === 'CONSULTA') {
+    if (c.Estado === 'REALIZADA') {
+      return `<button class="btn btn-secondary btn-sm" onclick="verConsumosCirugia('${c.Folio_Cirugia}')">Ver consumos</button>`;
+    }
+    return '—';
+  }
+  if (c.Estado === 'PROGRAMADA') {
+    return `<button class="btn btn-accent btn-sm" onclick="openModalReceta('${c.Folio_Cirugia}')">Vincular receta</button>`;
+  }
+  if (c.Estado === 'RECETA_VINCULADA') {
+    return `<button class="btn btn-primary btn-sm" onclick="openModalConsumo('${c.Folio_Cirugia}')">Registrar consumo</button>`;
+  }
+  if (c.Estado === 'REALIZADA') {
+    return `<button class="btn btn-secondary btn-sm" onclick="verConsumosCirugia('${c.Folio_Cirugia}')">Ver consumos</button>`;
+  }
+  return '—';
+}
+
+// ============================================================
+// RECETAS
+// ============================================================
+async function loadRecetas() {
+  document.getElementById('recetasTable').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  const resp = await apiGet('getRecetas');
+  cache.recetas = resp.data || [];
+  renderRecetas();
+}
+
+function renderRecetas() {
+  let list = cache.recetas.slice();
+  const search = (document.getElementById('searchRecetas').value || '').toLowerCase();
+  if (search) list = list.filter(r => (r.Nombre_Paciente||'').toLowerCase().includes(search) || (r.Folio_Receta||'').toLowerCase().includes(search));
+  list.sort((a, b) => (b.Timestamp_Captura||'').localeCompare(a.Timestamp_Captura||''));
+
+  const rows = list.map(r => `
+    <tr>
+      <td><strong>${r.Folio_Receta||'—'}</strong></td>
+      <td>${formatDateShort(r.Fecha_Emision)}</td>
+      <td>${r.Folio_Cirugia||'—'}</td>
+      <td>${r.Nombre_Paciente||'—'}</td>
+      <td>${r.Nombre_Medico||'—'}</td>
+      <td>${r.Nombre_Medicamento||'—'}</td>
+      <td>${r.Cantidad_Solicitada||'—'} ${r.Unidad||''}</td>
+      <td><span class="badge badge-${(r.Estado||'').toLowerCase()}">${r.Estado||''}</span></td>
+    </tr>
+  `).join('');
+  document.getElementById('recetasTable').innerHTML = list.length
+    ? `<table><thead><tr><th>Folio físico</th><th>Fecha</th><th>Cirugía</th><th>Paciente</th><th>Médico</th><th>Medicamento</th><th>Cantidad</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table>`
+    : '<div class="empty-state"><div class="icon">℞</div>Sin recetas vinculadas</div>';
+}
+
+// ============================================================
+// CONSUMOS
+// ============================================================
+async function loadConsumos() {
+  document.getElementById('consumosTable').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  const desde = document.getElementById('consumosDesde').value;
+  const hasta = document.getElementById('consumosHasta').value;
+  const resp = await apiGet('getConsumos', { desde, hasta });
+  cache.consumos = resp.data || [];
+  renderConsumos();
+}
+
+function renderConsumos() {
+  let list = cache.consumos.slice();
+  const search = (document.getElementById('searchConsumos').value || '').toLowerCase();
+  if (search) list = list.filter(c => (c.Nombre_Paciente||'').toLowerCase().includes(search) || (c.Nombre_Medicamento||'').toLowerCase().includes(search));
+  list.sort((a, b) => (b.Timestamp_Captura||'').localeCompare(a.Timestamp_Captura||''));
+
+  const rows = list.map(c => {
+    const cancelado = c.Estado === 'CANCELADO';
+    return `
+    <tr style="${cancelado ? 'opacity:0.55;' : ''}">
+      <td style="${cancelado ? 'text-decoration:line-through;' : ''}">${formatDateShort(c.Fecha_Consumo)} ${c.Hora_Consumo||''}</td>
+      <td>${c.Folio_Cirugia||'—'}</td>
+      <td>${c.Folio_Receta||'—'}</td>
+      <td style="${cancelado ? 'text-decoration:line-through;' : ''}">${c.Nombre_Paciente||'—'}</td>
+      <td style="${cancelado ? 'text-decoration:line-through;' : ''}">${c.Nombre_Medicamento||'—'}</td>
+      <td style="${cancelado ? 'text-decoration:line-through;' : ''}"><strong>${c.Cantidad_Consumida||'—'}</strong> ${c.Unidad||''}</td>
+      <td>${c.Nombre_Medico||'—'}</td>
+      <td>${c.Administrado_Por||'—'}</td>
+      <td>${cancelado
+        ? `<span class="badge badge-cancelada">CANCELADO</span><br><small style="color:var(--text-muted);font-size:10px;">${c.Motivo_Cancelacion||''}</small>`
+        : '<span class="badge badge-realizada">ACTIVO</span>'}</td>
+    </tr>
+    `;
+  }).join('');
+  document.getElementById('consumosTable').innerHTML = list.length
+    ? `<table><thead><tr><th>Fecha</th><th>Cirugía</th><th>Receta</th><th>Paciente</th><th>Medicamento</th><th>Cantidad</th><th>Médico</th><th>Administrado por</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table>`
+    : '<div class="empty-state"><div class="icon">◉</div>Sin consumos en el período</div>';
+}
+
+// ============================================================
+// INVENTARIO
+// ============================================================
+async function loadInventario() {
+  document.getElementById('inventarioTable').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  const resp = await apiGet('getInventario');
+  cache.inventario = resp.data || [];
+  const rows = cache.inventario.map(i => `
+    <tr style="${i.alerta ? 'background:var(--warn-bg);' : ''}">
+      <td><strong>${i.idMedicamento}</strong></td>
+      <td>${i.nombre}<br><small style="color:var(--text-muted);">${i.sustancia||''}</small></td>
+      <td>Fr. ${i.fraccion||''}</td>
+      <td><strong style="font-size:16px;color:${i.alerta?'var(--danger)':'var(--navy)'};">${i.saldo}</strong> ${i.unidad||''}</td>
+      <td>${i.minimo} ${i.unidad||''}</td>
+      <td>${i.alerta ? '<span class="badge badge-cancelada">⚠ REORDENAR</span>' : '<span class="badge badge-realizada">OK</span>'}</td>
+    </tr>
+  `).join('');
+  document.getElementById('inventarioTable').innerHTML = cache.inventario.length
+    ? `<table><thead><tr><th>ID</th><th>Medicamento</th><th>Fracción</th><th>Saldo actual</th><th>Mínimo</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table>`
+    : '<div class="empty-state"><div class="icon">▦</div>Sin medicamentos en catálogo. Ve a Catálogos para dar de alta.</div>';
+}
+
+// ============================================================
+// LIBRO COFEPRIS
+// ============================================================
+async function loadLibro() {
+  document.getElementById('libroTable').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  const desde = document.getElementById('libroDesde').value;
+  const hasta = document.getElementById('libroHasta').value;
+  const resp = await apiGet('getLibro', { desde, hasta });
+  cache.libro = resp.data || [];
+  renderLibro();
+}
+
+function renderLibro() {
+  const list = cache.libro;
+  const rows = list.map(r => {
+    const cancelado = r.Estado === 'CANCELADO';
+    return `
+    <tr style="${cancelado ? 'opacity:0.55;background:#FEF2F2;' : ''}">
+      <td style="${cancelado ? 'text-decoration:line-through;' : ''}">${r.No_Asiento||'—'}</td>
+      <td style="${cancelado ? 'text-decoration:line-through;' : ''}">${formatDateShort(r.Fecha)}</td>
+      <td style="${cancelado ? 'text-decoration:line-through;' : ''}">${r.Folio_Receta||'—'}</td>
+      <td style="${cancelado ? 'text-decoration:line-through;' : ''}">${r.Nombre_Medicamento||'—'}<br><small>Fr. ${r.Fraccion_LGS||''}</small></td>
+      <td style="${cancelado ? 'text-decoration:line-through;' : ''}">${r.Nombre_Paciente||'—'}</td>
+      <td style="${cancelado ? 'text-decoration:line-through;' : ''}">${r.Nombre_Medico||'—'}<br><small>Céd: ${r.Cedula_Medico||''}</small></td>
+      <td style="${cancelado ? 'text-decoration:line-through;' : ''}"><strong>${r.Cantidad_Salida||0}</strong></td>
+      <td style="${cancelado ? 'text-decoration:line-through;' : ''}">${r.Existencia_Anterior||0}</td>
+      <td style="${cancelado ? 'text-decoration:line-through;' : ''}">${r.Existencia_Posterior||0}</td>
+      <td style="${cancelado ? 'text-decoration:line-through;' : ''}">${r.Folio_Cirugia||'—'}</td>
+      <td>${cancelado
+        ? `<span class="badge badge-cancelada">CANCELADO</span>`
+        : '<span class="badge badge-realizada">ACTIVO</span>'}</td>
+    </tr>
+  `;
+  }).join('');
+  document.getElementById('libroTable').innerHTML = list.length
+    ? `<table><thead><tr><th>Asiento</th><th>Fecha</th><th>Receta</th><th>Medicamento</th><th>Paciente</th><th>Médico</th><th>Salida</th><th>Exist. anterior</th><th>Exist. posterior</th><th>Cirugía</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table>`
+    : '<div class="empty-state"><div class="icon">📕</div>Sin asientos en el libro</div>';
+}
+
+function exportLibro() {
+  const list = cache.libro;
+  if (!list.length) { showToast('Nada que exportar', 'warn'); return; }
+  const headers = ['No.Asiento','Fecha','Folio Receta','Medicamento','Fracción','Paciente','Médico','Cédula','Cantidad','Exist.Anterior','Exist.Posterior','Folio Cirugía','Estado','Observaciones'];
+  const csv = [headers.join(',')].concat(list.map(r => [
+    r.No_Asiento, formatDateShort(r.Fecha), r.Folio_Receta, csvEscape(r.Nombre_Medicamento), r.Fraccion_LGS,
+    csvEscape(r.Nombre_Paciente), csvEscape(r.Nombre_Medico), r.Cedula_Medico,
+    r.Cantidad_Salida, r.Existencia_Anterior, r.Existencia_Posterior,
+    r.Folio_Cirugia, r.Estado || 'ACTIVO', csvEscape(r.Observaciones)
+  ].join(','))).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `LibroCOFEPRIS_${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+}
+
+function csvEscape(v) {
+  if (v == null) return '';
+  const s = String(v).replace(/"/g, '""');
+  return /[,"\n]/.test(s) ? `"${s}"` : s;
+}
+
+// ============================================================
+// CATÁLOGOS PAGE
+// ============================================================
+async function loadCatalogosPage() {
+  await loadCatalogos();
+  const meds = catalogos.medicamentos.map(m => `
+    <tr><td><strong>${m.ID_Medicamento}</strong></td><td>${m.Nombre_Comercial}</td><td>${m.Sustancia_Activa||''}</td><td>Fr. ${m.Fraccion_LGS}</td><td>${m.Unidad}</td><td>${m.Stock_Minimo}</td></tr>
+  `).join('');
+  document.getElementById('medicamentosTable').innerHTML = meds
+    ? `<table><thead><tr><th>ID</th><th>Nombre</th><th>Sustancia</th><th>Fracción</th><th>Unidad</th><th>Mínimo</th></tr></thead><tbody>${meds}</tbody></table>`
+    : '<div class="empty-state">Sin medicamentos.</div>';
+  const medicos = catalogos.medicos.map(m => `
+    <tr><td><strong>${m.ID_Medico}</strong></td><td>${m.Nombre_Completo}</td><td>${m.Cedula_Profesional}</td><td>${m.Especialidad}</td></tr>
+  `).join('');
+  document.getElementById('medicosTable').innerHTML = medicos
+    ? `<table><thead><tr><th>ID</th><th>Nombre</th><th>Cédula</th><th>Especialidad</th></tr></thead><tbody>${medicos}</tbody></table>`
+    : '<div class="empty-state">Sin médicos.</div>';
+}
+
+// ============================================================
+// MODALES
+// ============================================================
+function openModal(title, content) {
+  document.getElementById('modalContainer').innerHTML = `
+    <div class="modal-overlay active" onclick="if(event.target===this)closeModal()">
+      <div class="modal">
+        <div class="modal-header">
+          <h2>${title}</h2>
+          <button class="modal-close" onclick="closeModal()">×</button>
+        </div>
+        ${content}
+      </div>
+    </div>
+  `;
+}
+function closeModal() { document.getElementById('modalContainer').innerHTML = ''; }
+
+// MODAL: NUEVA CIRUGÍA - Redirige a "Programar cirugía"
+// El modal completo vive en la sección de Programación arriba.
+let medsEstimadosBuffer = []; // buffer compartido
+
+function openModalCirugia() {
+  // Si entran desde "Cirugías → + Nueva cirugía", abrimos el modal de programación
+  // que es el flujo correcto y completo.
+  openModalProgramar();
+}
+
+function agregarMedicamentoEstimado() {
+  const sel = document.getElementById('med_select_temp');
+  const cantInput = document.getElementById('med_cantidad_temp');
+  const idMed = sel.value;
+  const cantidad = parseInt(cantInput.value, 10);
+
+  if (!idMed) { showToast('Selecciona un medicamento', 'error'); return; }
+  if (!cantidad || cantidad < 1) { showToast('La cantidad debe ser un número entero mayor a 0', 'error'); return; }
+
+  if (medsEstimadosBuffer.some(m => m.idMedicamento === idMed)) {
+    showToast('Ese medicamento ya está agregado.', 'warn');
+    return;
+  }
+
+  const opt = sel.options[sel.selectedIndex];
+  medsEstimadosBuffer.push({
+    idMedicamento: idMed,
+    nombreMedicamento: opt.dataset.nombre,
+    cantidad: cantidad,
+    unidad: opt.dataset.unidad
+  });
+
+  sel.value = '';
+  cantInput.value = '';
+  renderMedsEstimadosBuffer();
+}
+
+function quitarMedicamentoEstimado(idMed) {
+  medsEstimadosBuffer = medsEstimadosBuffer.filter(m => m.idMedicamento !== idMed);
+  renderMedsEstimadosBuffer();
+}
+
+function renderMedsEstimadosBuffer() {
+  const cont = document.getElementById('meds_lista');
+  if (!cont) return;
+  if (medsEstimadosBuffer.length === 0) {
+    cont.innerHTML = '<div style="padding:10px;background:white;border-radius:6px;text-align:center;color:var(--text-muted);font-size:12px;font-style:italic;">Aún no hay medicamentos agregados</div>';
+    return;
+  }
+  cont.innerHTML = medsEstimadosBuffer.map(m => `
+    <div style="display:grid;grid-template-columns:1fr 80px 30px;gap:8px;align-items:center;background:white;padding:8px 12px;border-radius:6px;margin-bottom:4px;border:1px solid var(--border);">
+      <div><strong style="font-size:13px;">${m.nombreMedicamento}</strong></div>
+      <div style="text-align:center;font-size:13px;"><strong>${m.cantidad}</strong> ${m.unidad}</div>
+      <button type="button" onclick="quitarMedicamentoEstimado('${m.idMedicamento}')" style="background:var(--danger-bg);color:var(--danger);border:none;border-radius:4px;width:26px;height:26px;cursor:pointer;font-weight:bold;">×</button>
+    </div>
+  `).join('');
+}
+
+// MODAL: VINCULAR RECETA FÍSICA
+function openModalReceta(folioCirugia) {
+  const cx = cache.cirugias.find(c => c.Folio_Cirugia === folioCirugia);
+  if (!cx) { showToast('Cirugía no encontrada', 'error'); return; }
+  const medicamentosOpts = catalogos.medicamentos.map(m =>
+    `<option value="${m.ID_Medicamento}">${m.Nombre_Comercial} (${m.Sustancia_Activa})</option>`
+  ).join('');
+  openModal('Vincular receta física · Cirugía ' + folioCirugia, `
+    <form onsubmit="event.preventDefault();emitirReceta('${folioCirugia}')">
+      <div class="form-grid">
+        <div class="full">
+          <p style="background:var(--bg);padding:12px;border-radius:8px;font-size:13px;">
+            <strong>Paciente:</strong> ${cx.Nombre_Paciente}<br>
+            <strong>Médico:</strong> ${cx.Nombre_Medico}<br>
+            <strong>Cirugía:</strong> ${cx.Tipo_Cirugia} — ${formatDateShort(cx.Fecha_Programada)}
+          </p>
+        </div>
+        <div class="full">
+          <label>Folio de receta física <span style="color:var(--danger);">*</span></label>
+          <input type="text" id="rec_folio" placeholder="Folio del recetario oficial COFEPRIS" required style="font-family:monospace;font-size:15px;">
+          <small style="color:var(--text-muted);font-size:11px;">Captura el folio impreso en la receta física que emitió el responsable sanitario.</small>
+        </div>
+        <div>
+          <label>Fecha de emisión</label>
+          <input type="date" id="rec_fecha" value="${todayISO()}" required>
+        </div>
+        <div>
+          <label>Medicamento</label>
+          <select id="rec_med" required><option value="">— Seleccionar —</option>${medicamentosOpts}</select>
+        </div>
+        <div>
+          <label>Cantidad solicitada</label>
+          <input type="number" id="rec_cantidad" step="0.01" min="0.01" required>
+        </div>
+        <div>
+          <label>Unidad</label>
+          <input type="text" id="rec_unidad" readonly placeholder="(automático)">
+        </div>
+        <div class="full">
+          <label>Diagnóstico</label>
+          <input type="text" id="rec_dx" placeholder="Diagnóstico que justifica el medicamento">
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-accent">Vincular receta</button>
+      </div>
+    </form>
+  `);
+  // Autocompletar unidad cuando se elige medicamento
+  document.getElementById('rec_med').addEventListener('change', e => {
+    const med = catalogos.medicamentos.find(m => m.ID_Medicamento === e.target.value);
+    document.getElementById('rec_unidad').value = med ? med.Unidad : '';
+  });
+}
+
+async function emitirReceta(folioCirugia) {
+  const cx = cache.cirugias.find(c => c.Folio_Cirugia === folioCirugia);
+  const idMed = document.getElementById('rec_med').value;
+  const med = catalogos.medicamentos.find(m => m.ID_Medicamento === idMed);
+  const medico = catalogos.medicos.find(m => m.ID_Medico === cx.ID_Medico);
+  const folioFisico = document.getElementById('rec_folio').value.trim();
+  if (!folioFisico) { showToast('El folio físico es obligatorio', 'error'); return; }
+  const data = {
+    folioReceta: folioFisico,
+    fechaEmision: document.getElementById('rec_fecha').value,
+    folioCirugia,
+    idPaciente: cx.ID_Paciente, nombrePaciente: cx.Nombre_Paciente,
+    idMedico: cx.ID_Medico, nombreMedico: cx.Nombre_Medico,
+    cedulaMedico: medico ? medico.Cedula_Profesional : '',
+    idMedicamento: idMed, nombreMedicamento: med.Nombre_Comercial,
+    cantidadSolicitada: parseFloat(document.getElementById('rec_cantidad').value),
+    unidad: med.Unidad,
+    diagnostico: document.getElementById('rec_dx').value,
+    capturadoPor: currentUser.nombre
+  };
+  const resp = await apiPost('emitirReceta', data);
+  if (resp.ok) {
+    showToast('Receta vinculada: ' + resp.folio);
+    closeModal();
+    loadCirugias();
+  } else { showToast('Error: ' + resp.error, 'error'); }
+}
+
+// MODAL: REGISTRAR CONSUMO (múltiples medicamentos)
+let consumosBuffer = []; // buffer de medicamentos del consumo en captura
+
+function openModalConsumo(folioCirugia) {
+  consumosBuffer = [];
+  let cxOpts = '<option value="">— Seleccionar cirugía —</option>';
+  const candidatas = cache.cirugias.filter(c =>
+    c.Estado === 'RECETA_VINCULADA' || c.Estado === 'PROGRAMADA' || c.Estado === 'REALIZADA'
+  );
+  candidatas.forEach(c => {
+    const sel = c.Folio_Cirugia === folioCirugia ? 'selected' : '';
+    const sufijo = c.Estado === 'REALIZADA' ? ' [+ adicional]' : '';
+    cxOpts += `<option value="${c.Folio_Cirugia}" ${sel}>${c.Folio_Cirugia} — ${c.Nombre_Paciente} (${c.Tipo_Cirugia})${sufijo}</option>`;
+  });
+  const medsOpts = catalogos.medicamentos.map(m =>
+    `<option value="${m.ID_Medicamento}" data-nombre="${m.Nombre_Comercial}" data-unidad="${m.Unidad}">${m.Nombre_Comercial} (${m.Sustancia_Activa||''})</option>`
+  ).join('');
+
+  openModal('Registrar consumo', `
+    <form onsubmit="event.preventDefault();registrarConsumo()">
+      <div class="form-grid">
+        <div class="full"><label>Cirugía</label><select id="cn_cirugia" required>${cxOpts}</select></div>
+        <div><label>Fecha</label><input type="date" id="cn_fecha" value="${todayISO()}" required></div>
+        <div><label>Hora</label><input type="time" id="cn_hora" value="${nowTime()}"></div>
+
+        <div class="full" style="background:var(--teal-light);padding:14px;border-radius:8px;border:1px solid var(--teal);">
+          <label style="color:var(--navy);">Medicamentos consumidos</label>
+
+          <div id="consumos_lista" style="margin-bottom:10px;"></div>
+
+          <div style="display:grid;grid-template-columns:1fr 100px 90px;gap:8px;align-items:end;">
+            <div>
+              <label style="font-size:10px;">Medicamento</label>
+              <select id="cn_med_temp" style="font-size:13px;padding:8px;">
+                <option value="">— Seleccionar —</option>${medsOpts}
+              </select>
+            </div>
+            <div>
+              <label style="font-size:10px;">Cantidad</label>
+              <input type="number" id="cn_cantidad_temp" min="1" step="1" placeholder="0" style="font-size:13px;padding:8px;">
+            </div>
+            <button type="button" class="btn btn-accent btn-sm" onclick="agregarMedicamentoConsumo()" style="padding:8px;">+ Agregar</button>
+          </div>
+          <small style="color:var(--text-muted);font-size:11px;display:block;margin-top:6px;">Solo enteros. Agrega todos los medicamentos consumidos en esta cirugía.</small>
+        </div>
+
+        <div class="full"><label>Administrado por</label><input type="text" id="cn_admin" placeholder="Nombre del personal" required value="${currentUser.nombre}"></div>
+        <div class="full"><label>Observaciones</label><textarea id="cn_obs"></textarea></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-accent">Registrar consumo</button>
+      </div>
+    </form>
+  `);
+
+  // Si hay cirugía preseleccionada y tiene medicamentos estimados, sugerirlos en log (opcional, no precarga)
+  renderConsumosBuffer();
+}
+
+function agregarMedicamentoConsumo() {
+  const sel = document.getElementById('cn_med_temp');
+  const cantInput = document.getElementById('cn_cantidad_temp');
+  const idMed = sel.value;
+  const cantidad = parseInt(cantInput.value, 10);
+
+  if (!idMed) { showToast('Selecciona un medicamento', 'error'); return; }
+  if (!cantidad || cantidad < 1) { showToast('Cantidad debe ser entero ≥ 1', 'error'); return; }
+
+  if (consumosBuffer.some(m => m.idMedicamento === idMed)) {
+    showToast('Ese medicamento ya está agregado. Quítalo y vuélvelo a agregar.', 'warn');
+    return;
+  }
+
+  const opt = sel.options[sel.selectedIndex];
+  consumosBuffer.push({
+    idMedicamento: idMed,
+    nombreMedicamento: opt.dataset.nombre,
+    cantidadConsumida: cantidad,
+    unidad: opt.dataset.unidad
+  });
+
+  sel.value = '';
+  cantInput.value = '';
+  renderConsumosBuffer();
+}
+
+function quitarMedicamentoConsumo(idMed) {
+  consumosBuffer = consumosBuffer.filter(m => m.idMedicamento !== idMed);
+  renderConsumosBuffer();
+}
+
+function renderConsumosBuffer() {
+  const cont = document.getElementById('consumos_lista');
+  if (!cont) return;
+  if (consumosBuffer.length === 0) {
+    cont.innerHTML = '<div style="padding:10px;background:white;border-radius:6px;text-align:center;color:var(--text-muted);font-size:12px;font-style:italic;">Aún no hay medicamentos agregados</div>';
+    return;
+  }
+  cont.innerHTML = consumosBuffer.map(m => `
+    <div style="display:grid;grid-template-columns:1fr 80px 30px;gap:8px;align-items:center;background:white;padding:8px 12px;border-radius:6px;margin-bottom:4px;border:1px solid var(--border);">
+      <div><strong style="font-size:13px;">${m.nombreMedicamento}</strong></div>
+      <div style="text-align:center;font-size:13px;"><strong>${m.cantidadConsumida}</strong> ${m.unidad}</div>
+      <button type="button" onclick="quitarMedicamentoConsumo('${m.idMedicamento}')" style="background:var(--danger-bg);color:var(--danger);border:none;border-radius:4px;width:26px;height:26px;cursor:pointer;font-weight:bold;">×</button>
+    </div>
+  `).join('');
+}
+
+async function registrarConsumo() {
+  const folioCx = document.getElementById('cn_cirugia').value;
+  const cx = cache.cirugias.find(c => c.Folio_Cirugia === folioCx);
+  if (!cx) { showToast('Selecciona una cirugía', 'error'); return; }
+  if (consumosBuffer.length === 0) { showToast('Agrega al menos un medicamento al consumo', 'error'); return; }
+
+  const data = {
+    fechaConsumo: document.getElementById('cn_fecha').value,
+    horaConsumo: document.getElementById('cn_hora').value,
+    folioCirugia: folioCx,
+    folioReceta: cx.Folio_Receta_Asociada || '',
+    idPaciente: cx.ID_Paciente, nombrePaciente: cx.Nombre_Paciente,
+    idMedico: cx.ID_Medico, nombreMedico: cx.Nombre_Medico,
+    administradoPor: document.getElementById('cn_admin').value,
+    observaciones: document.getElementById('cn_obs').value,
+    capturadoPor: currentUser.nombre,
+    medicamentos: consumosBuffer.slice() // array completo
+  };
+  const resp = await apiPost('registrarConsumo', data);
+  if (resp.ok) {
+    showToast(`✓ ${resp.cantidad} consumo(s) registrado(s)`);
+    consumosBuffer = [];
+    closeModal();
+    loadCirugias();
+  } else { showToast('Error: ' + resp.error, 'error'); }
+}
+
+// ============================================================
+// VER CONSUMOS DE UNA CIRUGÍA + CANCELAR (solo ADMIN)
+// ============================================================
+async function verConsumosCirugia(folioCirugia) {
+  openModal('Consumos de cirugía ' + folioCirugia, `
+    <div id="consumosCirugia_content"><div class="loading"><div class="spinner"></div> Cargando...</div></div>
+    <div class="form-actions" style="justify-content:space-between;">
+      ${currentUser.rol !== 'CONSULTA' ? `<button class="btn btn-accent btn-sm" onclick="closeModal();openModalConsumo('${folioCirugia}')">+ Agregar consumo adicional</button>` : '<div></div>'}
+      <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+    </div>
+  `);
+
+  const resp = await apiGet('getConsumosPorCirugia', { folioCirugia });
+  const cont = document.getElementById('consumosCirugia_content');
+  if (!resp.ok) { cont.innerHTML = '<div class="empty-state">Error: ' + resp.error + '</div>'; return; }
+
+  if (!resp.data.length) {
+    cont.innerHTML = '<div class="empty-state"><div class="icon">◉</div>Esta cirugía aún no tiene consumos registrados</div>';
+    return;
+  }
+
+  const isAdmin = currentUser.rol === 'ADMIN';
+  cont.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Fecha/Hora</th>
+          <th>Medicamento</th>
+          <th>Cantidad</th>
+          <th>Administrado</th>
+          <th>Estado</th>
+          ${isAdmin ? '<th>Acciones</th>' : ''}
+        </tr>
+      </thead>
+      <tbody>
+        ${resp.data.map(c => {
+          const cancelado = c.Estado === 'CANCELADO';
+          return `
+          <tr style="${cancelado ? 'opacity:0.5;text-decoration:line-through;' : ''}">
+            <td>${formatDateShort(c.Fecha_Consumo)}<br><small>${c.Hora_Consumo||''}</small></td>
+            <td><strong>${c.Nombre_Medicamento}</strong></td>
+            <td><strong>${c.Cantidad_Consumida}</strong> ${c.Unidad||''}</td>
+            <td>${c.Administrado_Por||'—'}</td>
+            <td>
+              ${cancelado
+                ? `<span class="badge badge-cancelada">CANCELADO</span><br><small style="color:var(--text-muted);font-size:10px;text-decoration:none;display:inline-block;margin-top:4px;">${c.Motivo_Cancelacion||''}</small>`
+                : '<span class="badge badge-realizada">ACTIVO</span>'}
+            </td>
+            ${isAdmin ? `<td>${cancelado ? '—' : `<button class="btn btn-sm" style="background:var(--danger);color:white;" onclick="cancelarConsumo('${c.ID_Consumo}','${c.Nombre_Medicamento}',${c.Cantidad_Consumida})">Cancelar</button>`}</td>` : ''}
+          </tr>
+        `;}).join('')}
+      </tbody>
+    </table>
+    <p style="font-size:11px;color:var(--text-muted);margin-top:12px;font-style:italic;">
+      ⚠ Los consumos cancelados no se eliminan: quedan visibles en el libro COFEPRIS marcados como CANCELADO con motivo, para preservar el audit trail.
+    </p>
+  `;
+}
+
+async function cancelarConsumo(idConsumo, nombreMed, cantidad) {
+  const motivo = prompt(
+    `Vas a cancelar el consumo de ${nombreMed} (cantidad: ${cantidad}).\n\n` +
+    `Esta acción:\n` +
+    `• Marcará el asiento del libro COFEPRIS como CANCELADO (no se borra)\n` +
+    `• Revertirá el inventario\n` +
+    `• Quedará registrado quién y cuándo canceló\n\n` +
+    `Escribe el MOTIVO de la cancelación:`
+  );
+  if (!motivo || !motivo.trim()) {
+    showToast('Cancelación abortada: el motivo es obligatorio', 'warn');
+    return;
+  }
+  if (motivo.trim().length < 10) {
+    showToast('El motivo debe tener al menos 10 caracteres', 'error');
+    return;
+  }
+
+  const resp = await apiPost('cancelarConsumo', {
+    idConsumo,
+    motivo: motivo.trim(),
+    canceladoPor: currentUser.nombre
+  });
+  if (resp.ok) {
+    showToast('Consumo cancelado. Saldo restaurado: ' + resp.saldoNuevo);
+    // Refrescar la vista actual
+    const cx = document.querySelector('#consumosCirugia_content');
+    if (cx) {
+      // Re-abrir modal con datos actualizados
+      const folio = cache.cirugias.find(c => Array.isArray(c) || true) ? null : null;
+      // Simplemente cerrar y reabrir
+      closeModal();
+      // Buscar en cache la cirugía a la que pertenecía
+      const consumoData = cache.consumos.find(c => c.ID_Consumo === idConsumo);
+      if (consumoData) {
+        verConsumosCirugia(consumoData.Folio_Cirugia);
+      } else {
+        loadCirugias();
+      }
+    }
+  } else {
+    showToast('Error: ' + resp.error, 'error');
+  }
+}
+
+// MODAL: ENTRADA INVENTARIO
+function openModalEntrada() {
+  const medOpts = catalogos.medicamentos.map(m => `<option value="${m.ID_Medicamento}">${m.Nombre_Comercial}</option>`).join('');
+  openModal('Nueva entrada de inventario', `
+    <form onsubmit="event.preventDefault();registrarEntrada()">
+      <div class="form-grid">
+        <div><label>Fecha</label><input type="date" id="en_fecha" value="${todayISO()}" required></div>
+        <div><label>Medicamento</label><select id="en_med" required><option value="">— Seleccionar —</option>${medOpts}</select></div>
+        <div><label>Cantidad recibida</label><input type="number" id="en_cantidad" step="0.01" min="0.01" required></div>
+        <div><label>Lote</label><input type="text" id="en_lote"></div>
+        <div><label>Fecha de caducidad</label><input type="date" id="en_caducidad"></div>
+        <div><label>Proveedor</label><input type="text" id="en_proveedor"></div>
+        <div class="full"><label>Referencia (orden de compra / folio receta resguardo)</label><input type="text" id="en_ref"></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Registrar entrada</button>
+      </div>
+    </form>
+  `);
+}
+
+async function registrarEntrada() {
+  const idMed = document.getElementById('en_med').value;
+  const med = catalogos.medicamentos.find(m => m.ID_Medicamento === idMed);
+  const data = {
+    fecha: document.getElementById('en_fecha').value,
+    idMedicamento: idMed, nombreMedicamento: med.Nombre_Comercial,
+    cantidad: parseFloat(document.getElementById('en_cantidad').value),
+    unidad: med.Unidad,
+    lote: document.getElementById('en_lote').value,
+    fechaCaducidad: document.getElementById('en_caducidad').value,
+    proveedor: document.getElementById('en_proveedor').value,
+    referencia: document.getElementById('en_ref').value,
+    capturadoPor: currentUser.nombre
+  };
+  const resp = await apiPost('registrarEntrada', data);
+  if (resp.ok) { showToast('Entrada registrada. Saldo nuevo: ' + resp.saldoNuevo); closeModal(); }
+  else { showToast('Error: ' + resp.error, 'error'); }
+}
+
+// MODAL: ALTA MEDICAMENTO
+function openModalMedicamento() {
+  openModal('Nuevo medicamento controlado', `
+    <form onsubmit="event.preventDefault();altaMedicamento()">
+      <div class="form-grid">
+        <div><label>Nombre comercial</label><input type="text" id="m_nombre" required></div>
+        <div><label>Sustancia activa</label><input type="text" id="m_sustancia" required></div>
+        <div><label>Presentación</label><input type="text" id="m_pres"></div>
+        <div><label>Concentración</label><input type="text" id="m_conc"></div>
+        <div>
+          <label>Fracción LGS</label>
+          <select id="m_fraccion" required>
+            <option value="I">I — Estupefacientes</option>
+            <option value="II">II — Psicotrópicos especial</option>
+            <option value="III">III — Psicotrópicos</option>
+            <option value="IV">IV — Otros</option>
+            <option value="V">V — Vacunas</option>
+          </select>
+        </div>
+        <div>
+          <label>Unidad</label>
+          <select id="m_unidad" required>
+            <option value="ampolla">Ampolla</option>
+            <option value="vial">Vial</option>
+            <option value="tableta">Tableta</option>
+            <option value="caja">Caja</option>
+            <option value="ml">ml</option>
+            <option value="mg">mg</option>
+          </select>
+        </div>
+        <div><label>Stock mínimo</label><input type="number" id="m_min" value="5" min="0"></div>
+        <div class="full"><label>Notas</label><input type="text" id="m_notas"></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-accent">Dar de alta</button>
+      </div>
+    </form>
+  `);
+}
+
+async function altaMedicamento() {
+  const data = {
+    nombreComercial: document.getElementById('m_nombre').value,
+    sustanciaActiva: document.getElementById('m_sustancia').value,
+    presentacion: document.getElementById('m_pres').value,
+    concentracion: document.getElementById('m_conc').value,
+    fraccion: document.getElementById('m_fraccion').value,
+    unidad: document.getElementById('m_unidad').value,
+    stockMinimo: parseInt(document.getElementById('m_min').value, 10),
+    notas: document.getElementById('m_notas').value
+  };
+  const resp = await apiPost('altaMedicamento', data);
+  if (resp.ok) {
+    showToast('Medicamento dado de alta: ' + resp.idMedicamento);
+    closeModal();
+    await loadCatalogos();
+    loadCatalogosPage();
+  } else { showToast('Error: ' + resp.error, 'error'); }
+}
+
+// MODAL: ALTA MÉDICO
+function openModalMedico() {
+  openModal('Nuevo médico prescriptor', `
+    <form onsubmit="event.preventDefault();altaMedico()">
+      <div class="form-grid">
+        <div class="full"><label>Nombre completo</label><input type="text" id="dr_nombre" required></div>
+        <div><label>Cédula profesional</label><input type="text" id="dr_cedula" required></div>
+        <div><label>Especialidad</label><input type="text" id="dr_esp" required></div>
+        <div><label>Cédula de especialidad</label><input type="text" id="dr_cedesp"></div>
+        <div><label>Teléfono</label><input type="text" id="dr_tel"></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-accent">Dar de alta</button>
+      </div>
+    </form>
+  `);
+}
+
+async function altaMedico() {
+  const data = {
+    nombreCompleto: document.getElementById('dr_nombre').value,
+    cedulaProfesional: document.getElementById('dr_cedula').value,
+    especialidad: document.getElementById('dr_esp').value,
+    cedulaEspecialidad: document.getElementById('dr_cedesp').value,
+    telefono: document.getElementById('dr_tel').value
+  };
+  const resp = await apiPost('altaMedico', data);
+  if (resp.ok) {
+    showToast('Médico dado de alta: ' + resp.idMedico);
+    closeModal();
+    await loadCatalogos();
+    loadCatalogosPage();
+  } else { showToast('Error: ' + resp.error, 'error'); }
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+function formatDateShort(d) {
+  if (!d) return '—';
+  if (d instanceof Date) return d.toLocaleDateString('es-MX', { day:'2-digit', month:'2-digit', year:'numeric' });
+  const s = String(d).substring(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const [y, m, dd] = s.split('-');
+    return `${dd}/${m}/${y}`;
+  }
+  return s;
+}
+
+function formatDateLong(d) {
+  if (!d) return '';
+  const s = String(d).substring(0, 10);
+  const date = new Date(s + 'T00:00:00');
+  const today = new Date(); today.setHours(0,0,0,0);
+  const tomorrow = new Date(today.getTime() + 86400000);
+  if (date.getTime() === today.getTime()) return 'HOY · ' + date.toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long' });
+  if (date.getTime() === tomorrow.getTime()) return 'MAÑANA · ' + date.toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long' });
+  return date.toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long' }).toUpperCase();
+}
+
+function formatEstado(e) {
+  return (e || '').replace('_', ' ');
+}
+
+function badgeClass(e) {
+  return (e || '').toLowerCase().replace('_', '-');
+}
+
+function todayISO() { return new Date().toISOString().split('T')[0]; }
+function nowTime() {
+  const d = new Date();
+  return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+
+// ============================================================
+// HABITACIONES
+// ============================================================
+let cacheHabitaciones = null;
+
+async function loadHabitaciones() {
+  const cont = document.getElementById('hab-tablero');
+  cont.innerHTML = '<div class="loading"><div class="spinner"></div> Cargando habitaciones...</div>';
+
+  const resp = await apiGet('getTableroHabitaciones');
+  if (!resp.ok) {
+    cont.innerHTML = '<div class="empty-state">Error: ' + (resp.error||'') + '</div>';
+    return;
+  }
+  cacheHabitaciones = resp;
+
+  // Resumen de ocupación arriba
+  renderOcupacionSummary(resp.ocupacion);
+
+  // Render del tablero por tipo
+  const tiposLabels = {
+    PRIVADA: { label: 'Habitaciones Privadas', color: '#5B9BD5' },
+    SALA_GENERAL: { label: 'Sala General', color: '#D4A017' },
+    URGENCIAS: { label: 'Urgencias', color: '#C4729A' }
+  };
+
+  let html = '';
+  ['PRIVADA','SALA_GENERAL','URGENCIAS'].forEach(tipo => {
+    const habs = resp.porTipo[tipo] || [];
+    if (habs.length === 0) return;
+    html += `
+      <div class="hab-section">
+        <div class="hab-section-title">
+          <span class="badge-tipo" style="background:${tiposLabels[tipo].color};"></span>
+          ${tiposLabels[tipo].label}
+          <small style="color:var(--text-muted);font-weight:normal;font-family:'Calibri',sans-serif;font-size:12px;margin-left:auto;text-transform:none;letter-spacing:0;">
+            ${habs.filter(h=>h.ocupada).length} de ${habs.length} ocupadas
+          </small>
+        </div>
+        <div class="hab-grid">
+          ${habs.map(h => renderHabCard(h, tipo)).join('')}
+        </div>
+      </div>
+    `;
+  });
+  cont.innerHTML = html;
+}
+
+function renderHabCard(h, tipo) {
+  const tipoClass = tipo.toLowerCase();
+  const tipoLabel = tipo === 'PRIVADA' ? 'Habitación' : tipo === 'SALA_GENERAL' ? 'Sala general' : 'Cama urgencias';
+
+  if (!h.ocupada) {
+    return `
+      <div class="hab-card ${tipoClass} disponible" onclick="openModalIngresar('${h.idHabitacion}')">
+        <div class="hab-card-numero">${tipoLabel} ${h.numero}</div>
+        <div class="hab-card-empty">
+          <div style="font-size:32px;opacity:0.3;">＋</div>
+          DISPONIBLE
+        </div>
+      </div>
+    `;
+  }
+
+  const dias = h.hospitalizacion.diasEstancia || 0;
+  const diasClass = dias > 7 ? 'alta' : dias > 3 ? 'alerta' : '';
+  const tieneNota = h.hospitalizacion.observaciones && h.hospitalizacion.observaciones.trim();
+
+  return `
+    <div class="hab-card ${tipoClass} ocupada" onclick="verDetalleHab('${h.idHabitacion}')">
+      <div class="hab-card-dias ${diasClass}">${dias}d</div>
+      <div class="hab-card-numero">${tipoLabel} ${h.numero}</div>
+      <div class="hab-card-paciente">
+        ${h.hospitalizacion.nombrePaciente}
+        ${h.hospitalizacion.edadPaciente ? `<small>(${h.hospitalizacion.edadPaciente})</small>` : ''}
+      </div>
+      <div class="hab-card-meta">
+        ${h.hospitalizacion.diagnostico ? `${h.hospitalizacion.diagnostico}<br>` : ''}
+        ${h.hospitalizacion.nombreDoctor ? `<strong>${h.hospitalizacion.nombreDoctor}</strong><br>` : ''}
+        Ingr: ${formatDateShort(h.hospitalizacion.fechaIngreso)} ${h.hospitalizacion.horaIngreso || ''}
+      </div>
+      ${tieneNota ? `<div class="hab-nota-especial">⚠ ${h.hospitalizacion.observaciones.substring(0, 30)}${h.hospitalizacion.observaciones.length > 30 ? '...' : ''}</div>` : ''}
+    </div>
+  `;
+}
+
+function renderOcupacionSummary(ocup) {
+  const cont = document.getElementById('hab-ocupacion-summary');
+  if (!ocup) { cont.innerHTML = ''; return; }
+
+  function dotsHTML(ocupadas, total) {
+    let html = '<div class="hab-ocupacion-dots">';
+    for (let i = 0; i < total; i++) {
+      const isOcupada = i < ocupadas;
+      const isAlerta = isOcupada && (ocupadas / total) >= 0.8;
+      html += `<div class="hab-ocupacion-dot ${isOcupada ? (isAlerta ? 'alerta' : 'ocupada') : ''}"></div>`;
+    }
+    html += '</div>';
+    return html;
+  }
+
+  const p = ocup.porTipo.PRIVADA;
+  const s = ocup.porTipo.SALA_GENERAL;
+  const u = ocup.porTipo.URGENCIAS;
+
+  cont.innerHTML = `
+    <div class="hab-ocupacion-bar">
+      <div class="hab-ocupacion-item">
+        <strong style="color:var(--navy);">Ocupación total:</strong>
+        <span style="font-family:'Georgia',serif;font-size:18px;font-weight:600;color:var(--navy);">
+          ${ocup.total.ocupadas} / ${ocup.total.total}
+        </span>
+      </div>
+      <div style="border-left:1px solid var(--border);"></div>
+      <div class="hab-ocupacion-item">
+        <span style="color:#5B9BD5;">●</span> Privadas: <strong>${p.ocupadas}/${p.total}</strong>
+        ${dotsHTML(p.ocupadas, p.total)}
+      </div>
+      <div class="hab-ocupacion-item">
+        <span style="color:#D4A017;">●</span> Sala general: <strong>${s.ocupadas}/${s.total}</strong>
+        ${dotsHTML(s.ocupadas, s.total)}
+      </div>
+      <div class="hab-ocupacion-item">
+        <span style="color:#C4729A;">●</span> Urgencias: <strong>${u.ocupadas}/${u.total}</strong>
+        ${dotsHTML(u.ocupadas, u.total)}
+      </div>
+    </div>
+    ${ocup.alertas.length > 0 ? `
+      <div class="alerts-banner" style="margin-top:0;margin-bottom:16px;">
+        ⚠ <strong>Alta ocupación:</strong> ${ocup.alertas.map(a => {
+          const lbl = a.tipo === 'PRIVADA' ? 'Privadas' : a.tipo === 'SALA_GENERAL' ? 'Sala general' : 'Urgencias';
+          return `${lbl} al ${a.porcentaje}% (${a.ocupadas}/${a.total})`;
+        }).join(' · ')}
+      </div>
+    ` : ''}
+  `;
+}
+
+// MODAL: Detalle / acciones de una habitación ocupada
+function verDetalleHab(idHabitacion) {
+  if (!cacheHabitaciones) return;
+  const h = cacheHabitaciones.habitaciones.find(x => x.idHabitacion === idHabitacion);
+  if (!h || !h.ocupada) { showToast('Habitación no encontrada', 'error'); return; }
+  const hosp = h.hospitalizacion;
+  const tipoLabel = h.tipo === 'PRIVADA' ? 'Habitación' : h.tipo === 'SALA_GENERAL' ? 'Sala general' : 'Cama urgencias';
+  const isCapturista = currentUser.rol !== 'CONSULTA';
+
+  openModal(`${tipoLabel} ${h.numero}`, `
+    <div style="font-size:13px;line-height:1.7;">
+      <div style="background:var(--bg);padding:16px;border-radius:8px;margin-bottom:16px;">
+        <div style="font-family:'Georgia',serif;font-size:18px;font-weight:600;color:var(--navy);margin-bottom:4px;">
+          ${hosp.nombrePaciente}${hosp.edadPaciente ? ` <span style="font-weight:normal;color:var(--text-muted);font-size:14px;">(${hosp.edadPaciente} años)</span>` : ''}
+        </div>
+        ${hosp.telefono ? `<div style="font-size:12px;color:var(--text-muted);">📞 ${hosp.telefono}</div>` : ''}
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px;">
+        <div><strong>Diagnóstico:</strong><br>${hosp.diagnostico || '—'}</div>
+        <div><strong>Doctor a cargo:</strong><br>${hosp.nombreDoctor || '—'}</div>
+        <div><strong>Fecha ingreso:</strong><br>${formatDateShort(hosp.fechaIngreso)} ${hosp.horaIngreso || ''}</div>
+        <div><strong>Días de estancia:</strong><br><span style="font-family:'Georgia',serif;font-size:18px;color:var(--navy);">${hosp.diasEstancia} días</span></div>
+      </div>
+
+      ${hosp.folioCirugiaRelacionada ? `
+        <div style="background:var(--teal-light);padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:12px;">
+          ⚕ <strong>Vinculado a cirugía:</strong> ${hosp.folioCirugiaRelacionada}
+        </div>
+      ` : ''}
+
+      ${hosp.observaciones ? `
+        <div style="margin-bottom:14px;">
+          <strong>Observaciones / notas:</strong><br>
+          <div style="background:var(--warn-bg);padding:10px;border-radius:6px;color:#78350F;margin-top:4px;">
+            ${hosp.observaciones}
+          </div>
+        </div>
+      ` : ''}
+    </div>
+
+    <div class="form-actions">
+      ${isCapturista ? `
+        <button class="btn btn-secondary btn-sm" onclick="openModalMover('${hosp.id}','${hosp.nombrePaciente}','${h.idHabitacion}')">↔ Mover</button>
+        <button class="btn btn-accent btn-sm" onclick="openModalEgresar('${hosp.id}','${hosp.nombrePaciente}')">↗ Egresar</button>
+      ` : ''}
+      <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+    </div>
+  `);
+}
+
+// MODAL: Ingresar paciente
+async function openModalIngresar(idHabitacionPreseleccionada) {
+  // Cargar cirugías recientes que aún no tienen hospitalización
+  const respCx = await apiGet('getCirugiasParaHospitalizar');
+  const cirugiasRecientes = respCx.ok ? respCx.data : [];
+
+  const habs = (cacheHabitaciones && cacheHabitaciones.habitaciones) || [];
+  const habsDisponibles = habs.filter(h => !h.ocupada);
+  const habsOpts = habsDisponibles.map(h => {
+    const tipoLbl = h.tipo === 'PRIVADA' ? 'Privada' : h.tipo === 'SALA_GENERAL' ? 'Sala Gral.' : 'Urgencias';
+    const sel = h.idHabitacion === idHabitacionPreseleccionada ? 'selected' : '';
+    return `<option value="${h.idHabitacion}" data-tipo="${h.tipo}" ${sel}>${tipoLbl} ${h.numero}</option>`;
+  }).join('');
+
+  const medicosOpts = catalogos.medicos.map(m => `<option value="${m.ID_Medico}">${m.Nombre_Completo}</option>`).join('');
+
+  let cirugiasHTML = '';
+  if (cirugiasRecientes.length > 0) {
+    cirugiasHTML = `
+      <div class="full" style="background:var(--teal-light);padding:14px;border-radius:8px;border:1px solid var(--teal);margin-bottom:16px;">
+        <label style="color:var(--navy);">Cirugías recientes sin hospitalizar (últimas 48h)</label>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;">
+          ${cirugiasRecientes.map(c => `
+            <button type="button" onclick="precargarDesdeCirugia('${c.folioCirugia}')" style="text-align:left;background:white;border:1px solid var(--border);border-radius:6px;padding:8px 12px;cursor:pointer;font-family:inherit;">
+              <strong style="color:var(--navy);">${c.nombrePaciente}</strong> ${c.edadPaciente ? `<span style="color:var(--text-muted);font-size:12px;">(${c.edadPaciente} años)</span>` : ''}<br>
+              <small style="color:var(--text-muted);">${c.tipoCirugia} · ${c.nombreMedico} · ${formatDateShort(c.fecha)}</small>
+            </button>
+          `).join('')}
+        </div>
+        <small style="color:var(--text-muted);font-size:11px;display:block;margin-top:8px;">Click para precargar los datos del paciente desde la cirugía.</small>
+      </div>
+    `;
+  }
+
+  openModal('Ingresar paciente a habitación', `
+    <form onsubmit="event.preventDefault();ingresarPaciente()">
+      ${cirugiasHTML}
+      <div class="form-grid">
+        <div><label>Habitación</label><select id="ing_habitacion" required>${habsOpts}</select></div>
+        <div><label>Fecha ingreso</label><input type="date" id="ing_fecha" value="${todayISO()}" required></div>
+        <div class="full"><label>Nombre del paciente</label><input type="text" id="ing_nombre" required></div>
+        <div><label>Edad</label><input type="number" id="ing_edad" min="0" max="120"></div>
+        <div><label>Teléfono</label><input type="text" id="ing_telefono"></div>
+        <div class="full"><label>Diagnóstico</label><input type="text" id="ing_diagnostico" required></div>
+        <div class="full"><label>Doctor a cargo</label><select id="ing_doctor" required><option value="">—</option>${medicosOpts}</select></div>
+        <input type="hidden" id="ing_folio_cirugia" value="">
+        <div class="full"><label>Observaciones / notas especiales</label><textarea id="ing_obs" placeholder="Ej: cambiar a cuarto privado mañana"></textarea></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Ingresar paciente</button>
+      </div>
+    </form>
+  `);
+
+  // Si se preseleccionó una habitación, sugerir tipo de paciente
+  if (idHabitacionPreseleccionada) {
+    const habSel = habsDisponibles.find(h => h.idHabitacion === idHabitacionPreseleccionada);
+    if (habSel && habSel.tipo === 'URGENCIAS') {
+      // Para urgencias, no precargamos cirugía
+    }
+  }
+
+  // Cache de cirugías recientes para precarga
+  window._cirugiasRecientesCache = cirugiasRecientes;
+}
+
+function precargarDesdeCirugia(folioCirugia) {
+  const c = (window._cirugiasRecientesCache || []).find(x => x.folioCirugia === folioCirugia);
+  if (!c) return;
+  document.getElementById('ing_nombre').value = c.nombrePaciente || '';
+  document.getElementById('ing_edad').value = c.edadPaciente || '';
+  document.getElementById('ing_diagnostico').value = c.tipoCirugia || '';
+  document.getElementById('ing_folio_cirugia').value = c.folioCirugia;
+  // Buscar el doctor en el catálogo
+  const med = catalogos.medicos.find(m => m.Nombre_Completo === c.nombreMedico);
+  if (med) document.getElementById('ing_doctor').value = med.ID_Medico;
+
+  // Sugerir habitación según tipo: si la cirugía fue programada, suele ir a privada o sala general
+  const habs = (cacheHabitaciones && cacheHabitaciones.habitaciones) || [];
+  const habsDisp = habs.filter(h => !h.ocupada);
+  const sugerencia = habsDisp.find(h => h.tipo === 'PRIVADA') || habsDisp.find(h => h.tipo === 'SALA_GENERAL') || habsDisp[0];
+  if (sugerencia) document.getElementById('ing_habitacion').value = sugerencia.idHabitacion;
+
+  showToast('Datos precargados desde ' + folioCirugia);
+}
+
+async function ingresarPaciente() {
+  const idHab = document.getElementById('ing_habitacion').value;
+  const idDoctor = document.getElementById('ing_doctor').value;
+  const med = catalogos.medicos.find(m => m.ID_Medico === idDoctor);
+  const nombrePac = document.getElementById('ing_nombre').value.trim();
+
+  // Buscar paciente existente o crearlo
+  let paciente = catalogos.pacientes.find(p => (p.Nombre_Completo||'').toLowerCase() === nombrePac.toLowerCase());
+
+  const data = {
+    idHabitacion: idHab,
+    idPaciente: paciente ? paciente.ID_Paciente : '',
+    nombrePaciente: nombrePac,
+    edadPaciente: parseInt(document.getElementById('ing_edad').value, 10) || '',
+    telefono: document.getElementById('ing_telefono').value,
+    diagnostico: document.getElementById('ing_diagnostico').value,
+    idDoctor: idDoctor,
+    nombreDoctor: med ? med.Nombre_Completo : '',
+    fechaIngreso: document.getElementById('ing_fecha').value,
+    folioCirugiaRelacionada: document.getElementById('ing_folio_cirugia').value,
+    observaciones: document.getElementById('ing_obs').value,
+    capturadoPor: currentUser.nombre
+  };
+
+  const resp = await apiPost('ingresarPaciente', data);
+  if (resp.ok) {
+    showToast(`Paciente ingresado a ${resp.habitacion}`);
+    closeModal();
+    await loadCatalogos();
+    loadHabitaciones();
+  } else {
+    showToast('Error: ' + resp.error, 'error');
+  }
+}
+
+// MODAL: Egresar
+function openModalEgresar(idHosp, nombrePaciente) {
+  openModal('Egresar paciente', `
+    <form onsubmit="event.preventDefault();confirmarEgreso('${idHosp}')">
+      <div style="background:var(--bg);padding:14px;border-radius:8px;margin-bottom:16px;">
+        <strong>Paciente:</strong> ${nombrePaciente}
+      </div>
+      <div class="form-grid">
+        <div><label>Fecha egreso</label><input type="date" id="eg_fecha" value="${todayISO()}" required></div>
+        <div><label>Hora egreso</label><input type="time" id="eg_hora" value="${nowTime()}"></div>
+        <div class="full"><label>Motivo / observaciones de egreso</label><textarea id="eg_motivo" placeholder="Alta médica, traslado, etc."></textarea></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-accent">Confirmar egreso</button>
+      </div>
+    </form>
+  `);
+}
+
+async function confirmarEgreso(idHosp) {
+  const data = {
+    idHospitalizacion: idHosp,
+    fechaEgreso: document.getElementById('eg_fecha').value,
+    horaEgreso: document.getElementById('eg_hora').value,
+    motivoEgreso: document.getElementById('eg_motivo').value,
+    capturadoPor: currentUser.nombre
+  };
+  const resp = await apiPost('egresarPaciente', data);
+  if (resp.ok) {
+    showToast('Paciente egresado');
+    closeModal();
+    loadHabitaciones();
+  } else {
+    showToast('Error: ' + resp.error, 'error');
+  }
+}
+
+// MODAL: Mover paciente
+function openModalMover(idHosp, nombrePaciente, idHabActual) {
+  const habs = (cacheHabitaciones && cacheHabitaciones.habitaciones) || [];
+  const habsDisponibles = habs.filter(h => !h.ocupada && h.idHabitacion !== idHabActual);
+  if (habsDisponibles.length === 0) {
+    showToast('No hay habitaciones disponibles para mover', 'warn');
+    return;
+  }
+  const habsOpts = habsDisponibles.map(h => {
+    const tipoLbl = h.tipo === 'PRIVADA' ? 'Privada' : h.tipo === 'SALA_GENERAL' ? 'Sala Gral.' : 'Urgencias';
+    return `<option value="${h.idHabitacion}">${tipoLbl} ${h.numero}</option>`;
+  }).join('');
+  openModal('Mover paciente', `
+    <form onsubmit="event.preventDefault();confirmarMover('${idHosp}')">
+      <div style="background:var(--bg);padding:14px;border-radius:8px;margin-bottom:16px;">
+        <strong>Paciente:</strong> ${nombrePaciente}
+      </div>
+      <div class="form-grid">
+        <div class="full"><label>Nueva habitación</label><select id="mv_habitacion" required><option value="">—</option>${habsOpts}</select></div>
+        <div class="full"><label>Motivo del cambio (obligatorio)</label><textarea id="mv_motivo" placeholder="Ej: Solicitud familiar, mejora de comodidad, alta de UCI" required minlength="5"></textarea></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Mover paciente</button>
+      </div>
+    </form>
+  `);
+}
+
+async function confirmarMover(idHosp) {
+  const motivo = document.getElementById('mv_motivo').value.trim();
+  if (motivo.length < 5) {
+    showToast('Motivo muy corto (mínimo 5 caracteres)', 'error');
+    return;
+  }
+  const data = {
+    idHospitalizacion: idHosp,
+    idHabitacionNueva: document.getElementById('mv_habitacion').value,
+    motivo,
+    capturadoPor: currentUser.nombre
+  };
+  const resp = await apiPost('moverPaciente', data);
+  if (resp.ok) {
+    showToast(`Movido de ${resp.habitacionAnterior} a ${resp.habitacionNueva}`);
+    closeModal();
+    loadHabitaciones();
+  } else {
+    showToast('Error: ' + resp.error, 'error');
+  }
+}
+
+function showToast(msg, type = 'success') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast ' + (type === 'error' ? 'error' : type === 'warn' ? 'warn' : '');
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 3500);
+}
+</script>
+</body>
+</html>
