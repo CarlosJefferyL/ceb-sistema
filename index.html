@@ -200,6 +200,140 @@ h1, h2, h3, h4 {
 }
 @media (max-width: 1100px) { .pendientes-grid { grid-template-columns: 1fr; } }
 
+/* ============================================================
+   RESPONSIVE MÓVIL
+   ============================================================ */
+
+/* Botón hamburguesa - solo visible en móvil */
+.mobile-menu-btn {
+  display: none;
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 1500;
+  background: var(--navy);
+  color: white;
+  border: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  font-size: 20px;
+  line-height: 1;
+}
+.mobile-menu-btn:hover { background: var(--navy-dark); }
+
+/* Backdrop oscuro cuando sidebar está abierto en móvil */
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 999;
+}
+
+/* Tablet (hasta 1024px) */
+@media (max-width: 1024px) {
+  .main { padding: 24px 24px 24px 64px; }
+  .form-grid { grid-template-columns: 1fr; }
+  .toolbar-row { flex-wrap: wrap; gap: 8px; }
+  .page-header { flex-direction: column; align-items: stretch; gap: 12px; }
+  .page-header > div:last-child { display: flex; flex-wrap: wrap; gap: 8px; }
+}
+
+/* Móvil (hasta 768px) */
+@media (max-width: 768px) {
+  /* Sidebar pasa a ser un drawer */
+  .app { grid-template-columns: 1fr; }
+  .sidebar {
+    position: fixed;
+    top: 0; left: 0;
+    width: 280px;
+    z-index: 1000;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    box-shadow: 4px 0 24px rgba(0,0,0,0.3);
+  }
+  .sidebar.open { transform: translateX(0); }
+  .sidebar-backdrop.open { display: block; }
+  .mobile-menu-btn { display: flex; align-items: center; justify-content: center; }
+
+  /* Main con padding para no taparse con el botón */
+  .main { padding: 64px 16px 24px 16px; }
+
+  /* Tipografía más pequeña */
+  .page-header h1 { font-size: 20px; }
+  .page-header .subtitle { font-size: 12px; }
+
+  /* Cards y dashboards */
+  .kpis-grid { grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
+  .kpi-card { padding: 14px 12px !important; }
+  .kpi-card .kpi-value { font-size: 24px !important; }
+  .kpi-card .kpi-label { font-size: 10px !important; }
+
+  /* Tablas con scroll horizontal */
+  .card { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { min-width: 600px; }
+  table th, table td { padding: 8px 10px !important; font-size: 12px !important; white-space: nowrap; }
+
+  /* Modales fullscreen */
+  .modal-backdrop { padding: 0; }
+  .modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 100vh !important;
+    height: 100vh;
+    border-radius: 0 !important;
+    overflow-y: auto;
+  }
+  .modal-content { padding: 16px !important; }
+  .modal-header { padding: 12px 16px !important; }
+  .modal-header h2 { font-size: 16px !important; }
+
+  /* Form actions: botones full-width apilados */
+  .form-actions {
+    flex-direction: column-reverse !important;
+    align-items: stretch !important;
+  }
+  .form-actions button { width: 100%; }
+
+  /* Filtros compactos */
+  .toolbar { padding: 10px !important; }
+  .toolbar input, .toolbar select { font-size: 13px !important; padding: 8px !important; }
+
+  /* Cards de habitaciones / quirófanos: grid 1 columna en móvil */
+  .habs-grid, .qx-grid { grid-template-columns: 1fr !important; }
+  .hab-card, .qx-card { min-height: auto !important; }
+
+  /* Programación - tablero de quirófanos */
+  .quirofano-block { margin-bottom: 16px !important; }
+
+  /* Calendario mensual */
+  .calendar-day { min-height: 60px !important; padding: 4px !important; font-size: 11px !important; }
+  .calendar-event { font-size: 9px !important; padding: 1px 3px !important; }
+
+  /* Login */
+  .login-card { padding: 32px 20px !important; }
+  .login-logo { max-width: 220px !important; }
+  .login-card h1 { font-size: 18px !important; }
+
+  /* Botones más cómodos para tap */
+  .btn { min-height: 40px; padding: 10px 16px !important; }
+  .btn-sm { min-height: 32px; padding: 6px 12px !important; }
+
+  /* Form labels más legibles */
+  label { font-size: 11px !important; }
+  input, select, textarea { font-size: 14px !important; padding: 10px !important; }
+}
+
+/* Pantallas muy pequeñas (móviles chicos) */
+@media (max-width: 380px) {
+  .kpis-grid { grid-template-columns: 1fr !important; }
+  .nav-item { padding: 10px 16px !important; }
+  .sidebar { width: 240px; }
+}
+
 .pendiente-list { list-style: none; padding: 0; margin: 0; }
 .pendiente-item {
   display: flex; justify-content: space-between; align-items: center;
@@ -520,7 +654,9 @@ textarea { resize: vertical; min-height: 70px; }
 
 <!-- APP -->
 <div id="app" class="app">
-  <aside class="sidebar">
+  <button class="mobile-menu-btn" onclick="toggleSidebar()" aria-label="Menú">☰</button>
+  <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleSidebar()"></div>
+  <aside class="sidebar" id="sidebar">
     <div class="brand">
       <div class="brand-logo">
         <img src="data:image/jpeg;base64,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" alt="Clínica Estar Bien">
@@ -540,8 +676,8 @@ textarea { resize: vertical; min-height: 70px; }
     <div class="nav-item" data-page="entradas"><span class="icon">↓</span>Entradas</div>
     <div class="nav-section-title">Bitácora</div>
     <div class="nav-item" data-page="libro"><span class="icon">📕</span>Libro COFEPRIS</div>
-    <div class="nav-section-title" id="adminSection" style="display:none;">Admin</div>
-    <div class="nav-item admin-only" data-page="catalogos" style="display:none;"><span class="icon">⚙</span>Catálogos</div>
+    <div class="nav-section-title capturista-only">Catálogos</div>
+    <div class="nav-item capturista-only" data-page="catalogos"><span class="icon">⚙</span>Médicos y cirugías</div>
     <div class="user-card">
       <div class="uname" id="userName">—</div>
       <div class="urol" id="userRol">—</div>
@@ -842,15 +978,35 @@ textarea { resize: vertical; min-height: 70px; }
         </div>
       </div>
       <div class="card">
-        <div class="card-title">Medicamentos <button class="btn btn-accent btn-sm" onclick="openModalMedicamento()">+ Alta</button></div>
-        <div id="medicamentosTable">—</div>
-      </div>
-      <div class="card">
-        <div class="card-title">Médicos <button class="btn btn-accent btn-sm" onclick="openModalMedico()">+ Alta</button></div>
+        <div class="card-title">
+          Médicos
+          <button class="btn btn-accent btn-sm capturista-only" onclick="openModalMedico()">+ Alta</button>
+        </div>
         <div id="medicosTable">—</div>
       </div>
+      <div class="card">
+        <div class="card-title">
+          Tipos de cirugía
+          <button class="btn btn-accent btn-sm capturista-only" onclick="openModalCirugiaTipo()">+ Alta personalizada</button>
+        </div>
+        <div style="padding:12px 16px;background:var(--teal-light);border-radius:8px;margin-bottom:12px;font-size:12px;color:var(--navy);">
+          💡 El catálogo ya tiene 4,915 cirugías del estándar CPT. Solo agrega aquí cirugías personalizadas que no aparezcan en el buscador.
+        </div>
+        <input type="text" id="cat_cx_busqueda" placeholder="Buscar en el catálogo (mínimo 2 letras)..." oninput="buscarCirugiasCatalogo()" style="margin-bottom:12px;">
+        <div id="cirugiasCatalogoTable">
+          <p style="color:var(--text-muted);font-size:13px;text-align:center;padding:20px;">Escribe en el buscador para ver cirugías.</p>
+        </div>
+      </div>
+      <div class="card admin-only">
+        <div class="card-title">
+          Medicamentos
+          <button class="btn btn-accent btn-sm" onclick="openModalMedicamento()">+ Alta</button>
+          <span style="background:var(--warn-bg);color:#78350F;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:8px;">SOLO ADMIN</span>
+        </div>
+        <div id="medicamentosTable">—</div>
+      </div>
       <p style="color:var(--text-muted);font-size:13px;font-style:italic;">
-        Para editar o desactivar registros, accede al Google Sheet en CAT_Medicamentos y CAT_Medicos.
+        Para editar o desactivar registros, accede al Google Sheet en las pestañas correspondientes.
       </p>
     </div>
 
@@ -928,7 +1084,9 @@ function applyRoleVisibility() {
   const isCapturista = currentUser.rol === 'CAPTURISTA' || isAdmin;
   document.querySelectorAll('.capturista-only').forEach(el => el.style.display = isCapturista ? '' : 'none');
   document.querySelectorAll('.admin-only').forEach(el => el.style.display = isAdmin ? '' : 'none');
-  document.getElementById('adminSection').style.display = isAdmin ? '' : 'none';
+  // Sección Admin del sidebar (si existe en el DOM)
+  const adminSec = document.getElementById('adminSection');
+  if (adminSec) adminSec.style.display = isAdmin ? '' : 'none';
 }
 
 document.getElementById('codigoAcceso').addEventListener('keypress', e => { if (e.key === 'Enter') doLogin(); });
@@ -944,8 +1102,27 @@ document.querySelectorAll('.nav-item').forEach(item => {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.getElementById('page-' + page).classList.add('active');
     loadPage(page);
+    // En móvil, cerrar sidebar al elegir una página
+    if (window.innerWidth <= 768) {
+      closeSidebar();
+    }
   });
 });
+
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  const bd = document.getElementById('sidebarBackdrop');
+  if (!sb || !bd) return;
+  sb.classList.toggle('open');
+  bd.classList.toggle('open');
+}
+function closeSidebar() {
+  const sb = document.getElementById('sidebar');
+  const bd = document.getElementById('sidebarBackdrop');
+  if (!sb || !bd) return;
+  sb.classList.remove('open');
+  bd.classList.remove('open');
+}
 
 function loadPage(page) {
   switch (page) {
@@ -1153,12 +1330,16 @@ async function verDetalleProgramacion(folio) {
 
   let acciones = '';
   if (currentUser.rol !== 'CONSULTA') {
-    if (c.Estado === 'PROGRAMADA') {
+    const estado = String(c.Estado || '').trim().toUpperCase();
+    if (estado === 'PROGRAMADA' || estado === '') {
       acciones += `<button class="btn btn-accent btn-sm" onclick="closeModal();openModalReceta('${folio}')">Vincular receta</button>`;
-    } else if (c.Estado === 'RECETA_VINCULADA') {
+    } else if (estado === 'RECETA_VINCULADA') {
       acciones += `<button class="btn btn-primary btn-sm" onclick="closeModal();openModalConsumo('${folio}')">Registrar consumo</button>`;
-    } else if (c.Estado === 'REALIZADA') {
+    } else if (estado === 'REALIZADA') {
       acciones += `<button class="btn btn-secondary btn-sm" onclick="closeModal();verConsumosCirugia('${folio}')">Ver consumos</button>`;
+      if (currentUser.rol === 'ADMIN') {
+        acciones += ` <button class="btn btn-accent btn-sm" onclick="closeModal();openModalConsumo('${folio}')">+ Consumo adicional</button>`;
+      }
     }
   }
 
@@ -1261,7 +1442,10 @@ function openModalProgramar() {
 
         <!-- Tipo de cirugía: BUSCADOR INTELIGENTE -->
         <div class="full">
-          <label>Tipo de cirugía *</label>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;">
+            <label>Tipo de cirugía *</label>
+            <a href="#" onclick="event.preventDefault();irACatalogos('cirugias')" style="font-size:11px;color:var(--teal);text-decoration:underline;">¿No encuentras la cirugía? Agregar al catálogo →</a>
+          </div>
           <div style="position:relative;">
             <input type="text" id="cx_tipo_busqueda" placeholder="Escribe al menos 2 letras para buscar (ej: 'apend' o el código CPT)" autocomplete="off" oninput="buscarCirugiasDebounced()">
             <input type="hidden" id="cx_tipo">
@@ -1276,9 +1460,15 @@ function openModalProgramar() {
         </div>
 
         <!-- Personal -->
-        <div><label>Médico cirujano *</label><select id="cx_medico" required><option value="">—</option>${medicosOpts}</select></div>
-        <div><label>Ayudante</label><select id="cx_ayudante"><option value="">— Opcional —</option>${medicosOpts}</select></div>
-        <div><label>Anestesiólogo</label><select id="cx_anestesiologo"><option value="">— Opcional —</option>${medicosOpts}</select></div>
+        <div class="full" style="margin-top:8px;">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;">
+            <label style="margin:0;">Personal médico</label>
+            <a href="#" onclick="event.preventDefault();irACatalogos('medicos')" style="font-size:11px;color:var(--teal);text-decoration:underline;">¿Falta un médico? Agregar al catálogo →</a>
+          </div>
+        </div>
+        <div><label style="font-size:11px;">Médico cirujano *</label><select id="cx_medico" required><option value="">—</option>${medicosOpts}</select></div>
+        <div><label style="font-size:11px;">Ayudante</label><select id="cx_ayudante"><option value="">— Opcional —</option>${medicosOpts}</select></div>
+        <div><label style="font-size:11px;">Anestesiólogo</label><select id="cx_anestesiologo"><option value="">— Opcional —</option>${medicosOpts}</select></div>
 
         <!-- Material y meds -->
         <div class="full"><label>Material especial</label><input type="text" id="cx_material" placeholder="Ej: Fluoroscopio, navegador, lente"></div>
@@ -1732,22 +1922,44 @@ function renderTableCirugias(list) {
 }
 
 function renderCirugiaActions(c) {
+  const estado = String(c.Estado || '').trim().toUpperCase();
+  const folio = c.Folio_Cirugia;
+
+  // CONSULTA: solo puede ver consumos si está realizada
   if (currentUser.rol === 'CONSULTA') {
-    if (c.Estado === 'REALIZADA') {
-      return `<button class="btn btn-secondary btn-sm" onclick="verConsumosCirugia('${c.Folio_Cirugia}')">Ver consumos</button>`;
+    if (estado === 'REALIZADA') {
+      return `<button class="btn btn-secondary btn-sm" onclick="verConsumosCirugia('${folio}')">Ver consumos</button>`;
     }
-    return '—';
+    return '<span style="color:var(--text-muted);font-size:11px;">—</span>';
   }
-  if (c.Estado === 'PROGRAMADA') {
-    return `<button class="btn btn-accent btn-sm" onclick="openModalReceta('${c.Folio_Cirugia}')">Vincular receta</button>`;
+
+  // ADMIN y CAPTURISTA
+  let botones = [];
+
+  if (estado === 'PROGRAMADA' || estado === '') {
+    // Si está programada (o sin estado), permitir vincular receta
+    botones.push(`<button class="btn btn-accent btn-sm" onclick="openModalReceta('${folio}')">Vincular receta</button>`);
   }
-  if (c.Estado === 'RECETA_VINCULADA') {
-    return `<button class="btn btn-primary btn-sm" onclick="openModalConsumo('${c.Folio_Cirugia}')">Registrar consumo</button>`;
+  if (estado === 'RECETA_VINCULADA') {
+    botones.push(`<button class="btn btn-primary btn-sm" onclick="openModalConsumo('${folio}')">Registrar consumo</button>`);
   }
-  if (c.Estado === 'REALIZADA') {
-    return `<button class="btn btn-secondary btn-sm" onclick="verConsumosCirugia('${c.Folio_Cirugia}')">Ver consumos</button>`;
+  if (estado === 'REALIZADA') {
+    botones.push(`<button class="btn btn-secondary btn-sm" onclick="verConsumosCirugia('${folio}')">Ver consumos</button>`);
+    // ADMIN puede agregar consumo adicional
+    if (currentUser.rol === 'ADMIN') {
+      botones.push(`<button class="btn btn-accent btn-sm" onclick="openModalConsumo('${folio}')" style="margin-left:4px;">+ Consumo</button>`);
+    }
   }
-  return '—';
+  if (estado === 'CANCELADA') {
+    botones.push(`<span style="color:var(--text-muted);font-size:11px;">Cancelada</span>`);
+  }
+
+  if (botones.length === 0) {
+    // Fallback: estado desconocido — permitir ver detalle al menos
+    botones.push(`<button class="btn btn-secondary btn-sm" onclick="verDetalleProgramacion('${folio}')">Ver detalle</button>`);
+  }
+
+  return botones.join(' ');
 }
 
 // ============================================================
@@ -1914,18 +2126,29 @@ function csvEscape(v) {
 // ============================================================
 async function loadCatalogosPage() {
   await loadCatalogos();
+  // Médicos (siempre visible)
+  const medicos = catalogos.medicos.map(m => `
+    <tr><td><strong>${m.ID_Medico}</strong></td><td>${m.Nombre_Completo}</td><td>${m.Cedula_Profesional || '—'}</td><td>${m.Especialidad || '—'}</td></tr>
+  `).join('');
+  document.getElementById('medicosTable').innerHTML = medicos
+    ? `<div style="overflow-x:auto;"><table><thead><tr><th>ID</th><th>Nombre</th><th>Cédula</th><th>Especialidad</th></tr></thead><tbody>${medicos}</tbody></table></div>`
+    : '<div class="empty-state">Sin médicos.</div>';
+
+  // Medicamentos (solo se carga la tabla; el botón se oculta automáticamente con admin-only en el card padre)
   const meds = catalogos.medicamentos.map(m => `
     <tr><td><strong>${m.ID_Medicamento}</strong></td><td>${m.Nombre_Comercial}</td><td>${m.Sustancia_Activa||''}</td><td>Fr. ${m.Fraccion_LGS}</td><td>${m.Unidad}</td><td>${m.Stock_Minimo}</td></tr>
   `).join('');
   document.getElementById('medicamentosTable').innerHTML = meds
-    ? `<table><thead><tr><th>ID</th><th>Nombre</th><th>Sustancia</th><th>Fracción</th><th>Unidad</th><th>Mínimo</th></tr></thead><tbody>${meds}</tbody></table>`
+    ? `<div style="overflow-x:auto;"><table><thead><tr><th>ID</th><th>Nombre</th><th>Sustancia</th><th>Fracción</th><th>Unidad</th><th>Mínimo</th></tr></thead><tbody>${meds}</tbody></table></div>`
     : '<div class="empty-state">Sin medicamentos.</div>';
-  const medicos = catalogos.medicos.map(m => `
-    <tr><td><strong>${m.ID_Medico}</strong></td><td>${m.Nombre_Completo}</td><td>${m.Cedula_Profesional}</td><td>${m.Especialidad}</td></tr>
-  `).join('');
-  document.getElementById('medicosTable').innerHTML = medicos
-    ? `<table><thead><tr><th>ID</th><th>Nombre</th><th>Cédula</th><th>Especialidad</th></tr></thead><tbody>${medicos}</tbody></table>`
-    : '<div class="empty-state">Sin médicos.</div>';
+
+  // El buscador de cirugías es bajo demanda — solo limpiar al cargar
+  const inputBusq = document.getElementById('cat_cx_busqueda');
+  if (inputBusq) inputBusq.value = '';
+  const cirCont = document.getElementById('cirugiasCatalogoTable');
+  if (cirCont) {
+    cirCont.innerHTML = '<p style="color:var(--text-muted);font-size:13px;text-align:center;padding:20px;">Escribe en el buscador para ver cirugías.</p>';
+  }
 }
 
 // ============================================================
@@ -2388,15 +2611,26 @@ function openModalMedicamento() {
           </select>
         </div>
         <div>
-          <label>Unidad</label>
-          <select id="m_unidad" required>
-            <option value="ampolla">Ampolla</option>
-            <option value="vial">Vial</option>
-            <option value="tableta">Tableta</option>
-            <option value="caja">Caja</option>
-            <option value="ml">ml</option>
-            <option value="mg">mg</option>
-          </select>
+          <label>Unidad de medida</label>
+          <input type="text" id="m_unidad" list="unidadesSugeridas" placeholder="Ej: ampolla, tableta, parche, frasco" required>
+          <datalist id="unidadesSugeridas">
+            <option value="ampolla">
+            <option value="ampolleta">
+            <option value="vial">
+            <option value="frasco">
+            <option value="tableta">
+            <option value="cápsula">
+            <option value="parche">
+            <option value="caja">
+            <option value="comprimido">
+            <option value="solución">
+            <option value="jeringa precargada">
+            <option value="ml">
+            <option value="mg">
+            <option value="g">
+            <option value="UI">
+          </datalist>
+          <small style="color:var(--text-muted);font-size:11px;">Puedes escribir cualquier unidad. Las sugerencias aparecen al escribir.</small>
         </div>
         <div><label>Stock mínimo</label><input type="number" id="m_min" value="5" min="0"></div>
         <div class="full"><label>Notas</label><input type="text" id="m_notas"></div>
@@ -2463,6 +2697,116 @@ async function altaMedico() {
     await loadCatalogos();
     loadCatalogosPage();
   } else { showToast('Error: ' + resp.error, 'error'); }
+}
+
+// MODAL: ALTA TIPO DE CIRUGÍA (personalizada)
+function openModalCirugiaTipo() {
+  openModal('Nueva cirugía personalizada', `
+    <form onsubmit="event.preventDefault();altaCirugiaTipo()">
+      <div style="background:var(--teal-light);padding:12px;border-radius:8px;margin-bottom:14px;font-size:12px;color:var(--navy);">
+        💡 <strong>Tip:</strong> Antes de crear una cirugía personalizada, asegúrate de que no exista en el catálogo CPT (4,915 cirugías). Usa el buscador del catálogo para verificar.
+      </div>
+      <div class="form-grid">
+        <div class="full">
+          <label>Nombre de la cirugía *</label>
+          <input type="text" id="ct_nombre" required placeholder="Ej: Procedimiento especial de la clínica">
+        </div>
+        <div>
+          <label>Clave CPT (opcional)</label>
+          <input type="text" id="ct_cpt" placeholder="Si tiene clave conocida">
+          <small style="color:var(--text-muted);font-size:11px;">Solo si tienes la clave oficial.</small>
+        </div>
+        <div>
+          <label>Categoría</label>
+          <input type="text" id="ct_categoria" placeholder="Ej: Ambulatoria, Mayor">
+        </div>
+        <div class="full">
+          <label>Sub-sistema (opcional)</label>
+          <input type="text" id="ct_subsistema" placeholder="Ej: Sistema gastrointestinal">
+        </div>
+        <div class="full">
+          <label>Tipo de procedimiento (opcional)</label>
+          <input type="text" id="ct_tipo_proc" placeholder="Ej: Excisión, Reparación, Drenaje">
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-accent">Dar de alta</button>
+      </div>
+    </form>
+  `);
+}
+
+async function altaCirugiaTipo() {
+  const data = {
+    nombreCirugia: document.getElementById('ct_nombre').value.trim(),
+    claveCPT: document.getElementById('ct_cpt').value.trim(),
+    categoria: document.getElementById('ct_categoria').value.trim(),
+    subSistema: document.getElementById('ct_subsistema').value.trim(),
+    tipoProcedimiento: document.getElementById('ct_tipo_proc').value.trim()
+  };
+  if (!data.nombreCirugia) {
+    showToast('El nombre de la cirugía es obligatorio', 'error');
+    return;
+  }
+  const resp = await apiPost('altaCirugiaTipo', data);
+  if (resp.ok) {
+    showToast('Cirugía dada de alta: ' + resp.idCirugiaTipo);
+    closeModal();
+    // Refrescar la búsqueda en pantalla de catálogos
+    const inputBusq = document.getElementById('cat_cx_busqueda');
+    if (inputBusq && inputBusq.value.length >= 2) buscarCirugiasCatalogo();
+  } else { showToast('Error: ' + resp.error, 'error'); }
+}
+
+// BÚSQUEDA en catálogo de cirugías (pantalla Catálogos)
+let cxCatalogoBusquedaTimeout = null;
+function buscarCirugiasCatalogo() {
+  clearTimeout(cxCatalogoBusquedaTimeout);
+  cxCatalogoBusquedaTimeout = setTimeout(buscarCirugiasCatalogoEnVivo, 300);
+}
+
+async function buscarCirugiasCatalogoEnVivo() {
+  const q = document.getElementById('cat_cx_busqueda').value.trim();
+  const cont = document.getElementById('cirugiasCatalogoTable');
+  if (q.length < 2) {
+    cont.innerHTML = '<p style="color:var(--text-muted);font-size:13px;text-align:center;padding:20px;">Escribe en el buscador para ver cirugías.</p>';
+    return;
+  }
+  cont.innerHTML = '<div class="loading"><div class="spinner"></div> Buscando...</div>';
+
+  const resp = await apiGet('buscarCirugias', { q, limite: 50 });
+  if (!resp.ok || !resp.data || resp.data.length === 0) {
+    cont.innerHTML = '<p style="color:var(--text-muted);font-size:13px;text-align:center;padding:20px;">Sin resultados. Si la cirugía no existe, puedes darla de alta personalizada.</p>';
+    return;
+  }
+  cont.innerHTML = `
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Clave CPT</th>
+            <th>Nombre</th>
+            <th>Sub-sistema</th>
+            <th>Tipo</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${resp.data.map(c => `
+            <tr>
+              <td><span style="background:var(--navy);color:white;padding:2px 8px;border-radius:4px;font-family:monospace;font-size:11px;">${c.claveCPT || '—'}</span></td>
+              <td><strong>${c.nombreCirugia || '—'}</strong></td>
+              <td><small>${c.subSistema || '—'}</small></td>
+              <td><small>${c.tipoProcedimiento || '—'}</small></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div style="text-align:center;margin-top:8px;color:var(--text-muted);font-size:12px;">
+      ${resp.total} resultado${resp.total === 1 ? '' : 's'} (máximo 50)
+    </div>
+  `;
 }
 
 // ============================================================
@@ -3082,6 +3426,35 @@ async function guardarPaciente(idPaciente, folioCirugiaOrigen) {
   } else {
     showToast('Error: ' + resp.error, 'error');
   }
+}
+
+// ============================================================
+// Navegación a catálogos desde modales (regresa al flujo)
+// ============================================================
+function irACatalogos(seccion) {
+  const confirmar = confirm(
+    'Vas a salir del formulario de programar cirugía para ir a Catálogos.\n\n' +
+    '⚠ Los datos que hayas capturado se perderán.\n\n' +
+    '¿Continuar?'
+  );
+  if (!confirmar) return;
+
+  closeModal();
+  // Cambiar de página al catálogo
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const navCatalogo = document.querySelector('[data-page="catalogos"]');
+  if (navCatalogo) navCatalogo.classList.add('active');
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-catalogos').classList.add('active');
+  loadCatalogosPage();
+
+  // Mostrar toast con instrucción
+  setTimeout(() => {
+    const mensaje = seccion === 'medicos'
+      ? 'Da de alta el médico que falta y luego regresa a Programar cirugía.'
+      : 'Da de alta el tipo de cirugía que falta y luego regresa a Programar cirugía.';
+    showToast(mensaje, 'warn');
+  }, 300);
 }
 
 function showToast(msg, type = 'success') {
