@@ -532,6 +532,7 @@ textarea { resize: vertical; min-height: 70px; }
     <div class="nav-item" data-page="programacion"><span class="icon">▦</span>Programación Q.X.</div>
     <div class="nav-item" data-page="cirugias"><span class="icon">⚕</span>Cirugías</div>
     <div class="nav-item" data-page="habitaciones"><span class="icon">🛏</span>Habitaciones</div>
+    <div class="nav-item" data-page="pacientes"><span class="icon">👤</span>Pacientes</div>
     <div class="nav-item" data-page="recetas"><span class="icon">℞</span>Recetas</div>
     <div class="nav-item" data-page="consumos"><span class="icon">◉</span>Consumos</div>
     <div class="nav-section-title">Inventario</div>
@@ -718,6 +719,31 @@ textarea { resize: vertical; min-height: 70px; }
       </div>
     </div>
 
+    <!-- PACIENTES -->
+    <div id="page-pacientes" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Pacientes</h1>
+          <div class="subtitle">Directorio y administración de datos personales</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-secondary btn-sm" onclick="loadPacientes()">↻ Actualizar</button>
+          <button class="btn btn-primary capturista-only" onclick="openModalPacienteNuevo()">+ Nuevo paciente</button>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <div class="toolbar-row">
+          <input type="text" id="pac_busqueda" placeholder="Buscar por nombre, CURP o ID..." style="flex:1;font-size:14px;" oninput="filtrarPacientes()">
+          <button class="btn-pill" onclick="document.getElementById('pac_busqueda').value='';filtrarPacientes()">Limpiar</button>
+        </div>
+      </div>
+
+      <div id="pacientesLista">
+        <div class="loading"><div class="spinner"></div> Cargando pacientes...</div>
+      </div>
+    </div>
+
     <!-- RECETAS -->
     <div id="page-recetas" class="page">
       <div class="page-header">
@@ -838,7 +864,7 @@ textarea { resize: vertical; min-height: 70px; }
 // ============================================================
 // CONFIGURACIÓN
 // ============================================================
-const API_URL = 'https://script.google.com/macros/s/AKfycbxcRMBm2-dz1GlXgDwMyCU5Ne_2_57V1Ka4Vgr_90-6Lcdcq730g3PthIRNcXWlaIMT/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYgsRz2nZajq1wrCzjcgUMa4gSlKGZvZeaj2G8jiOuSOiJx-0PZJmEBuP4X8TePoH6Ng/exec';
 
 let currentUser = null;
 let catalogos = { medicamentos: [], medicos: [], cirugiasTipo: [], pacientes: [], config: {} };
@@ -927,6 +953,7 @@ function loadPage(page) {
     case 'programacion': loadProgramacion(); break;
     case 'cirugias': loadCirugias(); break;
     case 'habitaciones': loadHabitaciones(); break;
+    case 'pacientes': loadPacientes(); break;
     case 'recetas': loadRecetas(); break;
     case 'consumos': loadConsumos(); break;
     case 'inventario': loadInventario(); break;
@@ -1146,9 +1173,13 @@ async function verDetalleProgramacion(folio) {
         <div><strong>Receta física:</strong> ${c.Folio_Receta_Asociada || '<em>sin vincular</em>'}</div>
       </div>
 
-      <div style="margin-bottom:16px;">
-        <strong>Paciente:</strong> ${c.Nombre_Paciente || '—'} ${c.Edad_Paciente ? `(${c.Edad_Paciente} años)` : ''}<br>
-        <strong>Tipo de cirugía:</strong> ${c.Tipo_Cirugia || '—'}
+      <div style="margin-bottom:16px;display:flex;align-items:start;justify-content:space-between;gap:12px;">
+        <div style="flex:1;">
+          <strong>Paciente:</strong> ${c.Nombre_Paciente || '—'} ${c.Edad_Paciente ? `(${c.Edad_Paciente} años)` : ''}<br>
+          <strong>Tipo de cirugía:</strong> ${c.Tipo_Cirugia || '—'}
+          ${c.Clave_CPT ? `<span style="background:var(--navy);color:white;padding:2px 8px;border-radius:4px;font-size:10px;font-family:monospace;margin-left:6px;">CPT ${c.Clave_CPT}</span>` : ''}
+        </div>
+        ${currentUser.rol !== 'CONSULTA' && c.ID_Paciente ? `<button class="btn btn-secondary btn-sm" onclick="closeModal();openModalEditarPaciente('${c.ID_Paciente}','${folio}')" style="flex-shrink:0;">✎ Editar paciente</button>` : ''}
       </div>
 
       <div style="margin-bottom:16px;">
@@ -1182,7 +1213,6 @@ let medsProgBuffer = [];
 function openModalProgramar() {
   medsProgBuffer = [];
   const medicosOpts = catalogos.medicos.map(m => `<option value="${m.ID_Medico}">${m.Nombre_Completo} (${m.Especialidad})</option>`).join('');
-  const tiposOpts = catalogos.cirugiasTipo.map(c => `<option value="${c.ID_Cirugia_Tipo}">${c.Nombre_Cirugia}</option>`).join('');
   const quirofanosOpts = (catalogos.quirofanos || []).map(q =>
     `<option value="${q.ID_Quirofano}" data-numero="${q.Numero}">Quirófano ${q.Numero}${q.Caracteristicas ? ' - ' + q.Caracteristicas : ''}</option>`
   ).join('');
@@ -1204,12 +1234,49 @@ function openModalProgramar() {
         </div>
 
         <!-- Paciente -->
-        <div><label>Paciente</label><input type="text" id="cx_paciente" placeholder="Nombre completo" required></div>
-        <div><label>Edad</label><input type="number" id="cx_edad" min="0" max="120" placeholder="años"></div>
+        <div class="full" style="border:1px solid var(--border);border-radius:8px;padding:14px;background:#FAFBFC;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <strong style="color:var(--navy);font-size:13px;">Datos del paciente</strong>
+            <small style="color:var(--text-muted);font-size:11px;">El nombre puede actualizarse después</small>
+          </div>
+          <div class="form-grid" style="margin:0;">
+            <div class="full"><label>Nombre completo del paciente *</label><input type="text" id="cx_paciente" placeholder="Si solo tienes el nombre, ponlo así" required></div>
+            <div><label>Edad</label><input type="number" id="cx_edad" min="0" max="120" placeholder="años"></div>
+            <div><label>Teléfono</label><input type="text" id="cx_telefono" placeholder="Opcional"></div>
+          </div>
+          <details style="margin-top:10px;">
+            <summary style="cursor:pointer;color:var(--teal-dark);font-size:12px;font-weight:600;">+ Agregar datos completos (CURP, dirección)</summary>
+            <div class="form-grid" style="margin:10px 0 0;">
+              <div class="full"><label>CURP</label><input type="text" id="cx_curp" maxlength="18" placeholder="18 caracteres" style="text-transform:uppercase;"></div>
+              <div><label>Calle</label><input type="text" id="cx_calle" placeholder="Opcional"></div>
+              <div><label>Número exterior</label><input type="text" id="cx_num_ext" placeholder="Opcional"></div>
+              <div><label>Número interior</label><input type="text" id="cx_num_int" placeholder="Opcional"></div>
+              <div><label>Colonia</label><input type="text" id="cx_colonia" placeholder="Opcional"></div>
+              <div><label>CP</label><input type="text" id="cx_cp" maxlength="5" placeholder="5 dígitos"></div>
+              <div><label>Ciudad</label><input type="text" id="cx_ciudad" placeholder="Opcional"></div>
+              <div><label>Estado</label><input type="text" id="cx_estado_pac" placeholder="Opcional"></div>
+            </div>
+          </details>
+        </div>
+
+        <!-- Tipo de cirugía: BUSCADOR INTELIGENTE -->
+        <div class="full">
+          <label>Tipo de cirugía *</label>
+          <div style="position:relative;">
+            <input type="text" id="cx_tipo_busqueda" placeholder="Escribe al menos 2 letras para buscar (ej: 'apend' o el código CPT)" autocomplete="off" oninput="buscarCirugiasDebounced()">
+            <input type="hidden" id="cx_tipo">
+            <input type="hidden" id="cx_tipo_nombre">
+            <input type="hidden" id="cx_tipo_cpt">
+            <div id="cx_tipo_resultados" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid var(--border);border-radius:8px;max-height:280px;overflow-y:auto;z-index:1000;box-shadow:var(--shadow-lg);margin-top:4px;"></div>
+            <div id="cx_tipo_seleccionado" style="display:none;margin-top:8px;padding:10px 14px;background:var(--teal-light);border-radius:8px;border:1px solid var(--teal);font-size:13px;">
+              <strong id="cx_tipo_label" style="color:var(--navy);"></strong>
+              <button type="button" onclick="limpiarSeleccionCirugia()" style="float:right;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:16px;line-height:1;">×</button>
+            </div>
+          </div>
+        </div>
 
         <!-- Personal -->
-        <div><label>Tipo de cirugía</label><select id="cx_tipo" required><option value="">—</option>${tiposOpts}</select></div>
-        <div><label>Médico cirujano</label><select id="cx_medico" required><option value="">—</option>${medicosOpts}</select></div>
+        <div><label>Médico cirujano *</label><select id="cx_medico" required><option value="">—</option>${medicosOpts}</select></div>
         <div><label>Ayudante</label><select id="cx_ayudante"><option value="">— Opcional —</option>${medicosOpts}</select></div>
         <div><label>Anestesiólogo</label><select id="cx_anestesiologo"><option value="">— Opcional —</option>${medicosOpts}</select></div>
 
@@ -1234,9 +1301,70 @@ function openModalProgramar() {
       </div>
     </form>
   `);
-  // El buffer compartido entre cirugías y consumos: usar el mismo del v3
   medsEstimadosBuffer = medsProgBuffer;
   renderMedsEstimadosBuffer();
+}
+
+// Búsqueda inteligente de cirugías (debounced)
+let cxBusquedaTimeout = null;
+function buscarCirugiasDebounced() {
+  clearTimeout(cxBusquedaTimeout);
+  cxBusquedaTimeout = setTimeout(buscarCirugiasEnVivo, 250);
+}
+
+async function buscarCirugiasEnVivo() {
+  const q = document.getElementById('cx_tipo_busqueda').value.trim();
+  const cont = document.getElementById('cx_tipo_resultados');
+  if (q.length < 2) {
+    cont.style.display = 'none';
+    return;
+  }
+  cont.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:13px;text-align:center;"><div class="spinner" style="display:inline-block;width:14px;height:14px;border-width:2px;"></div> Buscando...</div>';
+  cont.style.display = 'block';
+
+  const resp = await apiGet('buscarCirugias', { q, limite: 30 });
+  if (!resp.ok || !resp.data || resp.data.length === 0) {
+    cont.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:13px;text-align:center;">Sin resultados. Intenta con otras palabras.</div>';
+    return;
+  }
+
+  cont.innerHTML = resp.data.map(c => `
+    <div onclick="seleccionarCirugia('${c.idCirugiaTipo}','${(c.claveCPT||'').replace(/'/g,'')}','${(c.nombreCirugia||'').replace(/'/g,'').replace(/"/g,'&quot;')}','${(c.subSistema||'').replace(/'/g,'').replace(/"/g,'&quot;')}','${(c.tipoProcedimiento||'').replace(/'/g,'').replace(/"/g,'&quot;')}')"
+         style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px;transition:background 0.1s;"
+         onmouseover="this.style.background='var(--teal-light)'"
+         onmouseout="this.style.background='white'">
+      <div style="display:flex;justify-content:space-between;align-items:start;gap:10px;">
+        <div style="flex:1;">
+          <div style="font-weight:600;color:var(--navy);">${c.nombreCirugia}</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">
+            ${c.subSistema || ''}${c.tipoProcedimiento ? ' · ' + c.tipoProcedimiento : ''}
+          </div>
+        </div>
+        <span style="background:var(--navy);color:white;padding:2px 8px;border-radius:4px;font-size:10px;font-family:monospace;font-weight:600;flex-shrink:0;">${c.claveCPT || '—'}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function seleccionarCirugia(id, cpt, nombre, subSistema, tipoProc) {
+  document.getElementById('cx_tipo').value = id;
+  document.getElementById('cx_tipo_cpt').value = cpt;
+  document.getElementById('cx_tipo_nombre').value = nombre;
+  document.getElementById('cx_tipo_busqueda').value = '';
+  document.getElementById('cx_tipo_resultados').style.display = 'none';
+
+  const lblHTML = `${nombre} ${cpt ? `<span style="background:var(--navy);color:white;padding:2px 8px;border-radius:4px;font-size:10px;font-family:monospace;margin-left:6px;">${cpt}</span>` : ''}` +
+    (subSistema || tipoProc ? `<br><small style="color:var(--text-muted);font-weight:normal;">${[subSistema, tipoProc].filter(Boolean).join(' · ')}</small>` : '');
+  document.getElementById('cx_tipo_label').innerHTML = lblHTML;
+  document.getElementById('cx_tipo_seleccionado').style.display = 'block';
+}
+
+function limpiarSeleccionCirugia() {
+  document.getElementById('cx_tipo').value = '';
+  document.getElementById('cx_tipo_cpt').value = '';
+  document.getElementById('cx_tipo_nombre').value = '';
+  document.getElementById('cx_tipo_seleccionado').style.display = 'none';
+  document.getElementById('cx_tipo_busqueda').focus();
 }
 
 function calcularHoraFin() {
@@ -1260,14 +1388,20 @@ async function crearCirugia() {
   const numeroQuirofano = document.getElementById('cx_quirofano').selectedOptions[0]?.dataset.numero || '';
   const idMedico = document.getElementById('cx_medico').value;
   const idTipo = document.getElementById('cx_tipo').value;
+  const claveCPT = document.getElementById('cx_tipo_cpt').value;
+  const nombreCirugia = document.getElementById('cx_tipo_nombre').value;
   const idAyudante = document.getElementById('cx_ayudante').value;
   const idAnestesiologo = document.getElementById('cx_anestesiologo').value;
   const tqx = parseFloat(document.getElementById('cx_tqx').value);
   const fecha = document.getElementById('cx_fecha').value;
   const hora = document.getElementById('cx_hora').value;
 
+  if (!idTipo) {
+    showToast('Debes seleccionar un tipo de cirugía del buscador', 'error');
+    return;
+  }
+
   const medico = catalogos.medicos.find(m => m.ID_Medico === idMedico);
-  const tipo = catalogos.cirugiasTipo.find(c => c.ID_Cirugia_Tipo === idTipo);
   const ayudante = idAyudante ? catalogos.medicos.find(m => m.ID_Medico === idAyudante) : null;
   const anestesiologo = idAnestesiologo ? catalogos.medicos.find(m => m.ID_Medico === idAnestesiologo) : null;
 
@@ -1277,20 +1411,49 @@ async function crearCirugia() {
     }
   }
 
+  // Recolectar datos extendidos del paciente (todos opcionales excepto nombre)
+  const datosPacienteExtendido = {
+    nombre,
+    edad: parseInt(document.getElementById('cx_edad').value, 10) || '',
+    telefono: document.getElementById('cx_telefono').value.trim(),
+    curp: document.getElementById('cx_curp').value.trim().toUpperCase(),
+    calle: document.getElementById('cx_calle').value.trim(),
+    numeroExterior: document.getElementById('cx_num_ext').value.trim(),
+    numeroInterior: document.getElementById('cx_num_int').value.trim(),
+    colonia: document.getElementById('cx_colonia').value.trim(),
+    cp: document.getElementById('cx_cp').value.trim(),
+    ciudad: document.getElementById('cx_ciudad').value.trim(),
+    estado: document.getElementById('cx_estado_pac').value.trim(),
+    capturadoPor: currentUser.nombre
+  };
+
   let paciente = catalogos.pacientes.find(p => (p.Nombre_Completo||'').toLowerCase() === nombre.toLowerCase());
   if (!paciente) {
-    const altaResp = await apiPost('altaPaciente', { nombre });
+    const altaResp = await apiPost('altaPaciente', datosPacienteExtendido);
     if (!altaResp.ok) { showToast('Error: ' + altaResp.error, 'error'); return; }
     paciente = { ID_Paciente: altaResp.idPaciente, Nombre_Completo: nombre };
     catalogos.pacientes.push(paciente);
+  } else {
+    // El paciente ya existe — si capturaron CURP/dirección y no los tenía, actualizarlos
+    const tieneNuevosDatos = datosPacienteExtendido.curp || datosPacienteExtendido.calle ||
+                             datosPacienteExtendido.colonia || datosPacienteExtendido.telefono;
+    if (tieneNuevosDatos) {
+      // Solo actualizamos campos no vacíos
+      const updateData = { idPaciente: paciente.ID_Paciente };
+      Object.keys(datosPacienteExtendido).forEach(k => {
+        if (datosPacienteExtendido[k] && k !== 'capturadoPor') updateData[k] = datosPacienteExtendido[k];
+      });
+      await apiPost('actualizarPaciente', updateData);
+    }
   }
+
   const data = {
     fechaProgramada: fecha, horaProgramada: hora, tqxHoras: tqx,
     idQuirofano, numeroQuirofano,
     idPaciente: paciente.ID_Paciente, nombrePaciente: paciente.Nombre_Completo,
-    edadPaciente: parseInt(document.getElementById('cx_edad').value, 10) || '',
+    edadPaciente: datosPacienteExtendido.edad,
     idMedico, nombreMedico: medico.Nombre_Completo,
-    idCirugiaTipo: idTipo, tipoCirugia: tipo.Nombre_Cirugia,
+    idCirugiaTipo: idTipo, tipoCirugia: nombreCirugia, claveCPT: claveCPT,
     idAyudante: idAyudante || '', nombreAyudante: ayudante ? ayudante.Nombre_Completo : '',
     idAnestesiologo: idAnestesiologo || '', nombreAnestesiologo: anestesiologo ? anestesiologo.Nombre_Completo : '',
     materialEspecial: document.getElementById('cx_material').value,
@@ -2736,6 +2899,186 @@ async function confirmarMover(idHosp) {
     showToast(`Movido de ${resp.habitacionAnterior} a ${resp.habitacionNueva}`);
     closeModal();
     loadHabitaciones();
+  } else {
+    showToast('Error: ' + resp.error, 'error');
+  }
+}
+
+// ============================================================
+// PACIENTES (CRUD completo)
+// ============================================================
+let cachePacientes = [];
+
+async function loadPacientes() {
+  const cont = document.getElementById('pacientesLista');
+  cont.innerHTML = '<div class="loading"><div class="spinner"></div> Cargando pacientes...</div>';
+
+  const resp = await apiGet('getPacientes');
+  if (!resp.ok) {
+    cont.innerHTML = '<div class="empty-state">Error: ' + (resp.error||'') + '</div>';
+    return;
+  }
+  cachePacientes = resp.data || [];
+  renderPacientesLista(cachePacientes);
+}
+
+function filtrarPacientes() {
+  const q = document.getElementById('pac_busqueda').value.trim().toLowerCase();
+  if (!q) {
+    renderPacientesLista(cachePacientes);
+    return;
+  }
+  const filtrados = cachePacientes.filter(p =>
+    (String(p.Nombre_Completo||'').toLowerCase().indexOf(q) !== -1) ||
+    (String(p.CURP||'').toLowerCase().indexOf(q) !== -1) ||
+    (String(p.ID_Paciente||'').toLowerCase().indexOf(q) !== -1) ||
+    (String(p.Telefono||'').toLowerCase().indexOf(q) !== -1)
+  );
+  renderPacientesLista(filtrados);
+}
+
+function renderPacientesLista(pacientes) {
+  const cont = document.getElementById('pacientesLista');
+  if (pacientes.length === 0) {
+    cont.innerHTML = '<div class="empty-state">Sin pacientes que coincidan con la búsqueda.</div>';
+    return;
+  }
+
+  const isCapturista = currentUser.rol !== 'CONSULTA';
+  cont.innerHTML = `
+    <div class="card" style="overflow-x:auto;">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Nombre</th>
+            <th>Edad</th>
+            <th>Teléfono</th>
+            <th>CURP</th>
+            <th>Ubicación</th>
+            ${isCapturista ? '<th>Acciones</th>' : ''}
+          </tr>
+        </thead>
+        <tbody>
+          ${pacientes.map(p => {
+            const ubicacion = [p.Ciudad, p.Estado].filter(Boolean).join(', ') || '—';
+            return `
+              <tr>
+                <td><code style="font-size:11px;color:var(--text-muted);">${p.ID_Paciente}</code></td>
+                <td><strong>${p.Nombre_Completo || '—'}</strong></td>
+                <td>${p.Edad || '—'}</td>
+                <td>${p.Telefono || '—'}</td>
+                <td><small style="font-family:monospace;">${p.CURP || '—'}</small></td>
+                <td><small>${ubicacion}</small></td>
+                ${isCapturista ? `<td><button class="btn btn-secondary btn-sm" onclick="openModalEditarPaciente('${p.ID_Paciente}')">✎ Editar</button></td>` : ''}
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div style="text-align:center;margin-top:12px;color:var(--text-muted);font-size:12px;">
+      ${pacientes.length} paciente${pacientes.length === 1 ? '' : 's'} ${pacientes.length !== cachePacientes.length ? `de ${cachePacientes.length} totales` : ''}
+    </div>
+  `;
+}
+
+function openModalPacienteNuevo() {
+  openModalEditarPaciente(null);
+}
+
+async function openModalEditarPaciente(idPaciente, folioCirugiaOrigen) {
+  let p = null;
+  if (idPaciente) {
+    // Cargar datos del paciente
+    const resp = await apiGet('getPaciente', { idPaciente });
+    if (!resp.ok) {
+      showToast('Error cargando paciente: ' + resp.error, 'error');
+      return;
+    }
+    p = resp.data;
+  }
+
+  const titulo = p ? `Editar paciente · ${p.Nombre_Completo}` : 'Nuevo paciente';
+  const v = (campo) => p ? (p[campo] || '') : '';
+
+  openModal(titulo, `
+    <form onsubmit="event.preventDefault();guardarPaciente('${idPaciente || ''}', '${folioCirugiaOrigen || ''}')">
+      <div style="background:var(--teal-light);padding:12px;border-radius:8px;margin-bottom:16px;font-size:12px;color:var(--navy);">
+        💡 <strong>Tip:</strong> Si el paciente entró con nombre incompleto al programar la cirugía, aquí puedes corregirlo. El nombre se actualizará en todas las cirugías y hospitalizaciones activas.
+      </div>
+
+      <div class="form-grid">
+        <div class="full"><label>Nombre completo *</label><input type="text" id="ep_nombre" value="${v('Nombre_Completo')}" required placeholder="Como aparece en su identificación"></div>
+        <div><label>Edad</label><input type="number" id="ep_edad" min="0" max="120" value="${v('Edad')}" placeholder="años"></div>
+        <div><label>Teléfono</label><input type="text" id="ep_telefono" value="${v('Telefono')}" placeholder="10 dígitos"></div>
+        <div class="full"><label>CURP</label><input type="text" id="ep_curp" value="${v('CURP')}" maxlength="18" placeholder="18 caracteres" style="text-transform:uppercase;"></div>
+      </div>
+
+      <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px;">
+        <strong style="color:var(--navy);font-size:13px;">Dirección</strong>
+        <div class="form-grid" style="margin-top:8px;">
+          <div class="full"><label>Calle</label><input type="text" id="ep_calle" value="${v('Calle')}" placeholder="Opcional"></div>
+          <div><label>Número exterior</label><input type="text" id="ep_num_ext" value="${v('Numero_Exterior')}" placeholder="Opcional"></div>
+          <div><label>Número interior</label><input type="text" id="ep_num_int" value="${v('Numero_Interior')}" placeholder="Opcional"></div>
+          <div><label>Colonia</label><input type="text" id="ep_colonia" value="${v('Colonia')}" placeholder="Opcional"></div>
+          <div><label>CP</label><input type="text" id="ep_cp" value="${v('CP')}" maxlength="5" placeholder="5 dígitos"></div>
+          <div><label>Ciudad</label><input type="text" id="ep_ciudad" value="${v('Ciudad')}" placeholder="Opcional"></div>
+          <div class="full"><label>Estado</label><input type="text" id="ep_estado" value="${v('Estado')}" placeholder="Opcional"></div>
+        </div>
+      </div>
+
+      <div style="margin-top:12px;">
+        <label>Observaciones</label>
+        <textarea id="ep_obs" placeholder="Notas adicionales sobre el paciente">${v('Observaciones')}</textarea>
+      </div>
+
+      <div class="form-actions" style="margin-top:16px;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">${p ? 'Guardar cambios' : 'Crear paciente'}</button>
+      </div>
+    </form>
+  `);
+}
+
+async function guardarPaciente(idPaciente, folioCirugiaOrigen) {
+  const data = {
+    nombre: document.getElementById('ep_nombre').value.trim(),
+    edad: parseInt(document.getElementById('ep_edad').value, 10) || '',
+    telefono: document.getElementById('ep_telefono').value.trim(),
+    curp: document.getElementById('ep_curp').value.trim().toUpperCase(),
+    calle: document.getElementById('ep_calle').value.trim(),
+    numeroExterior: document.getElementById('ep_num_ext').value.trim(),
+    numeroInterior: document.getElementById('ep_num_int').value.trim(),
+    colonia: document.getElementById('ep_colonia').value.trim(),
+    cp: document.getElementById('ep_cp').value.trim(),
+    ciudad: document.getElementById('ep_ciudad').value.trim(),
+    estado: document.getElementById('ep_estado').value.trim(),
+    observaciones: document.getElementById('ep_obs').value.trim(),
+    capturadoPor: currentUser.nombre
+  };
+
+  let resp;
+  if (idPaciente) {
+    data.idPaciente = idPaciente;
+    resp = await apiPost('actualizarPaciente', data);
+  } else {
+    resp = await apiPost('altaPaciente', data);
+  }
+
+  if (resp.ok) {
+    showToast(idPaciente ? 'Paciente actualizado' : 'Paciente creado: ' + resp.idPaciente);
+    closeModal();
+    // Refrescar catálogos para que el nombre actualizado se vea en otros módulos
+    await loadCatalogos();
+    if (document.getElementById('page-pacientes').classList.contains('active')) {
+      loadPacientes();
+    }
+    // Si venimos de un detalle de cirugía, regresarlo
+    if (folioCirugiaOrigen) {
+      await loadCirugias();
+      verDetalleProgramacion(folioCirugiaOrigen);
+    }
   } else {
     showToast('Error: ' + resp.error, 'error');
   }
