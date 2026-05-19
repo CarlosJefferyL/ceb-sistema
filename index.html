@@ -663,6 +663,8 @@ textarea { resize: vertical; min-height: 70px; }
       </div>
       <div class="brand-sub">Medicamentos Controlados</div>
     </div>
+    <div class="nav-section-title">Recepción</div>
+    <div class="nav-item" data-page="recepcion"><span class="icon">📋</span>Alta de paciente</div>
     <div class="nav-section-title">Operación</div>
     <div class="nav-item active" data-page="dashboard"><span class="icon">▣</span>Inicio</div>
     <div class="nav-item" data-page="programacion"><span class="icon">▦</span>Programación Q.X.</div>
@@ -855,6 +857,23 @@ textarea { resize: vertical; min-height: 70px; }
       </div>
     </div>
 
+    <!-- RECEPCIÓN -->
+    <div id="page-recepcion" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Recepción · Alta de Paciente</h1>
+          <div class="subtitle">Registro inicial de pacientes que llegan a la clínica</div>
+        </div>
+        <div>
+          <button class="btn btn-primary" onclick="abrirFormularioRecepcion()">+ Nuevo paciente</button>
+        </div>
+      </div>
+
+      <div id="recepcionLista">
+        <div class="loading"><div class="spinner"></div> Cargando pacientes recientes...</div>
+      </div>
+    </div>
+
     <!-- PACIENTES -->
     <div id="page-pacientes" class="page">
       <div class="page-header">
@@ -1023,10 +1042,51 @@ textarea { resize: vertical; min-height: 70px; }
 const API_URL = 'https://script.google.com/macros/s/AKfycbwYgsRz2nZajq1wrCzjcgUMa4gSlKGZvZeaj2G8jiOuSOiJx-0PZJmEBuP4X8TePoH6Ng/exec';
 
 let currentUser = null;
-let catalogos = { medicamentos: [], medicos: [], cirugiasTipo: [], pacientes: [], config: {} };
+let catalogos = { medicamentos: [], medicos: [], cirugiasTipo: [], pacientes: [], aseguradoras: [], config: {} };
 let cache = { cirugias: [], recetas: [], consumos: [], libro: [], inventario: [] };
 let currentHorizonte = 7;
 let currentQuickFilter = 'todas';
+
+// ============================================================
+// HELPERS DE TEXTO
+// ============================================================
+
+/**
+ * Convierte texto a Title Case respetando reglas del español.
+ * Excepciones: artículos y preposiciones cortas se mantienen en minúscula
+ * a menos que sean la primera palabra.
+ */
+function toTitleCase(str) {
+  if (!str) return '';
+  const minusculas = ['de', 'del', 'la', 'las', 'los', 'el', 'y', 'e', 'o', 'u', 'a', 'al', 'en', 'con', 'por', 'para'];
+  const mayusculas = ['s.a.', 's.a.b.', 'a.c.', 's.c.', 'sa', 'sab']; // acrónimos
+  return String(str).toLowerCase().trim().split(/\s+/).map((word, idx) => {
+    if (!word) return word;
+    // Acrónimos especiales en mayúsculas
+    if (mayusculas.indexOf(word.toLowerCase()) !== -1) return word.toUpperCase();
+    // Artículos y preposiciones en minúscula (excepto primera palabra)
+    if (idx > 0 && minusculas.indexOf(word) !== -1) return word;
+    // Manejar palabras compuestas con guión
+    if (word.includes('-')) {
+      return word.split('-').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('-');
+    }
+    // Manejar abreviaturas con punto (Dr., Dra., Sr., Sra.)
+    if (word.endsWith('.') && word.length <= 4) {
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    }
+    return word.charAt(0).toUpperCase() + word.slice(1);
+  }).join(' ');
+}
+
+/**
+ * Aplica Title Case automáticamente al perder el foco en un input.
+ * Uso: <input type="text" onblur="applyTitleCase(this)">
+ */
+function applyTitleCase(input) {
+  if (input && input.value) {
+    input.value = toTitleCase(input.value);
+  }
+}
 
 // ============================================================
 // API HELPER
@@ -1080,10 +1140,34 @@ async function doLogin() {
 function doLogout() { currentUser = null; location.reload(); }
 
 function applyRoleVisibility() {
-  const isAdmin = currentUser.rol === 'ADMIN';
-  const isCapturista = currentUser.rol === 'CAPTURISTA' || isAdmin;
+  const rol = currentUser.rol;
+  const isAdmin = rol === 'ADMIN';
+  const isCapturista = rol === 'CAPTURISTA' || isAdmin;
+  const isRecepcion = rol === 'RECEPCION';
+
+  // Permisos por rol
   document.querySelectorAll('.capturista-only').forEach(el => el.style.display = isCapturista ? '' : 'none');
   document.querySelectorAll('.admin-only').forEach(el => el.style.display = isAdmin ? '' : 'none');
+  document.querySelectorAll('.recepcion-only').forEach(el => el.style.display = isRecepcion ? '' : 'none');
+
+  // RECEPCION solo ve: Recepción, Pacientes, y Cerrar sesión. Nada más.
+  if (isRecepcion) {
+    document.querySelectorAll('.nav-item').forEach(el => {
+      const page = el.dataset.page;
+      // Solo mostrar Pacientes (que es donde gestiona altas)
+      if (page !== 'pacientes' && page !== 'recepcion') {
+        el.style.display = 'none';
+      }
+    });
+    // Ocultar secciones que no aplican
+    document.querySelectorAll('.nav-section-title').forEach(el => {
+      const text = el.textContent.trim();
+      if (text !== 'Recepción' && text !== 'Pacientes' && text !== 'Operación') {
+        el.style.display = 'none';
+      }
+    });
+  }
+
   // Sección Admin del sidebar (si existe en el DOM)
   const adminSec = document.getElementById('adminSection');
   if (adminSec) adminSec.style.display = isAdmin ? '' : 'none';
@@ -1127,6 +1211,7 @@ function closeSidebar() {
 function loadPage(page) {
   switch (page) {
     case 'dashboard': loadDashboard(); break;
+    case 'recepcion': loadRecepcion(); break;
     case 'programacion': loadProgramacion(); break;
     case 'cirugias': loadCirugias(); break;
     case 'habitaciones': loadHabitaciones(); break;
@@ -1293,7 +1378,16 @@ async function loadProgramacionMes() {
     cirugiasDia.slice(0, 4).forEach(c => {
       const qClass = (c.idQuirofano || '').toLowerCase();
       const eClass = 'estado-' + (c.estado || '').toLowerCase().replace('_', '-');
-      html += `<div class="cal-cirugia ${qClass} ${eClass}" title="${c.horaInicio} ${c.paciente} - ${c.tipoCirugia}">${c.horaInicio} ${c.paciente.substring(0, 14)}</div>`;
+      // Extraer apellido del doctor
+      const medicoCompleto = c.medico || '';
+      const medicoCorto = medicoCompleto.replace(/^Dr\.?\s+|^Dra\.?\s+/i, '').trim();
+      const apellidoMedico = medicoCorto.split(' ').slice(-2).join(' ') || medicoCorto;
+      const pacienteCorto = (c.paciente || '').substring(0, 12);
+      const doctorCorto = apellidoMedico.substring(0, 14);
+      html += `<div class="cal-cirugia ${qClass} ${eClass}" title="${c.horaInicio} · ${c.paciente} · ${c.tipoCirugia} · Dr. ${medicoCorto}">
+        <div style="font-weight:600;">${c.horaInicio} ${pacienteCorto}</div>
+        <div style="font-size:9px;opacity:0.85;">Dr. ${doctorCorto}</div>
+      </div>`;
     });
     if (cirugiasDia.length > 4) {
       html += `<div style="font-size:10px;color:var(--text-muted);text-align:center;margin-top:2px;">+${cirugiasDia.length - 4} más</div>`;
@@ -1331,15 +1425,40 @@ async function verDetalleProgramacion(folio) {
   let acciones = '';
   if (currentUser.rol !== 'CONSULTA') {
     const estado = String(c.Estado || '').trim().toUpperCase();
+    const esAdmin = currentUser.rol === 'ADMIN';
+    const esCapturista = currentUser.rol === 'CAPTURISTA';
+
+    // Acciones de flujo principal
     if (estado === 'PROGRAMADA' || estado === '') {
-      acciones += `<button class="btn btn-accent btn-sm" onclick="closeModal();openModalReceta('${folio}')">Vincular receta</button>`;
+      acciones += `<button class="btn btn-accent btn-sm" onclick="closeModal();openModalReceta('${folio}')">Vincular receta</button> `;
+      acciones += `<button class="btn btn-primary btn-sm" onclick="closeModal();openModalConsumo('${folio}')" title="Registrar consumo directo (sin receta vinculada previa)">Registrar consumo</button> `;
     } else if (estado === 'RECETA_VINCULADA') {
-      acciones += `<button class="btn btn-primary btn-sm" onclick="closeModal();openModalConsumo('${folio}')">Registrar consumo</button>`;
-    } else if (estado === 'REALIZADA') {
-      acciones += `<button class="btn btn-secondary btn-sm" onclick="closeModal();verConsumosCirugia('${folio}')">Ver consumos</button>`;
-      if (currentUser.rol === 'ADMIN') {
-        acciones += ` <button class="btn btn-accent btn-sm" onclick="closeModal();openModalConsumo('${folio}')">+ Consumo adicional</button>`;
-      }
+      acciones += `<button class="btn btn-primary btn-sm" onclick="closeModal();openModalConsumo('${folio}')">Registrar consumo</button> `;
+    } else if (estado === 'CONSUMO_REGISTRADO' || estado === 'REALIZADA') {
+      acciones += `<button class="btn btn-secondary btn-sm" onclick="closeModal();verConsumosCirugia('${folio}')">Ver consumos</button> `;
+      acciones += `<button class="btn btn-accent btn-sm" onclick="closeModal();openModalConsumo('${folio}')">+ Consumo</button> `;
+    }
+
+    // Botón Terminar cirugía (cualquier estado activo)
+    if (estado !== 'TERMINADA' && estado !== 'CANCELADA') {
+      acciones += `<button class="btn btn-primary btn-sm" onclick="terminarCirugiaUI('${folio}')" style="background:var(--success);">✓ Cirugía terminada</button> `;
+    }
+
+    // Botón Editar
+    const puedeEditar = (esAdmin && estado !== 'CANCELADA' && estado !== 'TERMINADA') || (esCapturista && (estado === 'PROGRAMADA' || estado === ''));
+    if (puedeEditar) {
+      acciones += `<button class="btn btn-secondary btn-sm" onclick="abrirEditarCirugia('${folio}')">✎ Editar</button> `;
+    }
+
+    // Botón Cancelar
+    const puedeCancelar = (esAdmin && estado !== 'CANCELADA') || (esCapturista && (estado === 'PROGRAMADA' || estado === ''));
+    if (puedeCancelar) {
+      acciones += `<button class="btn btn-secondary btn-sm" onclick="cancelarCirugiaUI('${folio}')" style="color:var(--danger);">✕ Cancelar</button> `;
+    }
+
+    // Reabrir (solo ADMIN, si está CANCELADA o TERMINADA)
+    if (esAdmin && (estado === 'CANCELADA' || estado === 'TERMINADA')) {
+      acciones += `<button class="btn btn-accent btn-sm" onclick="reabrirCirugiaUI('${folio}')">↻ Reabrir cirugía</button> `;
     }
   }
 
@@ -1414,30 +1533,22 @@ function openModalProgramar() {
           <strong id="cx_hora_fin" style="font-family:'Georgia',serif;font-size:16px;color:var(--navy);">--:--</strong>
         </div>
 
-        <!-- Paciente -->
+        <!-- Paciente - BUSCADOR (debe existir previamente, dado de alta en recepción) -->
         <div class="full" style="border:1px solid var(--border);border-radius:8px;padding:14px;background:#FAFBFC;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-            <strong style="color:var(--navy);font-size:13px;">Datos del paciente</strong>
-            <small style="color:var(--text-muted);font-size:11px;">El nombre puede actualizarse después</small>
+            <strong style="color:var(--navy);font-size:13px;">Paciente *</strong>
+            <a href="#" onclick="event.preventDefault();irARecepcion()" style="font-size:11px;color:var(--teal);text-decoration:underline;">¿Paciente no registrado? Ir a Recepción →</a>
           </div>
-          <div class="form-grid" style="margin:0;">
-            <div class="full"><label>Nombre completo del paciente *</label><input type="text" id="cx_paciente" placeholder="Si solo tienes el nombre, ponlo así" required></div>
-            <div><label>Edad</label><input type="number" id="cx_edad" min="0" max="120" placeholder="años"></div>
-            <div><label>Teléfono</label><input type="text" id="cx_telefono" placeholder="Opcional"></div>
-          </div>
-          <details style="margin-top:10px;">
-            <summary style="cursor:pointer;color:var(--teal-dark);font-size:12px;font-weight:600;">+ Agregar datos completos (CURP, dirección)</summary>
-            <div class="form-grid" style="margin:10px 0 0;">
-              <div class="full"><label>CURP</label><input type="text" id="cx_curp" maxlength="18" placeholder="18 caracteres" style="text-transform:uppercase;"></div>
-              <div><label>Calle</label><input type="text" id="cx_calle" placeholder="Opcional"></div>
-              <div><label>Número exterior</label><input type="text" id="cx_num_ext" placeholder="Opcional"></div>
-              <div><label>Número interior</label><input type="text" id="cx_num_int" placeholder="Opcional"></div>
-              <div><label>Colonia</label><input type="text" id="cx_colonia" placeholder="Opcional"></div>
-              <div><label>CP</label><input type="text" id="cx_cp" maxlength="5" placeholder="5 dígitos"></div>
-              <div><label>Ciudad</label><input type="text" id="cx_ciudad" placeholder="Opcional"></div>
-              <div><label>Estado</label><input type="text" id="cx_estado_pac" placeholder="Opcional"></div>
+          <input type="text" id="cx_paciente_busqueda" placeholder="Buscar por nombre, folio o CURP (mín. 2 letras)..." autocomplete="off" oninput="buscarPacienteEnVivo()">
+          <input type="hidden" id="cx_paciente" required>
+          <input type="hidden" id="cx_paciente_nombre">
+          <div id="cx_paciente_resultados" style="display:none;background:white;border:1px solid var(--border);border-radius:8px;max-height:220px;overflow-y:auto;box-shadow:var(--shadow);margin-top:4px;position:relative;z-index:5;"></div>
+          <div id="cx_paciente_seleccionado" style="display:none;margin-top:10px;padding:12px;background:var(--teal-light);border-radius:8px;border:1px solid var(--teal);font-size:13px;">
+            <div style="display:flex;justify-content:space-between;align-items:start;gap:10px;">
+              <div id="cx_paciente_info" style="flex:1;"></div>
+              <button type="button" onclick="limpiarPaciente()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;line-height:1;">×</button>
             </div>
-          </details>
+          </div>
         </div>
 
         <!-- Tipo de cirugía: BUSCADOR INTELIGENTE -->
@@ -1466,9 +1577,39 @@ function openModalProgramar() {
             <a href="#" onclick="event.preventDefault();irACatalogos('medicos')" style="font-size:11px;color:var(--teal);text-decoration:underline;">¿Falta un médico? Agregar al catálogo →</a>
           </div>
         </div>
-        <div><label style="font-size:11px;">Médico cirujano *</label><select id="cx_medico" required><option value="">—</option>${medicosOpts}</select></div>
-        <div><label style="font-size:11px;">Ayudante</label><select id="cx_ayudante"><option value="">— Opcional —</option>${medicosOpts}</select></div>
-        <div><label style="font-size:11px;">Anestesiólogo</label><select id="cx_anestesiologo"><option value="">— Opcional —</option>${medicosOpts}</select></div>
+        <div class="full">
+          <label style="font-size:11px;">Médico cirujano *</label>
+          <input type="text" id="cx_medico_busqueda" placeholder="Escribe nombre del médico..." autocomplete="off" oninput="buscarMedicoEnVivo('cx_medico')">
+          <input type="hidden" id="cx_medico" required>
+          <input type="hidden" id="cx_medico_nombre">
+          <div id="cx_medico_resultados" style="display:none;position:relative;background:white;border:1px solid var(--border);border-radius:8px;max-height:200px;overflow-y:auto;box-shadow:var(--shadow);margin-top:4px;"></div>
+          <div id="cx_medico_seleccionado" style="display:none;margin-top:8px;padding:8px 12px;background:var(--teal-light);border-radius:6px;border:1px solid var(--teal);font-size:13px;">
+            <strong id="cx_medico_label" style="color:var(--navy);"></strong>
+            <button type="button" onclick="limpiarMedico('cx_medico')" style="float:right;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:16px;line-height:1;">×</button>
+          </div>
+        </div>
+        <div class="full">
+          <label style="font-size:11px;">Ayudante (opcional)</label>
+          <input type="text" id="cx_ayudante_busqueda" placeholder="Escribe nombre del médico..." autocomplete="off" oninput="buscarMedicoEnVivo('cx_ayudante')">
+          <input type="hidden" id="cx_ayudante">
+          <input type="hidden" id="cx_ayudante_nombre">
+          <div id="cx_ayudante_resultados" style="display:none;position:relative;background:white;border:1px solid var(--border);border-radius:8px;max-height:200px;overflow-y:auto;box-shadow:var(--shadow);margin-top:4px;"></div>
+          <div id="cx_ayudante_seleccionado" style="display:none;margin-top:8px;padding:8px 12px;background:var(--teal-light);border-radius:6px;border:1px solid var(--teal);font-size:13px;">
+            <strong id="cx_ayudante_label" style="color:var(--navy);"></strong>
+            <button type="button" onclick="limpiarMedico('cx_ayudante')" style="float:right;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:16px;line-height:1;">×</button>
+          </div>
+        </div>
+        <div class="full">
+          <label style="font-size:11px;">Anestesiólogo (opcional)</label>
+          <input type="text" id="cx_anestesiologo_busqueda" placeholder="Escribe nombre del médico..." autocomplete="off" oninput="buscarMedicoEnVivo('cx_anestesiologo')">
+          <input type="hidden" id="cx_anestesiologo">
+          <input type="hidden" id="cx_anestesiologo_nombre">
+          <div id="cx_anestesiologo_resultados" style="display:none;position:relative;background:white;border:1px solid var(--border);border-radius:8px;max-height:200px;overflow-y:auto;box-shadow:var(--shadow);margin-top:4px;"></div>
+          <div id="cx_anestesiologo_seleccionado" style="display:none;margin-top:8px;padding:8px 12px;background:var(--teal-light);border-radius:6px;border:1px solid var(--teal);font-size:13px;">
+            <strong id="cx_anestesiologo_label" style="color:var(--navy);"></strong>
+            <button type="button" onclick="limpiarMedico('cx_anestesiologo')" style="float:right;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:16px;line-height:1;">×</button>
+          </div>
+        </div>
 
         <!-- Material y meds -->
         <div class="full"><label>Material especial</label><input type="text" id="cx_material" placeholder="Ej: Fluoroscopio, navegador, lente"></div>
@@ -1557,6 +1698,144 @@ function limpiarSeleccionCirugia() {
   document.getElementById('cx_tipo_busqueda').focus();
 }
 
+// ============================================================
+// BÚSQUEDA INTELIGENTE DE MÉDICOS
+// ============================================================
+function buscarMedicoEnVivo(prefijoCampo) {
+  const q = (document.getElementById(prefijoCampo + '_busqueda').value || '').trim().toLowerCase();
+  const cont = document.getElementById(prefijoCampo + '_resultados');
+  if (q.length < 2) {
+    cont.style.display = 'none';
+    return;
+  }
+  const resultados = catalogos.medicos.filter(m => {
+    const text = ((m.Nombre_Completo || '') + ' ' + (m.Especialidad || '') + ' ' + (m.Cedula_Profesional || '')).toLowerCase();
+    return text.includes(q);
+  }).slice(0, 20);
+
+  if (resultados.length === 0) {
+    cont.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:13px;text-align:center;">Sin resultados. <a href="#" onclick="event.preventDefault();irACatalogos(\'medicos\')" style="color:var(--teal);">¿Agregar médico al catálogo?</a></div>';
+    cont.style.display = 'block';
+    return;
+  }
+
+  cont.innerHTML = resultados.map(m => `
+    <div onclick="seleccionarMedico('${prefijoCampo}','${m.ID_Medico}','${(m.Nombre_Completo||'').replace(/'/g,'')}','${(m.Especialidad||'').replace(/'/g,'')}')"
+         style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px;"
+         onmouseover="this.style.background='var(--teal-light)'"
+         onmouseout="this.style.background='white'">
+      <div style="font-weight:600;color:var(--navy);">${m.Nombre_Completo}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">
+        ${m.Especialidad || 'Sin especialidad'} ${m.Cedula_Profesional ? '· Cédula ' + m.Cedula_Profesional : ''}
+      </div>
+    </div>
+  `).join('');
+  cont.style.display = 'block';
+}
+
+function seleccionarMedico(prefijoCampo, idMedico, nombre, especialidad) {
+  document.getElementById(prefijoCampo).value = idMedico;
+  document.getElementById(prefijoCampo + '_nombre').value = nombre;
+  document.getElementById(prefijoCampo + '_busqueda').value = '';
+  document.getElementById(prefijoCampo + '_resultados').style.display = 'none';
+  document.getElementById(prefijoCampo + '_label').innerHTML = `${nombre} ${especialidad ? `<small style="color:var(--text-muted);font-weight:normal;">· ${especialidad}</small>` : ''}`;
+  document.getElementById(prefijoCampo + '_seleccionado').style.display = 'block';
+}
+
+function limpiarMedico(prefijoCampo) {
+  document.getElementById(prefijoCampo).value = '';
+  document.getElementById(prefijoCampo + '_nombre').value = '';
+  document.getElementById(prefijoCampo + '_seleccionado').style.display = 'none';
+  document.getElementById(prefijoCampo + '_busqueda').focus();
+}
+
+// ============================================================
+// BÚSQUEDA INTELIGENTE DE PACIENTES
+// ============================================================
+function buscarPacienteEnVivo() {
+  const q = (document.getElementById('cx_paciente_busqueda').value || '').trim().toLowerCase();
+  const cont = document.getElementById('cx_paciente_resultados');
+  if (q.length < 2) {
+    cont.style.display = 'none';
+    return;
+  }
+  // Filtrar pacientes activos
+  const resultados = catalogos.pacientes.filter(p => {
+    if (p.Estatus === 'Suspendido') return false;
+    const text = ((p.Nombre_Completo || '') + ' ' + (p.CURP || '') + ' ' + (p.Folio_Recepcion || '') + ' ' + (p.ID_Paciente || '')).toLowerCase();
+    return text.includes(q);
+  }).slice(0, 15);
+
+  if (resultados.length === 0) {
+    cont.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:13px;text-align:center;">No hay pacientes con ese nombre. <a href="#" onclick="event.preventDefault();irARecepcion()" style="color:var(--teal);font-weight:600;">Dar de alta en Recepción →</a></div>';
+    cont.style.display = 'block';
+    return;
+  }
+
+  cont.innerHTML = resultados.map(p => `
+    <div onclick="seleccionarPaciente('${p.ID_Paciente}','${(p.Nombre_Completo||'').replace(/'/g,'\\\'')}',${p.Edad||0},'${p.Folio_Recepcion||''}','${p.CURP||''}','${(p.Alergias||'').replace(/'/g,'\\\'')}','${p.Servicio||''}','${(p.Nombre_Aseguradora||'').replace(/'/g,'\\\'')}')"
+         style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px;"
+         onmouseover="this.style.background='var(--teal-light)'"
+         onmouseout="this.style.background='white'">
+      <div style="display:flex;justify-content:space-between;align-items:start;gap:10px;">
+        <div style="flex:1;">
+          <div style="font-weight:600;color:var(--navy);">${p.Nombre_Completo}</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">
+            ${p.Folio_Recepcion ? p.Folio_Recepcion + ' · ' : ''}${p.Edad ? p.Edad + ' años' : ''}${p.Genero ? ' · ' + p.Genero : ''}${p.Servicio ? ' · ' + p.Servicio : ''}
+          </div>
+          ${p.Alergias ? '<div style="font-size:11px;color:var(--danger);margin-top:2px;">⚠ Alergias: ' + p.Alergias + '</div>' : ''}
+        </div>
+      </div>
+    </div>
+  `).join('');
+  cont.style.display = 'block';
+}
+
+function seleccionarPaciente(idPaciente, nombre, edad, folio, curp, alergias, servicio, aseguradora) {
+  document.getElementById('cx_paciente').value = idPaciente;
+  document.getElementById('cx_paciente_nombre').value = nombre;
+  document.getElementById('cx_paciente_busqueda').value = '';
+  document.getElementById('cx_paciente_resultados').style.display = 'none';
+
+  let infoHTML = `<strong style="color:var(--navy);">${nombre}</strong>`;
+  if (edad) infoHTML += ` <span style="color:var(--text-muted);">(${edad} años)</span>`;
+  infoHTML += '<br>';
+  if (folio) infoHTML += `<small style="color:var(--text-muted);">${folio}</small>`;
+  if (curp) infoHTML += `<small style="color:var(--text-muted);"> · CURP ${curp}</small>`;
+  if (servicio) infoHTML += `<small style="color:var(--text-muted);"> · ${servicio}${aseguradora && aseguradora !== 'PARTICULAR' ? ' ' + aseguradora : ''}</small>`;
+  if (alergias) infoHTML += `<div style="margin-top:6px;padding:6px 8px;background:#FEE2E2;border-radius:4px;color:#991B1B;font-size:11px;"><strong>⚠ Alergias:</strong> ${alergias}</div>`;
+
+  document.getElementById('cx_paciente_info').innerHTML = infoHTML;
+  document.getElementById('cx_paciente_seleccionado').style.display = 'block';
+}
+
+function limpiarPaciente() {
+  document.getElementById('cx_paciente').value = '';
+  document.getElementById('cx_paciente_nombre').value = '';
+  document.getElementById('cx_paciente_seleccionado').style.display = 'none';
+  document.getElementById('cx_paciente_busqueda').focus();
+}
+
+// Navegar a pantalla de Recepción para dar de alta paciente
+function irARecepcion() {
+  const confirmar = confirm(
+    'Vas a salir del formulario de programar cirugía para ir a Recepción.\n\n' +
+    '⚠ Los datos que hayas capturado se perderán.\n\n' +
+    '¿Continuar?'
+  );
+  if (!confirmar) return;
+  closeModal();
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const navRec = document.querySelector('[data-page="recepcion"]');
+  if (navRec) navRec.classList.add('active');
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-recepcion').classList.add('active');
+  loadRecepcion();
+  setTimeout(() => {
+    showToast('Da de alta el paciente y regresa a Programar cirugía', 'warn');
+  }, 300);
+}
+
 function calcularHoraFin() {
   const hora = document.getElementById('cx_hora').value;
   const tqx = parseFloat(document.getElementById('cx_tqx').value);
@@ -1573,27 +1852,39 @@ function calcularHoraFin() {
 }
 
 async function crearCirugia() {
-  const nombre = document.getElementById('cx_paciente').value.trim();
+  const idPaciente = document.getElementById('cx_paciente').value;
+  const nombrePaciente = document.getElementById('cx_paciente_nombre').value;
   const idQuirofano = document.getElementById('cx_quirofano').value;
   const numeroQuirofano = document.getElementById('cx_quirofano').selectedOptions[0]?.dataset.numero || '';
   const idMedico = document.getElementById('cx_medico').value;
+  const nombreMedicoSel = document.getElementById('cx_medico_nombre').value;
   const idTipo = document.getElementById('cx_tipo').value;
   const claveCPT = document.getElementById('cx_tipo_cpt').value;
   const nombreCirugia = document.getElementById('cx_tipo_nombre').value;
   const idAyudante = document.getElementById('cx_ayudante').value;
+  const nombreAyudanteSel = document.getElementById('cx_ayudante_nombre').value;
   const idAnestesiologo = document.getElementById('cx_anestesiologo').value;
+  const nombreAnestSel = document.getElementById('cx_anestesiologo_nombre').value;
   const tqx = parseFloat(document.getElementById('cx_tqx').value);
   const fecha = document.getElementById('cx_fecha').value;
   const hora = document.getElementById('cx_hora').value;
 
+  if (!idPaciente) {
+    showToast('Debes seleccionar un paciente del buscador. Si no está registrado, debe darse de alta en Recepción primero.', 'error');
+    return;
+  }
   if (!idTipo) {
     showToast('Debes seleccionar un tipo de cirugía del buscador', 'error');
     return;
   }
+  if (!idMedico) {
+    showToast('Debes seleccionar un médico cirujano', 'error');
+    return;
+  }
 
-  const medico = catalogos.medicos.find(m => m.ID_Medico === idMedico);
-  const ayudante = idAyudante ? catalogos.medicos.find(m => m.ID_Medico === idAyudante) : null;
-  const anestesiologo = idAnestesiologo ? catalogos.medicos.find(m => m.ID_Medico === idAnestesiologo) : null;
+  // Buscar datos del paciente seleccionado
+  const paciente = catalogos.pacientes.find(p => p.ID_Paciente === idPaciente);
+  const edadPaciente = paciente ? paciente.Edad : '';
 
   if (medsEstimadosBuffer.length === 0) {
     if (!confirm('No has agregado medicamentos estimados. ¿Crear la cirugía sin medicamentos? (Podrás agregarlos al registrar el consumo).')) {
@@ -1601,51 +1892,15 @@ async function crearCirugia() {
     }
   }
 
-  // Recolectar datos extendidos del paciente (todos opcionales excepto nombre)
-  const datosPacienteExtendido = {
-    nombre,
-    edad: parseInt(document.getElementById('cx_edad').value, 10) || '',
-    telefono: document.getElementById('cx_telefono').value.trim(),
-    curp: document.getElementById('cx_curp').value.trim().toUpperCase(),
-    calle: document.getElementById('cx_calle').value.trim(),
-    numeroExterior: document.getElementById('cx_num_ext').value.trim(),
-    numeroInterior: document.getElementById('cx_num_int').value.trim(),
-    colonia: document.getElementById('cx_colonia').value.trim(),
-    cp: document.getElementById('cx_cp').value.trim(),
-    ciudad: document.getElementById('cx_ciudad').value.trim(),
-    estado: document.getElementById('cx_estado_pac').value.trim(),
-    capturadoPor: currentUser.nombre
-  };
-
-  let paciente = catalogos.pacientes.find(p => (p.Nombre_Completo||'').toLowerCase() === nombre.toLowerCase());
-  if (!paciente) {
-    const altaResp = await apiPost('altaPaciente', datosPacienteExtendido);
-    if (!altaResp.ok) { showToast('Error: ' + altaResp.error, 'error'); return; }
-    paciente = { ID_Paciente: altaResp.idPaciente, Nombre_Completo: nombre };
-    catalogos.pacientes.push(paciente);
-  } else {
-    // El paciente ya existe — si capturaron CURP/dirección y no los tenía, actualizarlos
-    const tieneNuevosDatos = datosPacienteExtendido.curp || datosPacienteExtendido.calle ||
-                             datosPacienteExtendido.colonia || datosPacienteExtendido.telefono;
-    if (tieneNuevosDatos) {
-      // Solo actualizamos campos no vacíos
-      const updateData = { idPaciente: paciente.ID_Paciente };
-      Object.keys(datosPacienteExtendido).forEach(k => {
-        if (datosPacienteExtendido[k] && k !== 'capturadoPor') updateData[k] = datosPacienteExtendido[k];
-      });
-      await apiPost('actualizarPaciente', updateData);
-    }
-  }
-
   const data = {
     fechaProgramada: fecha, horaProgramada: hora, tqxHoras: tqx,
     idQuirofano, numeroQuirofano,
-    idPaciente: paciente.ID_Paciente, nombrePaciente: paciente.Nombre_Completo,
-    edadPaciente: datosPacienteExtendido.edad,
-    idMedico, nombreMedico: medico.Nombre_Completo,
+    idPaciente, nombrePaciente,
+    edadPaciente,
+    idMedico, nombreMedico: nombreMedicoSel,
     idCirugiaTipo: idTipo, tipoCirugia: nombreCirugia, claveCPT: claveCPT,
-    idAyudante: idAyudante || '', nombreAyudante: ayudante ? ayudante.Nombre_Completo : '',
-    idAnestesiologo: idAnestesiologo || '', nombreAnestesiologo: anestesiologo ? anestesiologo.Nombre_Completo : '',
+    idAyudante: idAyudante || '', nombreAyudante: nombreAyudanteSel || '',
+    idAnestesiologo: idAnestesiologo || '', nombreAnestesiologo: nombreAnestSel || '',
     materialEspecial: document.getElementById('cx_material').value,
     medicamentosSolicitados: medsEstimadosBuffer,
     observaciones: document.getElementById('cx_obs').value,
@@ -1925,41 +2180,222 @@ function renderCirugiaActions(c) {
   const estado = String(c.Estado || '').trim().toUpperCase();
   const folio = c.Folio_Cirugia;
 
-  // CONSULTA: solo puede ver consumos si está realizada
+  // CONSULTA: solo puede ver consumos si está realizada o terminada
   if (currentUser.rol === 'CONSULTA') {
-    if (estado === 'REALIZADA') {
+    if (estado === 'REALIZADA' || estado === 'CONSUMO_REGISTRADO' || estado === 'TERMINADA') {
       return `<button class="btn btn-secondary btn-sm" onclick="verConsumosCirugia('${folio}')">Ver consumos</button>`;
     }
     return '<span style="color:var(--text-muted);font-size:11px;">—</span>';
   }
 
   // ADMIN y CAPTURISTA
+  const esAdmin = currentUser.rol === 'ADMIN';
+  const esCapturista = currentUser.rol === 'CAPTURISTA';
   let botones = [];
 
   if (estado === 'PROGRAMADA' || estado === '') {
-    // Si está programada (o sin estado), permitir vincular receta
     botones.push(`<button class="btn btn-accent btn-sm" onclick="openModalReceta('${folio}')">Vincular receta</button>`);
+    botones.push(`<button class="btn btn-primary btn-sm" onclick="openModalConsumo('${folio}')" title="Registrar consumo directo">Consumo</button>`);
   }
   if (estado === 'RECETA_VINCULADA') {
     botones.push(`<button class="btn btn-primary btn-sm" onclick="openModalConsumo('${folio}')">Registrar consumo</button>`);
   }
-  if (estado === 'REALIZADA') {
+  if (estado === 'CONSUMO_REGISTRADO' || estado === 'REALIZADA') {
     botones.push(`<button class="btn btn-secondary btn-sm" onclick="verConsumosCirugia('${folio}')">Ver consumos</button>`);
-    // ADMIN puede agregar consumo adicional
-    if (currentUser.rol === 'ADMIN') {
-      botones.push(`<button class="btn btn-accent btn-sm" onclick="openModalConsumo('${folio}')" style="margin-left:4px;">+ Consumo</button>`);
-    }
+    botones.push(`<button class="btn btn-accent btn-sm" onclick="openModalConsumo('${folio}')" style="margin-left:4px;">+</button>`);
+  }
+  // Terminar cirugía
+  if (estado !== 'TERMINADA' && estado !== 'CANCELADA' && estado !== '') {
+    botones.push(`<button class="btn btn-primary btn-sm" onclick="terminarCirugiaUI('${folio}')" style="background:var(--success);" title="Marcar como terminada">✓</button>`);
   }
   if (estado === 'CANCELADA') {
     botones.push(`<span style="color:var(--text-muted);font-size:11px;">Cancelada</span>`);
+    if (esAdmin) {
+      botones.push(`<button class="btn btn-accent btn-sm" onclick="reabrirCirugiaUI('${folio}')">↻ Reabrir</button>`);
+    }
+  }
+  if (estado === 'TERMINADA') {
+    botones.push(`<span style="color:var(--success);font-size:11px;font-weight:600;">✓ Terminada</span>`);
+    if (esAdmin) {
+      botones.push(`<button class="btn btn-secondary btn-sm" onclick="reabrirCirugiaUI('${folio}')">↻</button>`);
+    }
   }
 
   if (botones.length === 0) {
-    // Fallback: estado desconocido — permitir ver detalle al menos
     botones.push(`<button class="btn btn-secondary btn-sm" onclick="verDetalleProgramacion('${folio}')">Ver detalle</button>`);
   }
 
   return botones.join(' ');
+}
+
+// ============================================================
+// EDITAR / CANCELAR / TERMINAR / REABRIR CIRUGÍAS
+// ============================================================
+
+async function abrirEditarCirugia(folio) {
+  const c = cache.cirugias.find(x => x.Folio_Cirugia === folio);
+  if (!c) { showToast('Cirugía no encontrada', 'error'); return; }
+
+  // Verificar permisos: CAPTURISTA solo PROGRAMADA
+  const estado = String(c.Estado || '').trim().toUpperCase();
+  if (currentUser.rol === 'CAPTURISTA' && estado !== 'PROGRAMADA' && estado !== '') {
+    showToast(`No puedes editar cirugías en estado ${estado}. Pide a un ADMIN.`, 'error');
+    return;
+  }
+
+  closeModal();
+
+  const aseguradorasOpts = '';  // no necesario aquí
+  const medicosOpts = catalogos.medicos.map(m =>
+    `<option value="${m.ID_Medico}" data-nombre="${m.Nombre_Completo}" ${m.ID_Medico === c.ID_Medico ? 'selected' : ''}>${m.Nombre_Completo} (${m.Especialidad || 's/esp'})</option>`
+  ).join('');
+  const ayuOpts = catalogos.medicos.map(m =>
+    `<option value="${m.ID_Medico}" data-nombre="${m.Nombre_Completo}" ${m.ID_Medico === c.ID_Ayudante ? 'selected' : ''}>${m.Nombre_Completo}</option>`
+  ).join('');
+  const anesOpts = catalogos.medicos.map(m =>
+    `<option value="${m.ID_Medico}" data-nombre="${m.Nombre_Completo}" ${m.ID_Medico === c.ID_Anestesiologo ? 'selected' : ''}>${m.Nombre_Completo}</option>`
+  ).join('');
+  const quirOpts = (catalogos.quirofanos || []).map(q =>
+    `<option value="${q.ID_Quirofano}" data-numero="${q.Numero}" ${q.ID_Quirofano === c.ID_Quirofano ? 'selected' : ''}>Quirófano ${q.Numero}</option>`
+  ).join('');
+
+  openModal(`Editar cirugía · ${folio}`, `
+    <div style="background:var(--warn-bg);color:#78350F;padding:10px 12px;border-radius:6px;margin-bottom:14px;font-size:12px;">
+      ⚠ Estado actual: <strong>${estado}</strong>. Los cambios quedan registrados en el audit trail.
+    </div>
+    <form onsubmit="event.preventDefault();guardarEdicionCirugia('${folio}')">
+      <div class="form-grid">
+        <div><label>Quirófano</label><select id="ed_quirofano">${quirOpts}</select></div>
+        <div><label>Fecha</label><input type="date" id="ed_fecha" value="${(c.Fecha_Programada || '').substring(0,10)}"></div>
+        <div><label>Hora</label><input type="time" id="ed_hora" value="${(c.Hora_Programada || '').replace(/^'/, '').substring(0,5)}"></div>
+        <div><label>TQX (horas)</label><input type="number" id="ed_tqx" step="0.5" min="0.5" value="${c.TQX_Horas || ''}"></div>
+        <div class="full">
+          <label>Paciente</label>
+          <input type="text" id="ed_paciente_display" value="${c.Nombre_Paciente || ''}" readonly style="background:#f4f4f4;">
+          <small style="color:var(--text-muted);font-size:11px;">Para cambiar paciente, cancela esta cirugía y crea una nueva.</small>
+        </div>
+        <div class="full"><label>Médico cirujano</label><select id="ed_medico">${medicosOpts}</select></div>
+        <div class="full"><label>Ayudante</label><select id="ed_ayudante"><option value="">— Sin ayudante —</option>${ayuOpts}</select></div>
+        <div class="full"><label>Anestesiólogo</label><select id="ed_anestesiologo"><option value="">— Sin anestesiólogo —</option>${anesOpts}</select></div>
+        <div class="full"><label>Material especial</label><input type="text" id="ed_material" value="${c.Material_Especial || ''}"></div>
+        <div class="full"><label>Observaciones</label><textarea id="ed_obs">${c.Observaciones || ''}</textarea></div>
+        <div class="full"><label>Motivo de la edición (opcional)</label><input type="text" id="ed_motivo" placeholder="Para audit trail"></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal();verDetalleProgramacion('${folio}')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar cambios</button>
+      </div>
+    </form>
+  `);
+}
+
+async function guardarEdicionCirugia(folio) {
+  const medicoSel = document.getElementById('ed_medico');
+  const ayuSel = document.getElementById('ed_ayudante');
+  const anesSel = document.getElementById('ed_anestesiologo');
+  const quirSel = document.getElementById('ed_quirofano');
+
+  const data = {
+    folio,
+    rolUsuario: currentUser.rol,
+    realizadoPor: currentUser.nombre,
+    motivo: document.getElementById('ed_motivo').value.trim(),
+    fechaProgramada: document.getElementById('ed_fecha').value,
+    horaProgramada: document.getElementById('ed_hora').value,
+    tqxHoras: parseFloat(document.getElementById('ed_tqx').value) || 0,
+    idQuirofano: quirSel.value,
+    numeroQuirofano: quirSel.selectedOptions[0]?.dataset.numero || '',
+    idMedico: medicoSel.value,
+    nombreMedico: medicoSel.selectedOptions[0]?.dataset.nombre || '',
+    idAyudante: ayuSel.value,
+    nombreAyudante: ayuSel.value ? (ayuSel.selectedOptions[0]?.dataset.nombre || '') : '',
+    idAnestesiologo: anesSel.value,
+    nombreAnestesiologo: anesSel.value ? (anesSel.selectedOptions[0]?.dataset.nombre || '') : '',
+    materialEspecial: document.getElementById('ed_material').value.trim(),
+    observaciones: document.getElementById('ed_obs').value.trim()
+  };
+
+  const resp = await apiPost('editarCirugia', data);
+  if (resp.ok) {
+    showToast(`Cirugía actualizada (${resp.camposActualizados} campos)`);
+    closeModal();
+    await loadCirugias();
+  } else {
+    showToast('Error: ' + resp.error, 'error');
+  }
+}
+
+async function cancelarCirugiaUI(folio) {
+  const motivo = prompt('Motivo de cancelación (obligatorio, mínimo 10 caracteres):');
+  if (!motivo) return;
+  if (motivo.trim().length < 10) {
+    showToast('El motivo debe tener al menos 10 caracteres', 'error');
+    return;
+  }
+  if (!confirm(`¿Confirmas cancelar la cirugía ${folio}?\n\nMotivo: ${motivo}\n\nEsta acción quedará registrada.`)) return;
+
+  const resp = await apiPost('cancelarCirugia', {
+    folio,
+    motivo: motivo.trim(),
+    rolUsuario: currentUser.rol,
+    realizadoPor: currentUser.nombre
+  });
+  if (resp.ok) {
+    showToast(`Cirugía ${folio} cancelada`);
+    closeModal();
+    await loadCirugias();
+  } else {
+    showToast('Error: ' + resp.error, 'error');
+  }
+}
+
+async function terminarCirugiaUI(folio, forzar = false) {
+  const motivo = forzar ? 'Terminada sin consumos' : (prompt('Motivo de terminación (opcional):') || '');
+
+  const resp = await apiPost('terminarCirugia', {
+    folio,
+    motivo: motivo.trim(),
+    realizadoPor: currentUser.nombre,
+    forzar
+  });
+
+  if (resp.ok) {
+    showToast(`Cirugía ${folio} terminada` + (resp.sinConsumos ? ' (sin consumos)' : ''));
+    closeModal();
+    await loadCirugias();
+  } else if (resp.requiereConfirmacion) {
+    if (confirm(resp.error + '\n\n¿Forzar terminación?')) {
+      return terminarCirugiaUI(folio, true);
+    }
+  } else {
+    showToast('Error: ' + resp.error, 'error');
+  }
+}
+
+async function reabrirCirugiaUI(folio) {
+  if (currentUser.rol !== 'ADMIN') {
+    showToast('Solo ADMIN puede reabrir cirugías', 'error');
+    return;
+  }
+  const motivo = prompt('Motivo para reabrir (obligatorio, mínimo 10 caracteres):');
+  if (!motivo) return;
+  if (motivo.trim().length < 10) {
+    showToast('El motivo debe tener al menos 10 caracteres', 'error');
+    return;
+  }
+  const resp = await apiPost('reabrirCirugia', {
+    folio,
+    motivo: motivo.trim(),
+    rolUsuario: currentUser.rol,
+    realizadoPor: currentUser.nombre
+  });
+  if (resp.ok) {
+    showToast(`Cirugía ${folio} reabierta. Nuevo estado: ${resp.estadoNuevo}`);
+    closeModal();
+    await loadCirugias();
+  } else {
+    showToast('Error: ' + resp.error, 'error');
+  }
 }
 
 // ============================================================
@@ -3253,6 +3689,318 @@ async function confirmarMover(idHosp) {
 // ============================================================
 let cachePacientes = [];
 
+// ============================================================
+// RECEPCIÓN - Alta de pacientes
+// ============================================================
+async function loadRecepcion() {
+  const cont = document.getElementById('recepcionLista');
+  cont.innerHTML = '<div class="loading"><div class="spinner"></div> Cargando pacientes recientes...</div>';
+
+  // Recargar catálogos para tener pacientes frescos
+  await loadCatalogos();
+  const pacientes = catalogos.pacientes || [];
+
+  // Filtrar últimos 30 días
+  const ahora = new Date();
+  const hace30 = new Date(ahora.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const recientes = pacientes.filter(p => {
+    if (!p.Fecha_Alta) return false;
+    const f = new Date(p.Fecha_Alta);
+    return f >= hace30;
+  }).sort((a, b) => new Date(b.Fecha_Alta) - new Date(a.Fecha_Alta));
+
+  if (recientes.length === 0) {
+    cont.innerHTML = `
+      <div class="card" style="text-align:center;padding:40px;">
+        <div style="font-size:48px;margin-bottom:12px;">📋</div>
+        <h3 style="color:var(--navy);margin-bottom:8px;">Sin altas recientes</h3>
+        <p style="color:var(--text-muted);font-size:14px;">Click en "+ Nuevo paciente" para registrar el primer ingreso del día.</p>
+      </div>
+    `;
+    return;
+  }
+
+  cont.innerHTML = `
+    <div class="card">
+      <div class="card-title" style="display:flex;justify-content:space-between;">
+        <span>Pacientes registrados (últimos 30 días)</span>
+        <small style="color:var(--text-muted);font-weight:normal;font-size:12px;">${recientes.length} total</small>
+      </div>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Folio</th>
+              <th>Nombre</th>
+              <th>Edad</th>
+              <th>Servicio</th>
+              <th>Aseguradora</th>
+              <th>Fecha alta</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${recientes.map(p => `
+              <tr>
+                <td><code style="font-size:11px;">${p.Folio_Recepcion || p.ID_Paciente}</code></td>
+                <td><strong>${p.Nombre_Completo}</strong></td>
+                <td>${p.Edad || '—'}</td>
+                <td>${p.Servicio || 'PARTICULAR'}</td>
+                <td>${p.Nombre_Aseguradora || '—'}</td>
+                <td><small>${formatDateShort(p.Fecha_Alta)}</small></td>
+                <td>
+                  <button class="btn btn-secondary btn-sm" onclick="openModalEditarPaciente('${p.ID_Paciente}')">✎ Editar</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function abrirFormularioRecepcion() {
+  const aseguradorasOpts = (catalogos.aseguradoras || []).map(a =>
+    `<option value="${a.ID_Aseguradora}" data-nombre="${a.Nombre}">${a.Nombre}</option>`
+  ).join('');
+
+  const medicosOpts = catalogos.medicos.map(m =>
+    `<option value="${m.Nombre_Completo}">${m.Nombre_Completo} (${m.Especialidad || 's/esp'})</option>`
+  ).join('');
+
+  openModal('Alta de Paciente · Recepción', `
+    <div style="background:var(--teal-light);padding:12px 14px;border-radius:8px;margin-bottom:16px;font-size:12px;color:var(--navy);">
+      💡 Completa los datos en 3 secciones. Solo el <strong>nombre</strong> es obligatorio. El folio de recepción se genera automáticamente.
+    </div>
+
+    <div class="rec-tabs" style="display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid var(--border);">
+      <button type="button" class="rec-tab-btn active" data-tab="general" onclick="cambiarTabRecepcion('general')" style="padding:10px 18px;background:none;border:none;border-bottom:3px solid var(--teal);cursor:pointer;font-weight:600;color:var(--navy);font-family:inherit;">General</button>
+      <button type="button" class="rec-tab-btn" data-tab="direccion" onclick="cambiarTabRecepcion('direccion')" style="padding:10px 18px;background:none;border:none;border-bottom:3px solid transparent;cursor:pointer;color:var(--text-muted);font-family:inherit;">Dirección</button>
+      <button type="button" class="rec-tab-btn" data-tab="datos" onclick="cambiarTabRecepcion('datos')" style="padding:10px 18px;background:none;border:none;border-bottom:3px solid transparent;cursor:pointer;color:var(--text-muted);font-family:inherit;">Datos particulares</button>
+    </div>
+
+    <form onsubmit="event.preventDefault();guardarPacienteRecepcion()">
+      <!-- TAB GENERAL -->
+      <div class="rec-tab-content" data-tab="general">
+        <div class="form-grid">
+          <div class="full"><label>Nombre completo *</label><input type="text" id="rec_nombre" required onblur="applyTitleCase(this)" placeholder="Como aparece en su identificación"></div>
+          <div><label>Contacto 1 (parentesco/relación)</label><input type="text" id="rec_contacto1" onblur="applyTitleCase(this)" placeholder="Ej: Hijo, Esposa"></div>
+          <div><label>Contacto 2 (parentesco/relación)</label><input type="text" id="rec_contacto2" onblur="applyTitleCase(this)" placeholder="Opcional"></div>
+          <div><label>Tipo de cliente</label>
+            <select id="rec_tipo_cliente">
+              <option value="CLINICA ESTAR BIEN">CLINICA ESTAR BIEN</option>
+              <option value="EXTERNO">Externo</option>
+              <option value="CONVENIO">Convenio</option>
+            </select>
+          </div>
+          <div><label>Médico que refirió (vendedor)</label>
+            <select id="rec_vendedor">
+              <option value="">— Opcional —</option>
+              ${medicosOpts}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB DIRECCIÓN -->
+      <div class="rec-tab-content" data-tab="direccion" style="display:none;">
+        <div class="form-grid">
+          <div class="full"><label>Domicilio (texto libre)</label><input type="text" id="rec_domicilio" onblur="applyTitleCase(this)" placeholder="Si prefieres capturar dirección completa, deja vacío y usa los campos de abajo"></div>
+          <div class="full"><label>Calle</label><input type="text" id="rec_calle" onblur="applyTitleCase(this)"></div>
+          <div><label>Número exterior</label><input type="text" id="rec_num_ext"></div>
+          <div><label>Número interior</label><input type="text" id="rec_num_int"></div>
+          <div><label>Colonia</label><input type="text" id="rec_colonia" onblur="applyTitleCase(this)"></div>
+          <div><label>CP</label><input type="text" id="rec_cp" maxlength="5" placeholder="5 dígitos"></div>
+          <div><label>Ciudad</label><input type="text" id="rec_ciudad" onblur="applyTitleCase(this)"></div>
+          <div><label>Estado</label><input type="text" id="rec_estado" onblur="applyTitleCase(this)"></div>
+          <div><label>Teléfono 1</label><input type="text" id="rec_telefono1" placeholder="10 dígitos"></div>
+          <div><label>Teléfono 2</label><input type="text" id="rec_telefono2" placeholder="Opcional"></div>
+          <div class="full"><label>Email</label><input type="email" id="rec_email" placeholder="Opcional"></div>
+        </div>
+      </div>
+
+      <!-- TAB DATOS PARTICULARES -->
+      <div class="rec-tab-content" data-tab="datos" style="display:none;">
+        <div class="form-grid">
+          <div><label>Fecha de ingreso</label><input type="date" id="rec_fecha_ingreso" value="${todayISO()}"></div>
+          <div><label>Servicio</label>
+            <select id="rec_servicio" onchange="toggleAseguradora()">
+              <option value="PARTICULAR">PARTICULAR</option>
+              <option value="ASEGURADORA">ASEGURADORA</option>
+              <option value="CONVENIO">CONVENIO</option>
+            </select>
+          </div>
+          <div id="rec_aseg_wrap" style="display:none;">
+            <label>Aseguradora</label>
+            <select id="rec_aseguradora" onchange="onAseguradoraChange()">
+              <option value="">— Seleccionar —</option>
+              ${aseguradorasOpts}
+            </select>
+            <input type="hidden" id="rec_aseguradora_nombre">
+          </div>
+          <div id="rec_poliza_wrap" style="display:none;"><label>Número de póliza</label><input type="text" id="rec_poliza"></div>
+          <div><label>Caso / Expediente</label><input type="text" id="rec_caso" placeholder="Número interno"></div>
+          <div><label>Habitación asignada</label><input type="text" id="rec_habitacion" onblur="applyTitleCase(this)" placeholder="Ej: Privada 1"></div>
+          <div class="full"><label>Procedimiento (motivo de ingreso)</label><input type="text" id="rec_procedimiento" onblur="applyTitleCase(this)"></div>
+          <div><label>Fecha de nacimiento</label><input type="date" id="rec_fecha_nac" onchange="calcularEdadDesdeFecha()"></div>
+          <div><label>Edad</label><input type="number" id="rec_edad" min="0" max="120"></div>
+          <div><label>Género</label>
+            <select id="rec_genero">
+              <option value="">— Seleccionar —</option>
+              <option value="M">Masculino</option>
+              <option value="F">Femenino</option>
+              <option value="Otro">Otro</option>
+            </select>
+          </div>
+          <div><label>Estado civil</label>
+            <select id="rec_estado_civil">
+              <option value="">— Seleccionar —</option>
+              <option value="Soltero(a)">Soltero(a)</option>
+              <option value="Casado(a)">Casado(a)</option>
+              <option value="Viudo(a)">Viudo(a)</option>
+              <option value="Divorciado(a)">Divorciado(a)</option>
+              <option value="Unión libre">Unión libre</option>
+            </select>
+          </div>
+          <div><label>Religión</label><input type="text" id="rec_religion" onblur="applyTitleCase(this)" placeholder="Opcional"></div>
+          <div class="full"><label>Cónyuge</label><input type="text" id="rec_conyuge" onblur="applyTitleCase(this)" placeholder="Opcional"></div>
+          <div class="full"><label>Responsable / Familiar a cargo</label><input type="text" id="rec_responsable" onblur="applyTitleCase(this)" placeholder="Nombre"></div>
+          <div><label>Teléfono del responsable</label><input type="text" id="rec_telefono_resp"></div>
+          <div><label>CURP</label><input type="text" id="rec_curp" maxlength="18" style="text-transform:uppercase;" placeholder="18 caracteres"></div>
+          <div><label>RFC</label><input type="text" id="rec_rfc" maxlength="13" style="text-transform:uppercase;" placeholder="Opcional"></div>
+          <div class="full" style="background:#FEE2E2;padding:10px;border-radius:6px;border-left:4px solid var(--danger);">
+            <label style="color:#991B1B;">⚠ Alergias (importante clínicamente)</label>
+            <input type="text" id="rec_alergias" placeholder="Ej: Penicilina, mariscos, ninguna conocida">
+          </div>
+          <div><label>Médico tratante</label>
+            <select id="rec_medico_tratante">
+              <option value="">— Seleccionar —</option>
+              ${medicosOpts}
+            </select>
+          </div>
+          <div><label>Especialidad</label><input type="text" id="rec_especialidad" onblur="applyTitleCase(this)"></div>
+          <div class="full"><label>Observaciones</label><textarea id="rec_observaciones" placeholder="Notas adicionales"></textarea></div>
+        </div>
+      </div>
+
+      <div class="form-actions" style="margin-top:16px;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Dar de alta</button>
+      </div>
+    </form>
+  `);
+}
+
+function cambiarTabRecepcion(tab) {
+  document.querySelectorAll('.rec-tab-btn').forEach(btn => {
+    if (btn.dataset.tab === tab) {
+      btn.classList.add('active');
+      btn.style.borderBottomColor = 'var(--teal)';
+      btn.style.color = 'var(--navy)';
+      btn.style.fontWeight = '600';
+    } else {
+      btn.classList.remove('active');
+      btn.style.borderBottomColor = 'transparent';
+      btn.style.color = 'var(--text-muted)';
+      btn.style.fontWeight = 'normal';
+    }
+  });
+  document.querySelectorAll('.rec-tab-content').forEach(div => {
+    div.style.display = div.dataset.tab === tab ? '' : 'none';
+  });
+}
+
+function toggleAseguradora() {
+  const servicio = document.getElementById('rec_servicio').value;
+  const muestra = servicio === 'ASEGURADORA' || servicio === 'CONVENIO';
+  document.getElementById('rec_aseg_wrap').style.display = muestra ? '' : 'none';
+  document.getElementById('rec_poliza_wrap').style.display = muestra ? '' : 'none';
+}
+
+function onAseguradoraChange() {
+  const sel = document.getElementById('rec_aseguradora');
+  const nombre = sel.selectedOptions[0]?.dataset.nombre || '';
+  document.getElementById('rec_aseguradora_nombre').value = nombre;
+}
+
+function calcularEdadDesdeFecha() {
+  const fechaStr = document.getElementById('rec_fecha_nac').value;
+  if (!fechaStr) return;
+  const fecha = new Date(fechaStr);
+  const hoy = new Date();
+  let edad = hoy.getFullYear() - fecha.getFullYear();
+  const m = hoy.getMonth() - fecha.getMonth();
+  if (m < 0 || (m === 0 && hoy.getDate() < fecha.getDate())) edad--;
+  if (edad >= 0 && edad <= 120) {
+    document.getElementById('rec_edad').value = edad;
+  }
+}
+
+async function guardarPacienteRecepcion() {
+  const nombre = document.getElementById('rec_nombre').value.trim();
+  if (!nombre) {
+    showToast('El nombre completo es obligatorio', 'error');
+    cambiarTabRecepcion('general');
+    return;
+  }
+
+  const data = {
+    // General
+    nombre: toTitleCase(nombre),
+    contacto1: toTitleCase(document.getElementById('rec_contacto1').value.trim()),
+    contacto2: toTitleCase(document.getElementById('rec_contacto2').value.trim()),
+    tipoCliente: document.getElementById('rec_tipo_cliente').value,
+    vendedorMedico: document.getElementById('rec_vendedor').value,
+    // Dirección
+    domicilio: document.getElementById('rec_domicilio').value.trim(),
+    calle: toTitleCase(document.getElementById('rec_calle').value.trim()),
+    numeroExterior: document.getElementById('rec_num_ext').value.trim(),
+    numeroInterior: document.getElementById('rec_num_int').value.trim(),
+    colonia: toTitleCase(document.getElementById('rec_colonia').value.trim()),
+    cp: document.getElementById('rec_cp').value.trim(),
+    ciudad: toTitleCase(document.getElementById('rec_ciudad').value.trim()),
+    estado: toTitleCase(document.getElementById('rec_estado').value.trim()),
+    telefono1: document.getElementById('rec_telefono1').value.trim(),
+    telefono2: document.getElementById('rec_telefono2').value.trim(),
+    email: document.getElementById('rec_email').value.trim(),
+    // Datos particulares
+    fechaIngreso: document.getElementById('rec_fecha_ingreso').value,
+    servicio: document.getElementById('rec_servicio').value,
+    idAseguradora: document.getElementById('rec_aseguradora') ? document.getElementById('rec_aseguradora').value : '',
+    nombreAseguradora: document.getElementById('rec_aseguradora_nombre') ? document.getElementById('rec_aseguradora_nombre').value : '',
+    numeroPoliza: document.getElementById('rec_poliza') ? document.getElementById('rec_poliza').value.trim() : '',
+    caso: document.getElementById('rec_caso').value.trim(),
+    habitacionAsignada: document.getElementById('rec_habitacion').value.trim(),
+    procedimientoInicial: document.getElementById('rec_procedimiento').value.trim(),
+    fechaNacimiento: document.getElementById('rec_fecha_nac').value,
+    edad: parseInt(document.getElementById('rec_edad').value, 10) || '',
+    genero: document.getElementById('rec_genero').value,
+    estadoCivil: document.getElementById('rec_estado_civil').value,
+    religion: toTitleCase(document.getElementById('rec_religion').value.trim()),
+    conyuge: toTitleCase(document.getElementById('rec_conyuge').value.trim()),
+    responsable: toTitleCase(document.getElementById('rec_responsable').value.trim()),
+    telefonoResponsable: document.getElementById('rec_telefono_resp').value.trim(),
+    curp: document.getElementById('rec_curp').value.trim().toUpperCase(),
+    rfc: document.getElementById('rec_rfc').value.trim().toUpperCase(),
+    alergias: document.getElementById('rec_alergias').value.trim(),
+    medicoTratante: document.getElementById('rec_medico_tratante').value,
+    especialidad: toTitleCase(document.getElementById('rec_especialidad').value.trim()),
+    observaciones: document.getElementById('rec_observaciones').value.trim(),
+    capturadoPor: currentUser.nombre
+  };
+
+  const resp = await apiPost('altaPaciente', data);
+  if (resp.ok) {
+    showToast(`Paciente registrado: ${resp.folioRecepcion}`);
+    closeModal();
+    await loadCatalogos();
+    loadRecepcion();
+  } else {
+    showToast('Error: ' + resp.error, 'error');
+  }
+}
+
 async function loadPacientes() {
   const cont = document.getElementById('pacientesLista');
   cont.innerHTML = '<div class="loading"><div class="spinner"></div> Cargando pacientes...</div>';
@@ -3353,7 +4101,7 @@ async function openModalEditarPaciente(idPaciente, folioCirugiaOrigen) {
       </div>
 
       <div class="form-grid">
-        <div class="full"><label>Nombre completo *</label><input type="text" id="ep_nombre" value="${v('Nombre_Completo')}" required placeholder="Como aparece en su identificación"></div>
+        <div class="full"><label>Nombre completo *</label><input type="text" id="ep_nombre" value="${v('Nombre_Completo')}" required placeholder="Como aparece en su identificación" onblur="applyTitleCase(this)"></div>
         <div><label>Edad</label><input type="number" id="ep_edad" min="0" max="120" value="${v('Edad')}" placeholder="años"></div>
         <div><label>Teléfono</label><input type="text" id="ep_telefono" value="${v('Telefono')}" placeholder="10 dígitos"></div>
         <div class="full"><label>CURP</label><input type="text" id="ep_curp" value="${v('CURP')}" maxlength="18" placeholder="18 caracteres" style="text-transform:uppercase;"></div>
@@ -3362,13 +4110,13 @@ async function openModalEditarPaciente(idPaciente, folioCirugiaOrigen) {
       <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px;">
         <strong style="color:var(--navy);font-size:13px;">Dirección</strong>
         <div class="form-grid" style="margin-top:8px;">
-          <div class="full"><label>Calle</label><input type="text" id="ep_calle" value="${v('Calle')}" placeholder="Opcional"></div>
+          <div class="full"><label>Calle</label><input type="text" id="ep_calle" value="${v('Calle')}" placeholder="Opcional" onblur="applyTitleCase(this)"></div>
           <div><label>Número exterior</label><input type="text" id="ep_num_ext" value="${v('Numero_Exterior')}" placeholder="Opcional"></div>
           <div><label>Número interior</label><input type="text" id="ep_num_int" value="${v('Numero_Interior')}" placeholder="Opcional"></div>
-          <div><label>Colonia</label><input type="text" id="ep_colonia" value="${v('Colonia')}" placeholder="Opcional"></div>
+          <div><label>Colonia</label><input type="text" id="ep_colonia" value="${v('Colonia')}" placeholder="Opcional" onblur="applyTitleCase(this)"></div>
           <div><label>CP</label><input type="text" id="ep_cp" value="${v('CP')}" maxlength="5" placeholder="5 dígitos"></div>
-          <div><label>Ciudad</label><input type="text" id="ep_ciudad" value="${v('Ciudad')}" placeholder="Opcional"></div>
-          <div class="full"><label>Estado</label><input type="text" id="ep_estado" value="${v('Estado')}" placeholder="Opcional"></div>
+          <div><label>Ciudad</label><input type="text" id="ep_ciudad" value="${v('Ciudad')}" placeholder="Opcional" onblur="applyTitleCase(this)"></div>
+          <div class="full"><label>Estado</label><input type="text" id="ep_estado" value="${v('Estado')}" placeholder="Opcional" onblur="applyTitleCase(this)"></div>
         </div>
       </div>
 
@@ -3387,19 +4135,20 @@ async function openModalEditarPaciente(idPaciente, folioCirugiaOrigen) {
 
 async function guardarPaciente(idPaciente, folioCirugiaOrigen) {
   const data = {
-    nombre: document.getElementById('ep_nombre').value.trim(),
+    nombre: toTitleCase(document.getElementById('ep_nombre').value.trim()),
     edad: parseInt(document.getElementById('ep_edad').value, 10) || '',
     telefono: document.getElementById('ep_telefono').value.trim(),
     curp: document.getElementById('ep_curp').value.trim().toUpperCase(),
-    calle: document.getElementById('ep_calle').value.trim(),
+    calle: toTitleCase(document.getElementById('ep_calle').value.trim()),
     numeroExterior: document.getElementById('ep_num_ext').value.trim(),
     numeroInterior: document.getElementById('ep_num_int').value.trim(),
-    colonia: document.getElementById('ep_colonia').value.trim(),
+    colonia: toTitleCase(document.getElementById('ep_colonia').value.trim()),
     cp: document.getElementById('ep_cp').value.trim(),
-    ciudad: document.getElementById('ep_ciudad').value.trim(),
-    estado: document.getElementById('ep_estado').value.trim(),
+    ciudad: toTitleCase(document.getElementById('ep_ciudad').value.trim()),
+    estado: toTitleCase(document.getElementById('ep_estado').value.trim()),
     observaciones: document.getElementById('ep_obs').value.trim(),
-    capturadoPor: currentUser.nombre
+    capturadoPor: currentUser.nombre,
+    actualizadoPor: currentUser.nombre
   };
 
   let resp;
