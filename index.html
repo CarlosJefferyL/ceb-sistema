@@ -2045,7 +2045,7 @@ async function loadDashboard() {
   if (c.alertasInventario > 0) urgencias.push(`<strong>${c.alertasInventario}</strong> medicamento(s) bajo stock mínimo`);
   if (c.alertasOcupacion && c.alertasOcupacion.length > 0) {
     c.alertasOcupacion.forEach(a => {
-      const lbl = a.tipo === 'PRIVADA' ? 'Privadas' : a.tipo === 'SALA_GENERAL' ? 'Sala general' : 'Urgencias';
+      const lbl = a.tipo === 'PRIVADA' ? 'Privadas' : a.tipo === 'SALA_GENERAL' ? 'Sala general' : a.tipo === 'URGENCIAS' ? 'Urgencias' : 'T. Intensiva';
       urgencias.push(`${lbl} al <strong>${a.porcentaje}%</strong> de ocupación`);
     });
   }
@@ -3307,11 +3307,12 @@ async function loadHabitaciones() {
   const tiposLabels = {
     PRIVADA: { label: 'Habitaciones Privadas', color: '#5B9BD5' },
     SALA_GENERAL: { label: 'Sala General', color: '#D4A017' },
-    URGENCIAS: { label: 'Urgencias', color: '#C4729A' }
+    URGENCIAS: { label: 'Urgencias', color: '#C4729A' },
+    TERAPIA_INTENSIVA: { label: 'Terapia Intensiva', color: '#E85D5D' }
   };
 
   let html = '';
-  ['PRIVADA','SALA_GENERAL','URGENCIAS'].forEach(tipo => {
+  ['PRIVADA','SALA_GENERAL','URGENCIAS','TERAPIA_INTENSIVA'].forEach(tipo => {
     const habs = resp.porTipo[tipo] || [];
     if (habs.length === 0) return;
     html += `
@@ -3334,7 +3335,7 @@ async function loadHabitaciones() {
 
 function renderHabCard(h, tipo) {
   const tipoClass = tipo.toLowerCase();
-  const tipoLabel = tipo === 'PRIVADA' ? 'Habitación' : tipo === 'SALA_GENERAL' ? 'Sala general' : 'Cama urgencias';
+  const tipoLabel = tipo === 'PRIVADA' ? 'Habitación' : tipo === 'SALA_GENERAL' ? 'Sala general' : tipo === 'URGENCIAS' ? 'Cama urgencias' : 'Cama UCI';
 
   if (!h.ocupada) {
     return `
@@ -3388,6 +3389,7 @@ function renderOcupacionSummary(ocup) {
   const p = ocup.porTipo.PRIVADA;
   const s = ocup.porTipo.SALA_GENERAL;
   const u = ocup.porTipo.URGENCIAS;
+  const t = ocup.porTipo.TERAPIA_INTENSIVA;
 
   cont.innerHTML = `
     <div class="hab-ocupacion-bar">
@@ -3410,11 +3412,15 @@ function renderOcupacionSummary(ocup) {
         <span style="color:#C4729A;">●</span> Urgencias: <strong>${u.ocupadas}/${u.total}</strong>
         ${dotsHTML(u.ocupadas, u.total)}
       </div>
+      <div class="hab-ocupacion-item">
+        <span style="color:#E85D5D;">●</span> T. Intensiva: <strong>${t.ocupadas}/${t.total}</strong>
+        ${dotsHTML(t.ocupadas, t.total)}
+      </div>
     </div>
     ${ocup.alertas.length > 0 ? `
       <div class="alerts-banner" style="margin-top:0;margin-bottom:16px;">
         ⚠ <strong>Alta ocupación:</strong> ${ocup.alertas.map(a => {
-          const lbl = a.tipo === 'PRIVADA' ? 'Privadas' : a.tipo === 'SALA_GENERAL' ? 'Sala general' : 'Urgencias';
+          const lbl = a.tipo === 'PRIVADA' ? 'Privadas' : a.tipo === 'SALA_GENERAL' ? 'Sala general' : a.tipo === 'URGENCIAS' ? 'Urgencias' : 'T. Intensiva';
           return `${lbl} al ${a.porcentaje}% (${a.ocupadas}/${a.total})`;
         }).join(' · ')}
       </div>
@@ -3428,7 +3434,7 @@ function verDetalleHab(idHabitacion) {
   const h = cacheHabitaciones.habitaciones.find(x => x.idHabitacion === idHabitacion);
   if (!h || !h.ocupada) { showToast('Habitación no encontrada', 'error'); return; }
   const hosp = h.hospitalizacion;
-  const tipoLabel = h.tipo === 'PRIVADA' ? 'Habitación' : h.tipo === 'SALA_GENERAL' ? 'Sala general' : 'Cama urgencias';
+  const tipoLabel = h.tipo === 'PRIVADA' ? 'Habitación' : h.tipo === 'SALA_GENERAL' ? 'Sala general' : h.tipo === 'URGENCIAS' ? 'Cama urgencias' : 'Cama UCI';
   const isCapturista = currentUser.rol !== 'CONSULTA';
 
   openModal(`${tipoLabel} ${h.numero}`, `
@@ -3513,7 +3519,25 @@ async function openModalIngresar(idHabitacionPreseleccionada) {
       <div class="form-grid">
         <div><label>Habitación</label><select id="ing_habitacion" required>${habsOpts}</select></div>
         <div><label>Fecha ingreso</label><input type="date" id="ing_fecha" value="${todayISO()}" required></div>
-        <div class="full"><label>Nombre del paciente</label><input type="text" id="ing_nombre" required></div>
+
+        <!-- Paciente - BUSCADOR (debe existir previamente, dado de alta en recepción) -->
+        <div class="full" style="border:1px solid var(--border);border-radius:8px;padding:14px;background:#FAFBFC;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <strong style="color:var(--navy);font-size:13px;">Paciente *</strong>
+            <a href="#" onclick="event.preventDefault();irARecepcionDesdeIngreso()" style="font-size:11px;color:var(--teal);text-decoration:underline;">¿Paciente no registrado? Ir a Recepción →</a>
+          </div>
+          <input type="text" id="ing_paciente_busqueda" placeholder="Buscar por nombre, folio o CURP (mín. 2 letras)..." autocomplete="off" oninput="buscarPacienteEnVivoIngreso()">
+          <input type="hidden" id="ing_paciente" required>
+          <input type="hidden" id="ing_paciente_nombre">
+          <div id="ing_paciente_resultados" style="display:none;background:white;border:1px solid var(--border);border-radius:8px;max-height:220px;overflow-y:auto;box-shadow:var(--shadow);margin-top:4px;position:relative;z-index:5;"></div>
+          <div id="ing_paciente_seleccionado" style="display:none;margin-top:10px;padding:12px;background:var(--teal-light);border-radius:8px;border:1px solid var(--teal);font-size:13px;">
+            <div style="display:flex;justify-content:space-between;align-items:start;gap:10px;">
+              <div id="ing_paciente_info" style="flex:1;"></div>
+              <button type="button" onclick="limpiarPacienteIngreso()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;line-height:1;">×</button>
+            </div>
+          </div>
+        </div>
+
         <div><label>Edad</label><input type="number" id="ing_edad" min="0" max="120"></div>
         <div><label>Teléfono</label><input type="text" id="ing_telefono"></div>
         <div class="full"><label>Diagnóstico</label><input type="text" id="ing_diagnostico" required></div>
@@ -3543,8 +3567,31 @@ async function openModalIngresar(idHabitacionPreseleccionada) {
 function precargarDesdeCirugia(folioCirugia) {
   const c = (window._cirugiasRecientesCache || []).find(x => x.folioCirugia === folioCirugia);
   if (!c) return;
-  document.getElementById('ing_nombre').value = c.nombrePaciente || '';
-  document.getElementById('ing_edad').value = c.edadPaciente || '';
+
+  // Intentar localizar el paciente en el catálogo (por ID si viene, si no por nombre)
+  let pac = null;
+  if (c.idPaciente) {
+    pac = catalogos.pacientes.find(p => p.ID_Paciente === c.idPaciente);
+  }
+  if (!pac && c.nombrePaciente) {
+    pac = catalogos.pacientes.find(p => (p.Nombre_Completo || '').toLowerCase() === c.nombrePaciente.toLowerCase());
+  }
+  if (pac) {
+    seleccionarPacienteIngreso(
+      pac.ID_Paciente,
+      pac.Nombre_Completo || '',
+      pac.Edad || 0,
+      pac.Folio_Recepcion || '',
+      pac.CURP || '',
+      pac.Alergias || '',
+      pac.Servicio || '',
+      pac.Nombre_Aseguradora || ''
+    );
+  } else {
+    showToast('No se encontró el paciente en el catálogo. Búscalo manualmente.', 'warning');
+  }
+
+  document.getElementById('ing_edad').value = c.edadPaciente || (pac ? pac.Edad : '') || '';
   document.getElementById('ing_diagnostico').value = c.tipoCirugia || '';
   document.getElementById('ing_folio_cirugia').value = c.folioCirugia;
   // Buscar el doctor en el catálogo
@@ -3564,14 +3611,18 @@ async function ingresarPaciente() {
   const idHab = document.getElementById('ing_habitacion').value;
   const idDoctor = document.getElementById('ing_doctor').value;
   const med = catalogos.medicos.find(m => m.ID_Medico === idDoctor);
-  const nombrePac = document.getElementById('ing_nombre').value.trim();
 
-  // Buscar paciente existente o crearlo
-  let paciente = catalogos.pacientes.find(p => (p.Nombre_Completo||'').toLowerCase() === nombrePac.toLowerCase());
+  const idPaciente = document.getElementById('ing_paciente').value;
+  const nombrePac = document.getElementById('ing_paciente_nombre').value.trim();
+
+  if (!idPaciente || !nombrePac) {
+    showToast('Debes seleccionar un paciente registrado. Si no existe, da de alta en Recepción.', 'error');
+    return;
+  }
 
   const data = {
     idHabitacion: idHab,
-    idPaciente: paciente ? paciente.ID_Paciente : '',
+    idPaciente: idPaciente,
     nombrePaciente: nombrePac,
     edadPaciente: parseInt(document.getElementById('ing_edad').value, 10) || '',
     telefono: document.getElementById('ing_telefono').value,
@@ -3593,6 +3644,93 @@ async function ingresarPaciente() {
   } else {
     showToast('Error: ' + resp.error, 'error');
   }
+}
+
+// ── Widget de búsqueda de paciente en modal "Ingresar paciente a habitación" ──
+function buscarPacienteEnVivoIngreso() {
+  const q = (document.getElementById('ing_paciente_busqueda').value || '').trim().toLowerCase();
+  const cont = document.getElementById('ing_paciente_resultados');
+  if (q.length < 2) {
+    cont.style.display = 'none';
+    return;
+  }
+  const resultados = catalogos.pacientes.filter(p => {
+    if (p.Estatus === 'Suspendido') return false;
+    const text = ((p.Nombre_Completo || '') + ' ' + (p.CURP || '') + ' ' + (p.Folio_Recepcion || '') + ' ' + (p.ID_Paciente || '')).toLowerCase();
+    return text.includes(q);
+  }).slice(0, 15);
+
+  if (resultados.length === 0) {
+    cont.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:13px;text-align:center;">No hay pacientes con ese nombre. <a href="#" onclick="event.preventDefault();irARecepcionDesdeIngreso()" style="color:var(--teal);font-weight:600;">Dar de alta en Recepción →</a></div>';
+    cont.style.display = 'block';
+    return;
+  }
+
+  cont.innerHTML = resultados.map(p => `
+    <div onclick="seleccionarPacienteIngreso('${p.ID_Paciente}','${(p.Nombre_Completo||'').replace(/'/g,'\\\'')}',${p.Edad||0},'${p.Folio_Recepcion||''}','${p.CURP||''}','${(p.Alergias||'').replace(/'/g,'\\\'')}','${p.Servicio||''}','${(p.Nombre_Aseguradora||'').replace(/'/g,'\\\'')}')"
+         style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px;"
+         onmouseover="this.style.background='var(--teal-light)'"
+         onmouseout="this.style.background='white'">
+      <div style="display:flex;justify-content:space-between;align-items:start;gap:10px;">
+        <div style="flex:1;">
+          <div style="font-weight:600;color:var(--navy);">${p.Nombre_Completo}</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">
+            ${p.Folio_Recepcion ? p.Folio_Recepcion + ' · ' : ''}${p.Edad ? p.Edad + ' años' : ''}${p.Genero ? ' · ' + p.Genero : ''}${p.Servicio ? ' · ' + p.Servicio : ''}
+          </div>
+          ${p.Alergias ? '<div style="font-size:11px;color:var(--danger);margin-top:2px;">⚠ Alergias: ' + p.Alergias + '</div>' : ''}
+        </div>
+      </div>
+    </div>
+  `).join('');
+  cont.style.display = 'block';
+}
+
+function seleccionarPacienteIngreso(idPaciente, nombre, edad, folio, curp, alergias, servicio, aseguradora) {
+  document.getElementById('ing_paciente').value = idPaciente;
+  document.getElementById('ing_paciente_nombre').value = nombre;
+  document.getElementById('ing_paciente_busqueda').value = '';
+  document.getElementById('ing_paciente_resultados').style.display = 'none';
+
+  let infoHTML = `<strong style="color:var(--navy);">${nombre}</strong>`;
+  if (edad) infoHTML += ` <span style="color:var(--text-muted);">(${edad} años)</span>`;
+  infoHTML += '<br>';
+  if (folio) infoHTML += `<small style="color:var(--text-muted);">${folio}</small>`;
+  if (curp) infoHTML += `<small style="color:var(--text-muted);"> · CURP ${curp}</small>`;
+  if (servicio) infoHTML += `<small style="color:var(--text-muted);"> · ${servicio}${aseguradora && aseguradora !== 'PARTICULAR' ? ' ' + aseguradora : ''}</small>`;
+  if (alergias) infoHTML += `<div style="margin-top:6px;padding:6px 8px;background:#FEE2E2;border-radius:4px;color:#991B1B;font-size:11px;"><strong>⚠ Alergias:</strong> ${alergias}</div>`;
+
+  document.getElementById('ing_paciente_info').innerHTML = infoHTML;
+  document.getElementById('ing_paciente_seleccionado').style.display = 'block';
+
+  // Autocompletar edad si está vacía
+  const edadInput = document.getElementById('ing_edad');
+  if (edadInput && !edadInput.value && edad) edadInput.value = edad;
+}
+
+function limpiarPacienteIngreso() {
+  document.getElementById('ing_paciente').value = '';
+  document.getElementById('ing_paciente_nombre').value = '';
+  document.getElementById('ing_paciente_seleccionado').style.display = 'none';
+  document.getElementById('ing_paciente_busqueda').focus();
+}
+
+function irARecepcionDesdeIngreso() {
+  const confirmar = confirm(
+    'Vas a salir del formulario de ingreso a habitación para ir a Recepción.\n\n' +
+    '⚠ Los datos que hayas capturado se perderán.\n\n' +
+    '¿Continuar?'
+  );
+  if (!confirmar) return;
+  closeModal();
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const navRec = document.querySelector('[data-page="recepcion"]');
+  if (navRec) navRec.classList.add('active');
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-recepcion').classList.add('active');
+  if (typeof loadRecepcion === 'function') loadRecepcion();
+  setTimeout(() => {
+    showToast('Da de alta el paciente y regresa a Ingresar paciente', 'warn');
+  }, 300);
 }
 
 // MODAL: Egresar
