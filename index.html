@@ -678,8 +678,8 @@ textarea { resize: vertical; min-height: 70px; }
     <div class="nav-item" data-page="entradas"><span class="icon">↓</span>Entradas</div>
     <div class="nav-section-title">Bitácora</div>
     <div class="nav-item" data-page="libro"><span class="icon">📕</span>Libro COFEPRIS</div>
-    <div class="nav-section-title capturista-only">Catálogos</div>
-    <div class="nav-item capturista-only" data-page="catalogos"><span class="icon">⚙</span>Médicos y cirugías</div>
+    <div class="nav-section-title">Catálogos</div>
+    <div class="nav-item" data-page="catalogos"><span class="icon">⚙</span>Médicos y cirugías</div>
     <div class="user-card">
       <div class="uname" id="userName">—</div>
       <div class="urol" id="userRol">—</div>
@@ -739,7 +739,7 @@ textarea { resize: vertical; min-height: 70px; }
           <h1>Programación de Quirófanos</h1>
           <div class="subtitle">Tablero de cirugías por quirófano y día</div>
         </div>
-        <button class="btn btn-primary capturista-only" onclick="openModalProgramar()">+ Programar cirugía</button>
+        <button class="btn btn-primary" data-accion="programar_cirugia" onclick="openModalProgramar()">+ Programar cirugía</button>
       </div>
 
       <div class="toolbar">
@@ -797,7 +797,7 @@ textarea { resize: vertical; min-height: 70px; }
           <h1>Cirugías</h1>
           <div class="subtitle">Programación y seguimiento</div>
         </div>
-        <button class="btn btn-primary capturista-only" onclick="openModalCirugia()">+ Nueva cirugía</button>
+        <button class="btn btn-primary" data-accion="nueva_cirugia" onclick="openModalCirugia()">+ Nueva cirugía</button>
       </div>
 
       <div class="toolbar">
@@ -847,7 +847,7 @@ textarea { resize: vertical; min-height: 70px; }
         </div>
         <div style="display:flex;gap:8px;">
           <button class="btn btn-secondary btn-sm" onclick="loadHabitaciones()">↻ Actualizar</button>
-          <button class="btn btn-primary capturista-only" onclick="openModalIngresar()">+ Ingresar paciente</button>
+          <button class="btn btn-primary" data-accion="ingresar_habitacion" onclick="openModalIngresar()">+ Ingresar paciente</button>
         </div>
       </div>
 
@@ -865,7 +865,7 @@ textarea { resize: vertical; min-height: 70px; }
           <div class="subtitle">Registro inicial de pacientes que llegan a la clínica</div>
         </div>
         <div>
-          <button class="btn btn-primary" onclick="abrirFormularioRecepcion()">+ Nuevo paciente</button>
+          <button class="btn btn-primary" data-accion="nuevo_paciente_recep" onclick="abrirFormularioRecepcion()">+ Nuevo paciente</button>
         </div>
       </div>
 
@@ -883,7 +883,7 @@ textarea { resize: vertical; min-height: 70px; }
         </div>
         <div style="display:flex;gap:8px;">
           <button class="btn btn-secondary btn-sm" onclick="loadPacientes()">↻ Actualizar</button>
-          <button class="btn btn-primary capturista-only" onclick="openModalPacienteNuevo()">+ Nuevo paciente</button>
+          <button class="btn btn-primary" data-accion="nuevo_paciente_dir" onclick="openModalPacienteNuevo()">+ Nuevo paciente</button>
         </div>
       </div>
 
@@ -924,7 +924,7 @@ textarea { resize: vertical; min-height: 70px; }
           <h1>Consumos</h1>
           <div class="subtitle">Registro de uso real en cirugía</div>
         </div>
-        <button class="btn btn-accent capturista-only" onclick="openModalConsumo()">+ Registrar consumo</button>
+        <button class="btn btn-accent" data-accion="registrar_consumo" onclick="openModalConsumo()">+ Registrar consumo</button>
       </div>
       <div class="toolbar">
         <div class="toolbar-row">
@@ -955,7 +955,7 @@ textarea { resize: vertical; min-height: 70px; }
           <h1>Entradas de Inventario</h1>
           <div class="subtitle">Recepciones del proveedor</div>
         </div>
-        <button class="btn btn-primary capturista-only" onclick="openModalEntrada()">+ Nueva entrada</button>
+        <button class="btn btn-primary" data-accion="nueva_entrada" onclick="openModalEntrada()">+ Nueva entrada</button>
       </div>
       <div class="card">
         <div class="card-title">¿Cómo registrar una entrada?</div>
@@ -974,7 +974,7 @@ textarea { resize: vertical; min-height: 70px; }
           <h1>Libro COFEPRIS</h1>
           <div class="subtitle">Bitácora oficial — alimentada automáticamente desde Consumos</div>
         </div>
-        <div style="display:flex;gap:8px;">
+        <div style="display:flex;gap:8px;" data-accion="exportar_libro">
           <button class="btn btn-secondary btn-sm" onclick="exportLibro()">⬇ Exportar CSV</button>
           <button class="btn btn-secondary btn-sm" onclick="window.print()">🖨 Imprimir</button>
         </div>
@@ -996,17 +996,20 @@ textarea { resize: vertical; min-height: 70px; }
           <div class="subtitle">Administración de medicamentos, médicos y tipos de cirugía</div>
         </div>
       </div>
+      <div id="catalogosReadOnlyBanner" style="display:none;padding:10px 14px;background:var(--warn-bg);color:#78350F;border-radius:8px;margin-bottom:12px;font-size:13px;">
+        🔒 Estás viendo este módulo en <strong>modo solo lectura</strong>. No tienes permisos para dar de alta nuevos registros.
+      </div>
       <div class="card">
         <div class="card-title">
           Médicos
-          <button class="btn btn-accent btn-sm capturista-only" onclick="openModalMedico()">+ Alta</button>
+          <button class="btn btn-accent btn-sm" data-accion="alta_medico" onclick="openModalMedico()">+ Alta</button>
         </div>
         <div id="medicosTable">—</div>
       </div>
       <div class="card">
         <div class="card-title">
           Tipos de cirugía
-          <button class="btn btn-accent btn-sm capturista-only" onclick="openModalCirugiaTipo()">+ Alta personalizada</button>
+          <button class="btn btn-accent btn-sm" data-accion="alta_tipo_cirugia" onclick="openModalCirugiaTipo()">+ Alta personalizada</button>
         </div>
         <div style="padding:12px 16px;background:var(--teal-light);border-radius:8px;margin-bottom:12px;font-size:12px;color:var(--navy);">
           💡 El catálogo ya tiene 4,915 cirugías del estándar CPT. Solo agrega aquí cirugías personalizadas que no aparezcan en el buscador.
@@ -1016,11 +1019,10 @@ textarea { resize: vertical; min-height: 70px; }
           <p style="color:var(--text-muted);font-size:13px;text-align:center;padding:20px;">Escribe en el buscador para ver cirugías.</p>
         </div>
       </div>
-      <div class="card admin-only">
+      <div class="card" data-accion="alta_medicamento">
         <div class="card-title">
           Medicamentos
           <button class="btn btn-accent btn-sm" onclick="openModalMedicamento()">+ Alta</button>
-          <span style="background:var(--warn-bg);color:#78350F;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:8px;">SOLO ADMIN</span>
         </div>
         <div id="medicamentosTable">—</div>
       </div>
@@ -1099,9 +1101,16 @@ async function apiGet(action, params = {}) {
   return res.json();
 }
 async function apiPost(action, data) {
+  // Inyectar automáticamente rolUsuario en TODOS los POST.
+  // El backend usa este campo para validar permisos por acción.
+  // Si la llamada ya trae rolUsuario explícito, se respeta.
+  const dataConRol = {
+    ...data,
+    rolUsuario: (data && data.rolUsuario) || (currentUser && currentUser.rol) || ''
+  };
   const res = await fetch(API_URL, {
     method: 'POST',
-    body: JSON.stringify({ action, data })
+    body: JSON.stringify({ action, data: dataConRol })
   });
   return res.json();
 }
@@ -1139,38 +1148,123 @@ async function doLogin() {
 
 function doLogout() { currentUser = null; location.reload(); }
 
+// ============================================================
+// MATRIZ DE PERMISOS POR ROL
+// ============================================================
+// Para cambiar permisos: edita esta matriz. No requiere tocar otras partes.
+// PAGES: páginas visibles en el sidebar.
+// ACTIONS: botones/acciones de creación o modificación.
+// Si un rol no aparece en una lista, NO tiene ese permiso.
+// ============================================================
+const PERMISOS = {
+  // ============ PÁGINAS (sidebar) ============
+  pages: {
+    recepcion:    ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
+    dashboard:    ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO','RECEPCION'],
+    programacion: ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],
+    cirugias:     ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
+    habitaciones: ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO'],
+    pacientes:    ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO','RECEPCION'],
+    recetas:      ['ADMIN','JEFE_ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
+    consumos:     ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],
+    inventario:   ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
+    entradas:     ['ADMIN','JEFE_ENFERMERIA','ALMACEN'],
+    libro:        ['ADMIN','JEFE_ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
+    catalogos:    ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO']
+  },
+  // ============ ACCIONES (botones de crear/modificar) ============
+  actions: {
+    'programar_cirugia':    ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],          // A1
+    'nueva_cirugia':        ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],          // A2
+    'ingresar_habitacion':  ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO'], // A3
+    'nuevo_paciente_recep': ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],  // A4
+    'nuevo_paciente_dir':   ['ADMIN'],                                              // A5
+    'editar_paciente':      ['ADMIN','JEFE_ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],// A6
+    'vincular_receta':      ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'], // A7
+    'registrar_consumo':    ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'], // A8
+    'cancelar_consumo':     ['ADMIN','JEFE_ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],// A9
+    'nueva_entrada':        ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'], // A10
+    'alta_medicamento':     ['ADMIN','JEFE_ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],// A11
+    'alta_medico':          ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],          // A12
+    'alta_tipo_cirugia':    ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],          // A13
+    'editar_cirugia':       ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO'], // A14
+    'cancelar_cirugia':     ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],          // A15
+    'terminar_cirugia':     ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO'], // A16
+    'reabrir_cirugia':      ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],          // A17
+    'exportar_libro':       ['ADMIN','JEFE_ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO']  // A18
+  }
+};
+
+// Helper: ¿el usuario actual tiene permiso para esta acción?
+function puede(accion) {
+  if (!currentUser) return false;
+  const lista = PERMISOS.actions[accion];
+  return Array.isArray(lista) && lista.includes(currentUser.rol);
+}
+
+// Helper: ¿el usuario actual puede ver esta página?
+function puedeVerPagina(pagina) {
+  if (!currentUser) return false;
+  const lista = PERMISOS.pages[pagina];
+  return Array.isArray(lista) && lista.includes(currentUser.rol);
+}
+
 function applyRoleVisibility() {
   const rol = currentUser.rol;
+
+  // --- 1) PÁGINAS: mostrar/ocultar items del sidebar según matriz ---
+  document.querySelectorAll('.nav-item[data-page]').forEach(el => {
+    const page = el.dataset.page;
+    el.style.display = puedeVerPagina(page) ? '' : 'none';
+  });
+
+  // --- 2) SECCIONES del sidebar: ocultar si todos sus items están ocultos ---
+  // Cada nav-section-title agrupa los nav-item que vienen después hasta el siguiente título.
+  const sidebarChildren = Array.from(document.querySelectorAll('.sidebar .nav-section-title, .sidebar .nav-item'));
+  let currentTitle = null;
+  let visibleCount = 0;
+  sidebarChildren.forEach((el, idx) => {
+    if (el.classList.contains('nav-section-title')) {
+      // Cerrar grupo anterior
+      if (currentTitle) currentTitle.style.display = visibleCount > 0 ? '' : 'none';
+      currentTitle = el;
+      visibleCount = 0;
+    } else if (el.classList.contains('nav-item')) {
+      if (el.style.display !== 'none') visibleCount++;
+    }
+    // Último grupo
+    if (idx === sidebarChildren.length - 1 && currentTitle) {
+      currentTitle.style.display = visibleCount > 0 ? '' : 'none';
+    }
+  });
+
+  // --- 3) ACCIONES: mostrar/ocultar botones marcados con data-accion ---
+  document.querySelectorAll('[data-accion]').forEach(el => {
+    const accion = el.dataset.accion;
+    el.style.display = puede(accion) ? '' : 'none';
+  });
+
+  // --- 4) Compatibilidad con clases antiguas (por si algún botón aún las usa) ---
+  // .admin-only: solo ADMIN. .capturista-only: cualquier rol distinto a CONSULTA/RECEPCION (legacy).
   const isAdmin = rol === 'ADMIN';
-  const isCapturista = rol === 'CAPTURISTA' || isAdmin;
-  const isRecepcion = rol === 'RECEPCION';
-
-  // Permisos por rol
-  document.querySelectorAll('.capturista-only').forEach(el => el.style.display = isCapturista ? '' : 'none');
   document.querySelectorAll('.admin-only').forEach(el => el.style.display = isAdmin ? '' : 'none');
-  document.querySelectorAll('.recepcion-only').forEach(el => el.style.display = isRecepcion ? '' : 'none');
+  document.querySelectorAll('.capturista-only').forEach(el => { /* manejado ahora por data-accion */ });
 
-  // RECEPCION solo ve: Recepción, Pacientes, y Cerrar sesión. Nada más.
-  if (isRecepcion) {
-    document.querySelectorAll('.nav-item').forEach(el => {
-      const page = el.dataset.page;
-      // Solo mostrar Pacientes (que es donde gestiona altas)
-      if (page !== 'pacientes' && page !== 'recepcion') {
-        el.style.display = 'none';
-      }
-    });
-    // Ocultar secciones que no aplican
-    document.querySelectorAll('.nav-section-title').forEach(el => {
-      const text = el.textContent.trim();
-      if (text !== 'Recepción' && text !== 'Pacientes' && text !== 'Operación') {
-        el.style.display = 'none';
-      }
-    });
+  // --- 5) Si la página activa ya no es visible, mover a una permitida ---
+  const activeNav = document.querySelector('.nav-item.active');
+  if (activeNav && activeNav.style.display === 'none') {
+    const primera = document.querySelector('.nav-item[data-page]:not([style*="display: none"])');
+    if (primera) primera.click();
   }
 
-  // Sección Admin del sidebar (si existe en el DOM)
-  const adminSec = document.getElementById('adminSection');
-  if (adminSec) adminSec.style.display = isAdmin ? '' : 'none';
+  // --- 6) Banner de "modo lectura" en Catálogos ---
+  const banner = document.getElementById('catalogosReadOnlyBanner');
+  if (banner) {
+    const puedeAlgunAlta = puede('alta_medico') || puede('alta_tipo_cirugia') || puede('alta_medicamento');
+    banner.style.display = puedeAlgunAlta ? 'none' : '';
+  }
+
+  console.log('[Permisos] Rol activo:', rol);
 }
 
 document.getElementById('codigoAcceso').addEventListener('keypress', e => { if (e.key === 'Enter') doLogin(); });
@@ -1423,41 +1517,47 @@ async function verDetalleProgramacion(folio) {
   }
 
   let acciones = '';
-  if (currentUser.rol !== 'CONSULTA') {
+  {
     const estado = String(c.Estado || '').trim().toUpperCase();
-    const esAdmin = currentUser.rol === 'ADMIN';
-    const esCapturista = currentUser.rol === 'CAPTURISTA';
+    const activa = estado !== 'TERMINADA' && estado !== 'CANCELADA';
+    const programada = estado === 'PROGRAMADA' || estado === '';
 
-    // Acciones de flujo principal
-    if (estado === 'PROGRAMADA' || estado === '') {
-      acciones += `<button class="btn btn-accent btn-sm" onclick="closeModal();openModalReceta('${folio}')">Vincular receta</button> `;
-      acciones += `<button class="btn btn-primary btn-sm" onclick="closeModal();openModalConsumo('${folio}')" title="Registrar consumo directo (sin receta vinculada previa)">Registrar consumo</button> `;
+    // Acciones de flujo principal (vinculación de receta y consumos)
+    if (programada) {
+      if (puede('vincular_receta')) {
+        acciones += `<button class="btn btn-accent btn-sm" onclick="closeModal();openModalReceta('${folio}')">Vincular receta</button> `;
+      }
+      if (puede('registrar_consumo')) {
+        acciones += `<button class="btn btn-primary btn-sm" onclick="closeModal();openModalConsumo('${folio}')" title="Registrar consumo directo (sin receta vinculada previa)">Registrar consumo</button> `;
+      }
     } else if (estado === 'RECETA_VINCULADA') {
-      acciones += `<button class="btn btn-primary btn-sm" onclick="closeModal();openModalConsumo('${folio}')">Registrar consumo</button> `;
+      if (puede('registrar_consumo')) {
+        acciones += `<button class="btn btn-primary btn-sm" onclick="closeModal();openModalConsumo('${folio}')">Registrar consumo</button> `;
+      }
     } else if (estado === 'CONSUMO_REGISTRADO' || estado === 'REALIZADA') {
       acciones += `<button class="btn btn-secondary btn-sm" onclick="closeModal();verConsumosCirugia('${folio}')">Ver consumos</button> `;
-      acciones += `<button class="btn btn-accent btn-sm" onclick="closeModal();openModalConsumo('${folio}')">+ Consumo</button> `;
+      if (puede('registrar_consumo')) {
+        acciones += `<button class="btn btn-accent btn-sm" onclick="closeModal();openModalConsumo('${folio}')">+ Consumo</button> `;
+      }
     }
 
-    // Botón Terminar cirugía (cualquier estado activo)
-    if (estado !== 'TERMINADA' && estado !== 'CANCELADA') {
+    // A16 - Terminar cirugía
+    if (activa && puede('terminar_cirugia')) {
       acciones += `<button class="btn btn-primary btn-sm" onclick="terminarCirugiaUI('${folio}')" style="background:var(--success);">✓ Cirugía terminada</button> `;
     }
 
-    // Botón Editar
-    const puedeEditar = (esAdmin && estado !== 'CANCELADA' && estado !== 'TERMINADA') || (esCapturista && (estado === 'PROGRAMADA' || estado === ''));
-    if (puedeEditar) {
+    // A14 - Editar cirugía (solo si está activa)
+    if (activa && puede('editar_cirugia')) {
       acciones += `<button class="btn btn-secondary btn-sm" onclick="abrirEditarCirugia('${folio}')">✎ Editar</button> `;
     }
 
-    // Botón Cancelar
-    const puedeCancelar = (esAdmin && estado !== 'CANCELADA') || (esCapturista && (estado === 'PROGRAMADA' || estado === ''));
-    if (puedeCancelar) {
+    // A15 - Cancelar cirugía (no si ya está cancelada)
+    if (estado !== 'CANCELADA' && puede('cancelar_cirugia')) {
       acciones += `<button class="btn btn-secondary btn-sm" onclick="cancelarCirugiaUI('${folio}')" style="color:var(--danger);">✕ Cancelar</button> `;
     }
 
-    // Reabrir (solo ADMIN, si está CANCELADA o TERMINADA)
-    if (esAdmin && (estado === 'CANCELADA' || estado === 'TERMINADA')) {
+    // A17 - Reabrir (solo si está CANCELADA o TERMINADA)
+    if ((estado === 'CANCELADA' || estado === 'TERMINADA') && puede('reabrir_cirugia')) {
       acciones += `<button class="btn btn-accent btn-sm" onclick="reabrirCirugiaUI('${folio}')">↻ Reabrir cirugía</button> `;
     }
   }
@@ -1479,7 +1579,7 @@ async function verDetalleProgramacion(folio) {
           <strong>Tipo de cirugía:</strong> ${c.Tipo_Cirugia || '—'}
           ${c.Clave_CPT ? `<span style="background:var(--navy);color:white;padding:2px 8px;border-radius:4px;font-size:10px;font-family:monospace;margin-left:6px;">CPT ${c.Clave_CPT}</span>` : ''}
         </div>
-        ${currentUser.rol !== 'CONSULTA' && c.ID_Paciente ? `<button class="btn btn-secondary btn-sm" onclick="closeModal();openModalEditarPaciente('${c.ID_Paciente}','${folio}')" style="flex-shrink:0;">✎ Editar paciente</button>` : ''}
+        ${puede('editar_paciente') && c.ID_Paciente ? `<button class="btn btn-secondary btn-sm" onclick="closeModal();openModalEditarPaciente('${c.ID_Paciente}','${folio}')" style="flex-shrink:0;">✎ Editar paciente</button>` : ''}
       </div>
 
       <div style="margin-bottom:16px;">
@@ -2179,44 +2279,43 @@ function renderTableCirugias(list) {
 function renderCirugiaActions(c) {
   const estado = String(c.Estado || '').trim().toUpperCase();
   const folio = c.Folio_Cirugia;
-
-  // CONSULTA: solo puede ver consumos si está realizada o terminada
-  if (currentUser.rol === 'CONSULTA') {
-    if (estado === 'REALIZADA' || estado === 'CONSUMO_REGISTRADO' || estado === 'TERMINADA') {
-      return `<button class="btn btn-secondary btn-sm" onclick="verConsumosCirugia('${folio}')">Ver consumos</button>`;
-    }
-    return '<span style="color:var(--text-muted);font-size:11px;">—</span>';
-  }
-
-  // ADMIN y CAPTURISTA
-  const esAdmin = currentUser.rol === 'ADMIN';
-  const esCapturista = currentUser.rol === 'CAPTURISTA';
+  const activa = estado !== 'TERMINADA' && estado !== 'CANCELADA' && estado !== '';
   let botones = [];
 
+  // Consumos / recetas según estado
   if (estado === 'PROGRAMADA' || estado === '') {
-    botones.push(`<button class="btn btn-accent btn-sm" onclick="openModalReceta('${folio}')">Vincular receta</button>`);
-    botones.push(`<button class="btn btn-primary btn-sm" onclick="openModalConsumo('${folio}')" title="Registrar consumo directo">Consumo</button>`);
+    if (puede('vincular_receta')) {
+      botones.push(`<button class="btn btn-accent btn-sm" onclick="openModalReceta('${folio}')">Vincular receta</button>`);
+    }
+    if (puede('registrar_consumo')) {
+      botones.push(`<button class="btn btn-primary btn-sm" onclick="openModalConsumo('${folio}')" title="Registrar consumo directo">Consumo</button>`);
+    }
   }
   if (estado === 'RECETA_VINCULADA') {
-    botones.push(`<button class="btn btn-primary btn-sm" onclick="openModalConsumo('${folio}')">Registrar consumo</button>`);
+    if (puede('registrar_consumo')) {
+      botones.push(`<button class="btn btn-primary btn-sm" onclick="openModalConsumo('${folio}')">Registrar consumo</button>`);
+    }
   }
   if (estado === 'CONSUMO_REGISTRADO' || estado === 'REALIZADA') {
     botones.push(`<button class="btn btn-secondary btn-sm" onclick="verConsumosCirugia('${folio}')">Ver consumos</button>`);
-    botones.push(`<button class="btn btn-accent btn-sm" onclick="openModalConsumo('${folio}')" style="margin-left:4px;">+</button>`);
+    if (puede('registrar_consumo')) {
+      botones.push(`<button class="btn btn-accent btn-sm" onclick="openModalConsumo('${folio}')" style="margin-left:4px;">+</button>`);
+    }
   }
-  // Terminar cirugía
-  if (estado !== 'TERMINADA' && estado !== 'CANCELADA' && estado !== '') {
+  // A16 - Terminar cirugía
+  if (activa && puede('terminar_cirugia')) {
     botones.push(`<button class="btn btn-primary btn-sm" onclick="terminarCirugiaUI('${folio}')" style="background:var(--success);" title="Marcar como terminada">✓</button>`);
   }
+  // A17 - Reabrir cirugía (cancelada o terminada)
   if (estado === 'CANCELADA') {
     botones.push(`<span style="color:var(--text-muted);font-size:11px;">Cancelada</span>`);
-    if (esAdmin) {
+    if (puede('reabrir_cirugia')) {
       botones.push(`<button class="btn btn-accent btn-sm" onclick="reabrirCirugiaUI('${folio}')">↻ Reabrir</button>`);
     }
   }
   if (estado === 'TERMINADA') {
     botones.push(`<span style="color:var(--success);font-size:11px;font-weight:600;">✓ Terminada</span>`);
-    if (esAdmin) {
+    if (puede('reabrir_cirugia')) {
       botones.push(`<button class="btn btn-secondary btn-sm" onclick="reabrirCirugiaUI('${folio}')">↻</button>`);
     }
   }
@@ -2236,10 +2335,14 @@ async function abrirEditarCirugia(folio) {
   const c = cache.cirugias.find(x => x.Folio_Cirugia === folio);
   if (!c) { showToast('Cirugía no encontrada', 'error'); return; }
 
-  // Verificar permisos: CAPTURISTA solo PROGRAMADA
+  // Verificar permisos para editar
   const estado = String(c.Estado || '').trim().toUpperCase();
-  if (currentUser.rol === 'CAPTURISTA' && estado !== 'PROGRAMADA' && estado !== '') {
-    showToast(`No puedes editar cirugías en estado ${estado}. Pide a un ADMIN.`, 'error');
+  if (!puede('editar_cirugia')) {
+    showToast('No tienes permiso para editar cirugías.', 'error');
+    return;
+  }
+  if (estado === 'CANCELADA' || estado === 'TERMINADA') {
+    showToast(`No se puede editar una cirugía en estado ${estado}.`, 'error');
     return;
   }
 
@@ -2373,8 +2476,8 @@ async function terminarCirugiaUI(folio, forzar = false) {
 }
 
 async function reabrirCirugiaUI(folio) {
-  if (currentUser.rol !== 'ADMIN') {
-    showToast('Solo ADMIN puede reabrir cirugías', 'error');
+  if (!puede('reabrir_cirugia')) {
+    showToast('No tienes permiso para reabrir cirugías', 'error');
     return;
   }
   const motivo = prompt('Motivo para reabrir (obligatorio, mínimo 10 caracteres):');
@@ -2889,7 +2992,7 @@ async function verConsumosCirugia(folioCirugia) {
   openModal('Consumos de cirugía ' + folioCirugia, `
     <div id="consumosCirugia_content"><div class="loading"><div class="spinner"></div> Cargando...</div></div>
     <div class="form-actions" style="justify-content:space-between;">
-      ${currentUser.rol !== 'CONSULTA' ? `<button class="btn btn-accent btn-sm" onclick="closeModal();openModalConsumo('${folioCirugia}')">+ Agregar consumo adicional</button>` : '<div></div>'}
+      ${puede('registrar_consumo') ? `<button class="btn btn-accent btn-sm" onclick="closeModal();openModalConsumo('${folioCirugia}')">+ Agregar consumo adicional</button>` : '<div></div>'}
       <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
     </div>
   `);
@@ -2903,7 +3006,7 @@ async function verConsumosCirugia(folioCirugia) {
     return;
   }
 
-  const isAdmin = currentUser.rol === 'ADMIN';
+  const puedeCancelarConsumo = puede('cancelar_consumo');
   cont.innerHTML = `
     <table>
       <thead>
@@ -2913,7 +3016,7 @@ async function verConsumosCirugia(folioCirugia) {
           <th>Cantidad</th>
           <th>Administrado</th>
           <th>Estado</th>
-          ${isAdmin ? '<th>Acciones</th>' : ''}
+          ${puedeCancelarConsumo ? '<th>Acciones</th>' : ''}
         </tr>
       </thead>
       <tbody>
@@ -2930,7 +3033,7 @@ async function verConsumosCirugia(folioCirugia) {
                 ? `<span class="badge badge-cancelada">CANCELADO</span><br><small style="color:var(--text-muted);font-size:10px;text-decoration:none;display:inline-block;margin-top:4px;">${c.Motivo_Cancelacion||''}</small>`
                 : '<span class="badge badge-realizada">ACTIVO</span>'}
             </td>
-            ${isAdmin ? `<td>${cancelado ? '—' : `<button class="btn btn-sm" style="background:var(--danger);color:white;" onclick="cancelarConsumo('${c.ID_Consumo}','${c.Nombre_Medicamento}',${c.Cantidad_Consumida})">Cancelar</button>`}</td>` : ''}
+            ${puedeCancelarConsumo ? `<td>${cancelado ? '—' : `<button class="btn btn-sm" style="background:var(--danger);color:white;" onclick="cancelarConsumo('${c.ID_Consumo}','${c.Nombre_Medicamento}',${c.Cantidad_Consumida})">Cancelar</button>`}</td>` : ''}
           </tr>
         `;}).join('')}
       </tbody>
@@ -3435,7 +3538,7 @@ function verDetalleHab(idHabitacion) {
   if (!h || !h.ocupada) { showToast('Habitación no encontrada', 'error'); return; }
   const hosp = h.hospitalizacion;
   const tipoLabel = h.tipo === 'PRIVADA' ? 'Habitación' : h.tipo === 'SALA_GENERAL' ? 'Sala general' : h.tipo === 'URGENCIAS' ? 'Cama urgencias' : 'Cama UCI';
-  const isCapturista = currentUser.rol !== 'CONSULTA';
+  const puedeGestionar = puede('ingresar_habitacion');
 
   openModal(`${tipoLabel} ${h.numero}`, `
     <div style="font-size:13px;line-height:1.7;">
@@ -3470,7 +3573,7 @@ function verDetalleHab(idHabitacion) {
     </div>
 
     <div class="form-actions">
-      ${isCapturista ? `
+      ${puedeGestionar ? `
         <button class="btn btn-secondary btn-sm" onclick="openModalMover('${hosp.id}','${hosp.nombrePaciente}','${h.idHabitacion}')">↔ Mover</button>
         <button class="btn btn-accent btn-sm" onclick="openModalEgresar('${hosp.id}','${hosp.nombrePaciente}')">↗ Egresar</button>
       ` : ''}
@@ -4174,7 +4277,7 @@ function renderPacientesLista(pacientes) {
     return;
   }
 
-  const isCapturista = currentUser.rol !== 'CONSULTA';
+  const puedeEditarPac = puede('editar_paciente');
   cont.innerHTML = `
     <div class="card" style="overflow-x:auto;">
       <table class="table">
@@ -4186,7 +4289,7 @@ function renderPacientesLista(pacientes) {
             <th>Teléfono</th>
             <th>CURP</th>
             <th>Ubicación</th>
-            ${isCapturista ? '<th>Acciones</th>' : ''}
+            ${puedeEditarPac ? '<th>Acciones</th>' : ''}
           </tr>
         </thead>
         <tbody>
@@ -4200,7 +4303,7 @@ function renderPacientesLista(pacientes) {
                 <td>${p.Telefono || '—'}</td>
                 <td><small style="font-family:monospace;">${p.CURP || '—'}</small></td>
                 <td><small>${ubicacion}</small></td>
-                ${isCapturista ? `<td><button class="btn btn-secondary btn-sm" onclick="openModalEditarPaciente('${p.ID_Paciente}')">✎ Editar</button></td>` : ''}
+                ${puedeEditarPac ? `<td><button class="btn btn-secondary btn-sm" onclick="openModalEditarPaciente('${p.ID_Paciente}')">✎ Editar</button></td>` : ''}
               </tr>
             `;
           }).join('')}
