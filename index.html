@@ -673,6 +673,9 @@ textarea { resize: vertical; min-height: 70px; }
     <div class="nav-item" data-page="pacientes"><span class="icon">👤</span>Pacientes</div>
     <div class="nav-item" data-page="recetas"><span class="icon">℞</span>Recetas</div>
     <div class="nav-item" data-page="consumos"><span class="icon">◉</span>Consumos</div>
+    <div class="nav-section-title">Atención médica</div>
+    <div class="nav-item" data-page="consultas"><span class="icon">🩺</span>Consultas</div>
+    <div class="nav-item" data-page="urgencias"><span class="icon">🚑</span>Urgencias</div>
     <div class="nav-section-title">Inventario</div>
     <div class="nav-item" data-page="inventario"><span class="icon">▦</span>Saldos</div>
     <div class="nav-item" data-page="entradas"><span class="icon">↓</span>Entradas</div>
@@ -936,6 +939,44 @@ textarea { resize: vertical; min-height: 70px; }
       <div class="card"><div id="consumosTable">Cargando...</div></div>
     </div>
 
+    <!-- CONSULTAS -->
+    <div id="page-consultas" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Consultas</h1>
+          <div class="subtitle">Registro de consultas médicas</div>
+        </div>
+        <button class="btn btn-accent" data-accion="registrar_consulta" onclick="openModalConsulta('CONSULTA')">+ Nueva consulta</button>
+      </div>
+      <div class="toolbar">
+        <div class="toolbar-row">
+          <input type="date" id="consultasDesde" onchange="renderConsultas()">
+          <input type="date" id="consultasHasta" onchange="renderConsultas()">
+          <input type="search" id="searchConsultas" placeholder="Buscar paciente o médico..." oninput="renderConsultas()">
+        </div>
+      </div>
+      <div class="card"><div id="consultasTable">Cargando...</div></div>
+    </div>
+
+    <!-- URGENCIAS -->
+    <div id="page-urgencias" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Urgencias</h1>
+          <div class="subtitle">Registro de urgencias médicas</div>
+        </div>
+        <button class="btn btn-accent" data-accion="registrar_consulta" onclick="openModalConsulta('URGENCIA')">+ Nueva urgencia</button>
+      </div>
+      <div class="toolbar">
+        <div class="toolbar-row">
+          <input type="date" id="urgenciasDesde" onchange="renderUrgencias()">
+          <input type="date" id="urgenciasHasta" onchange="renderUrgencias()">
+          <input type="search" id="searchUrgencias" placeholder="Buscar paciente o médico..." oninput="renderUrgencias()">
+        </div>
+      </div>
+      <div class="card"><div id="urgenciasTable">Cargando...</div></div>
+    </div>
+
     <!-- INVENTARIO -->
     <div id="page-inventario" class="page">
       <div class="page-header">
@@ -1045,7 +1086,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbwYgsRz2nZajq1wrCzjcgUM
 
 let currentUser = null;
 let catalogos = { medicamentos: [], medicos: [], cirugiasTipo: [], pacientes: [], aseguradoras: [], config: {} };
-let cache = { cirugias: [], recetas: [], consumos: [], libro: [], inventario: [] };
+let cache = { cirugias: [], recetas: [], consumos: [], libro: [], inventario: [], consultas: [], urgencias: [] };
 let currentHorizonte = 7;
 let currentQuickFilter = 'todas';
 
@@ -1167,6 +1208,8 @@ const PERMISOS = {
     pacientes:    ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO','RECEPCION'],
     recetas:      ['ADMIN','JEFE_ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
     consumos:     ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],
+    consultas:    ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
+    urgencias:    ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
     inventario:   ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
     entradas:     ['ADMIN','JEFE_ENFERMERIA','ALMACEN'],
     libro:        ['ADMIN','JEFE_ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
@@ -1178,7 +1221,7 @@ const PERMISOS = {
     'nueva_cirugia':        ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],          // A2
     'ingresar_habitacion':  ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO'], // A3
     'nuevo_paciente_recep': ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],  // A4
-    'nuevo_paciente_dir':   ['ADMIN'],                                              // A5
+    'nuevo_paciente_dir':   ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'], // A5
     'editar_paciente':      ['ADMIN','JEFE_ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],// A6
     'vincular_receta':      ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'], // A7
     'registrar_consumo':    ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'], // A8
@@ -1191,7 +1234,8 @@ const PERMISOS = {
     'cancelar_cirugia':     ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],          // A15
     'terminar_cirugia':     ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO'], // A16
     'reabrir_cirugia':      ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],          // A17
-    'exportar_libro':       ['ADMIN','JEFE_ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO']  // A18
+    'exportar_libro':       ['ADMIN','JEFE_ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],  // A18
+    'registrar_consulta':   ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION']  // A19
   }
 };
 
@@ -1312,6 +1356,8 @@ function loadPage(page) {
     case 'pacientes': loadPacientes(); break;
     case 'recetas': loadRecetas(); break;
     case 'consumos': loadConsumos(); break;
+    case 'consultas': loadConsultas(); break;
+    case 'urgencias': loadUrgencias(); break;
     case 'inventario': loadInventario(); break;
     case 'libro': loadLibro(); break;
     case 'catalogos': loadCatalogosPage(); break;
@@ -3084,6 +3130,146 @@ async function cancelarConsumo(idConsumo, nombreMed, cantidad) {
         loadCirugias();
       }
     }
+  } else {
+    showToast('Error: ' + resp.error, 'error');
+  }
+}
+
+// ============================================================
+// CONSULTAS Y URGENCIAS MÉDICAS
+// ============================================================
+// Módulo independiente: no toca inventario, libro COFEPRIS ni recetas.
+
+async function loadConsultas() {
+  document.getElementById('consultasTable').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  const desde = document.getElementById('consultasDesde').value;
+  const hasta = document.getElementById('consultasHasta').value;
+  const resp = await apiGet('getConsultas', { tipo: 'CONSULTA', desde, hasta });
+  cache.consultas = resp.data || [];
+  renderConsultas();
+}
+
+async function loadUrgencias() {
+  document.getElementById('urgenciasTable').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  const desde = document.getElementById('urgenciasDesde').value;
+  const hasta = document.getElementById('urgenciasHasta').value;
+  const resp = await apiGet('getConsultas', { tipo: 'URGENCIA', desde, hasta });
+  cache.urgencias = resp.data || [];
+  renderUrgencias();
+}
+
+// Render genérico para ambos tipos
+function renderListaConsultas(lista, searchValue, contId) {
+  let rows = lista.slice();
+  const search = (searchValue || '').toLowerCase();
+  if (search) {
+    rows = rows.filter(c =>
+      (c.Nombre_Paciente||'').toLowerCase().includes(search) ||
+      (c.Nombre_Medico||'').toLowerCase().includes(search)
+    );
+  }
+  const html = rows.map(c => `
+    <tr>
+      <td>${c.Folio||'—'}</td>
+      <td>${formatDateShort(c.Fecha)}<br><small>${c.Hora||''}</small></td>
+      <td><strong>${c.Nombre_Paciente||'—'}</strong></td>
+      <td>${c.Nombre_Medico||'—'}</td>
+      <td>${c.Motivo||'—'}</td>
+      <td>${c.Indicaciones||'—'}</td>
+      <td><small>${c.Capturado_Por||'—'}</small></td>
+    </tr>
+  `).join('');
+  document.getElementById(contId).innerHTML = rows.length
+    ? `<table><thead><tr><th>Folio</th><th>Fecha</th><th>Paciente</th><th>Médico</th><th>Motivo</th><th>Indicaciones</th><th>Capturó</th></tr></thead><tbody>${html}</tbody></table>`
+    : '<div class="empty-state"><div class="icon">🩺</div>Sin registros</div>';
+}
+
+function renderConsultas() {
+  renderListaConsultas(cache.consultas, document.getElementById('searchConsultas').value, 'consultasTable');
+}
+
+function renderUrgencias() {
+  renderListaConsultas(cache.urgencias, document.getElementById('searchUrgencias').value, 'urgenciasTable');
+}
+
+/**
+ * Abre el modal para registrar una consulta o urgencia.
+ * @param {string} tipo - 'CONSULTA' o 'URGENCIA'
+ */
+function openModalConsulta(tipo) {
+  const esUrgencia = tipo === 'URGENCIA';
+  const titulo = esUrgencia ? 'Nueva urgencia médica' : 'Nueva consulta médica';
+
+  // Selector de paciente desde el catálogo
+  const pacientesOpts = (catalogos.pacientes || []).map(p =>
+    `<option value="${p.ID_Paciente}" data-nombre="${p.Nombre_Completo}">${p.Nombre_Completo}</option>`
+  ).join('');
+
+  // Selector de médico desde el catálogo
+  const medicosOpts = (catalogos.medicos || []).map(m =>
+    `<option value="${m.ID_Medico}" data-nombre="${m.Nombre_Completo}">${m.Nombre_Completo} (${m.Especialidad||'s/esp'})</option>`
+  ).join('');
+
+  openModal(titulo, `
+    <form onsubmit="event.preventDefault();guardarConsulta('${tipo}')">
+      <div class="form-grid">
+        <div><label>Fecha</label><input type="date" id="cons_fecha" value="${todayISO()}" required></div>
+        <div><label>Hora</label><input type="time" id="cons_hora" value="${nowTime()}"></div>
+        <div class="full"><label>Paciente *</label>
+          <select id="cons_paciente" required>
+            <option value="">— Seleccionar paciente —</option>${pacientesOpts}
+          </select>
+          <small style="color:var(--text-muted);font-size:11px;">Si el paciente no existe, primero debe darse de alta en Recepción o Pacientes.</small>
+        </div>
+        <div class="full"><label>Médico que atiende</label>
+          <select id="cons_medico">
+            <option value="">— Seleccionar médico —</option>${medicosOpts}
+          </select>
+        </div>
+        <div class="full"><label>Motivo ${esUrgencia ? 'de la urgencia' : 'de la consulta'}</label>
+          <textarea id="cons_motivo" placeholder="Describe el motivo"></textarea>
+        </div>
+        <div class="full"><label>Indicaciones médicas</label>
+          <textarea id="cons_indicaciones" placeholder="Indicaciones, tratamiento, recomendaciones"></textarea>
+        </div>
+      </div>
+      <div class="form-actions" style="margin-top:16px;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Registrar ${esUrgencia ? 'urgencia' : 'consulta'}</button>
+      </div>
+    </form>
+  `);
+}
+
+async function guardarConsulta(tipo) {
+  const selPac = document.getElementById('cons_paciente');
+  const selMed = document.getElementById('cons_medico');
+  const idPaciente = selPac.value;
+  if (!idPaciente) {
+    showToast('Debes seleccionar un paciente', 'error');
+    return;
+  }
+  const nombrePaciente = selPac.options[selPac.selectedIndex].dataset.nombre || '';
+  const idMedico = selMed.value;
+  const nombreMedico = idMedico ? (selMed.options[selMed.selectedIndex].dataset.nombre || '') : '';
+
+  const resp = await apiPost('registrarConsulta', {
+    tipo: tipo,
+    fecha: document.getElementById('cons_fecha').value,
+    hora: document.getElementById('cons_hora').value,
+    idPaciente: idPaciente,
+    nombrePaciente: nombrePaciente,
+    idMedico: idMedico,
+    nombreMedico: nombreMedico,
+    motivo: document.getElementById('cons_motivo').value,
+    indicaciones: document.getElementById('cons_indicaciones').value,
+    capturadoPor: currentUser.nombre
+  });
+
+  if (resp.ok) {
+    showToast(`${tipo === 'URGENCIA' ? 'Urgencia' : 'Consulta'} registrada: ${resp.folio}`);
+    closeModal();
+    if (tipo === 'URGENCIA') loadUrgencias(); else loadConsultas();
   } else {
     showToast('Error: ' + resp.error, 'error');
   }
