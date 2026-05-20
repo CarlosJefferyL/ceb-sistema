@@ -4456,6 +4456,50 @@ function filtrarPacientes() {
   renderPacientesLista(filtrados);
 }
 
+/**
+ * Borra un paciente desde la UI. Maneja el flujo de confirmación:
+ *  - Sin historial → confirma simple y borra.
+ *  - Con historial + ADMIN → pide segunda confirmación con detalle.
+ *  - Con historial + no-ADMIN → el backend lo rechaza con mensaje claro.
+ */
+async function borrarPacienteUI(idPaciente, nombrePaciente) {
+  if (!confirm(`¿Borrar al paciente "${nombrePaciente}" (${idPaciente})?\n\nEsta acción no se puede deshacer.`)) {
+    return;
+  }
+
+  // Primer intento (sin forzar)
+  let resp = await apiPost('borrarPaciente', { idPaciente });
+
+  // Si el backend pide confirmación adicional (ADMIN con historial)
+  if (!resp.ok && resp.requiereConfirmacion) {
+    const h = resp.historial || {};
+    const detalle = `Este paciente TIENE historial vinculado:\n` +
+      `• ${h.cirugias||0} cirugías\n` +
+      `• ${h.consultas||0} consultas\n` +
+      `• ${h.consumos||0} consumos de medicamentos\n` +
+      `• ${h.hospitalizaciones||0} hospitalizaciones\n\n` +
+      `Si lo borras, esos registros quedarán SIN paciente asociado y se ` +
+      `romperá la liga por ID en el Libro COFEPRIS.\n\n` +
+      `¿Estás completamente seguro de borrarlo de todas formas?`;
+    if (!confirm(detalle)) {
+      showToast('Borrado cancelado', 'warn');
+      return;
+    }
+    // Segundo intento, forzado
+    resp = await apiPost('borrarPaciente', { idPaciente, forzar: true });
+  }
+
+  if (resp.ok) {
+    const msg = resp.teniaHistorial
+      ? `Paciente "${resp.nombrePaciente}" borrado (tenía historial — forzado por ADMIN)`
+      : `Paciente "${resp.nombrePaciente}" borrado`;
+    showToast(msg);
+    loadPacientes();
+  } else {
+    showToast('Error: ' + resp.error, 'error');
+  }
+}
+
 function renderPacientesLista(pacientes) {
   const cont = document.getElementById('pacientesLista');
   if (pacientes.length === 0) {
@@ -4464,6 +4508,9 @@ function renderPacientesLista(pacientes) {
   }
 
   const puedeEditarPac = puede('editar_paciente');
+  // Borrar pacientes: ADMIN, JEFE_ENFERMERIA, RECEPCION
+  const puedeBorrarPac = ['ADMIN','JEFE_ENFERMERIA','RECEPCION'].includes(currentUser.rol);
+  const hayAcciones = puedeEditarPac || puedeBorrarPac;
   cont.innerHTML = `
     <div class="card" style="overflow-x:auto;">
       <table class="table">
@@ -4475,12 +4522,17 @@ function renderPacientesLista(pacientes) {
             <th>Teléfono</th>
             <th>CURP</th>
             <th>Ubicación</th>
-            ${puedeEditarPac ? '<th>Acciones</th>' : ''}
+            <th>Estatus</th>
+            ${hayAcciones ? '<th>Acciones</th>' : ''}
           </tr>
         </thead>
         <tbody>
           ${pacientes.map(p => {
             const ubicacion = [p.Ciudad, p.Estado].filter(Boolean).join(', ') || '—';
+            const estatus = p.Estatus || 'Activo';
+            let estatusBadge = '<span class="badge badge-realizada">Activo</span>';
+            if (estatus === 'Atendido') estatusBadge = '<span class="badge" style="background:#DBEAFE;color:#1E40AF;">Atendido</span>';
+            if (estatus === 'Suspendido') estatusBadge = '<span class="badge badge-cancelada">Suspendido</span>';
             return `
               <tr>
                 <td><code style="font-size:11px;color:var(--text-muted);">${p.ID_Paciente}</code></td>
@@ -4489,7 +4541,11 @@ function renderPacientesLista(pacientes) {
                 <td>${p.Telefono || '—'}</td>
                 <td><small style="font-family:monospace;">${p.CURP || '—'}</small></td>
                 <td><small>${ubicacion}</small></td>
-                ${puedeEditarPac ? `<td><button class="btn btn-secondary btn-sm" onclick="openModalEditarPaciente('${p.ID_Paciente}')">✎ Editar</button></td>` : ''}
+                <td>${estatusBadge}</td>
+                ${hayAcciones ? `<td style="white-space:nowrap;">
+                  ${puedeEditarPac ? `<button class="btn btn-secondary btn-sm" onclick="openModalEditarPaciente('${p.ID_Paciente}')">✎ Editar</button>` : ''}
+                  ${puedeBorrarPac ? `<button class="btn btn-sm" style="background:var(--danger);color:white;margin-left:4px;" onclick="borrarPacienteUI('${p.ID_Paciente}','${(p.Nombre_Completo||'').replace(/'/g,'')}')">🗑 Borrar</button>` : ''}
+                </td>` : ''}
               </tr>
             `;
           }).join('')}
