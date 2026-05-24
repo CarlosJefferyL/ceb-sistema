@@ -631,6 +631,54 @@ textarea { resize: vertical; min-height: 70px; }
   padding: 2px 8px; border-radius: 4px; font-size: 10px;
   font-weight: 600; text-transform: uppercase; margin-top: 6px;
 }
+
+/* ===== MÓDULO COBRO DE CAJA ===== */
+.caja-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; }
+.caja-grid label, .caja-money label, .caja-hon-row label {
+  display:block; font-size:11px; font-weight:600; color:var(--navy);
+  margin-bottom:3px; text-transform:uppercase; letter-spacing:.02em;
+}
+.caja-cols { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+@media (max-width:780px){ .caja-cols { grid-template-columns:1fr; } }
+.card-title-flex {
+  display:flex; justify-content:space-between; align-items:center;
+  font-family:Georgia,serif; font-size:15px; font-weight:700; color:var(--navy);
+  padding-bottom:8px; margin-bottom:12px; border-bottom:1px solid var(--border);
+}
+.caja-total { font-family:'DM Sans',Calibri,sans-serif; font-size:15px; color:var(--teal-dark); }
+.caja-money {
+  display:grid; grid-template-columns:1fr 130px; gap:6px 10px; align-items:center;
+}
+.caja-money label { margin-bottom:0; text-align:right; text-transform:none; font-size:12px; }
+.caja-money input { text-align:right; }
+.caja-hon-row {
+  display:grid; grid-template-columns:130px 1fr 130px; gap:8px;
+  align-items:center; margin-bottom:8px;
+}
+.caja-hon-row label { margin-bottom:0; text-transform:none; }
+.caja-hon-row input { text-align:right; }
+.caja-pago-row {
+  display:grid; grid-template-columns:1fr 110px 1fr auto; gap:8px; align-items:center;
+}
+.caja-item-fila {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:7px 10px; background:#FAFBFC; border:1px solid var(--border);
+  border-radius:6px; margin-bottom:5px; font-size:13px;
+}
+.caja-item-fila button {
+  background:none; border:none; color:var(--danger,#C0392B);
+  cursor:pointer; font-size:16px; line-height:1;
+}
+.caja-resumen { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+@media (max-width:780px){ .caja-resumen { grid-template-columns:1fr 1fr; } }
+.caja-res-item {
+  background:white; border-radius:8px; padding:12px; text-align:center;
+  border:1px solid var(--border);
+}
+.caja-res-lbl { display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;
+  text-transform:uppercase; letter-spacing:.03em; }
+.caja-res-val { display:block; font-family:Georgia,serif; font-size:20px; font-weight:700; }
+
 </style>
 </head>
 <body>
@@ -683,6 +731,8 @@ textarea { resize: vertical; min-height: 70px; }
     <div class="nav-item" data-page="libro"><span class="icon">📕</span>Libro COFEPRIS</div>
     <div class="nav-section-title">Catálogos</div>
     <div class="nav-item" data-page="catalogos"><span class="icon">⚙</span>Médicos y cirugías</div>
+    <div class="nav-section-title">Caja</div>
+    <div class="nav-item" data-page="cobro"><span class="icon">💵</span>Cobro de caja</div>
     <div class="user-card">
       <div class="uname" id="userName">—</div>
       <div class="urol" id="userRol">—</div>
@@ -1072,6 +1122,225 @@ textarea { resize: vertical; min-height: 70px; }
       </p>
     </div>
 
+    <!-- COBRO DE CAJA -->
+    <div id="page-cobro" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Cobro de caja</h1>
+          <div class="subtitle">Cuenta del paciente · cálculo de cobro, depósitos y honorarios médicos</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-secondary btn-sm" onclick="limpiarCobro()">🧹 Nuevo cobro</button>
+        </div>
+      </div>
+
+      <!-- Buscar paciente -->
+      <div class="card">
+        <div class="card-title">1. Buscar paciente</div>
+        <div style="position:relative;">
+          <label>Nombre del paciente</label>
+          <input type="text" id="cj_buscarPaciente" autocomplete="off"
+                 placeholder="Escribe el nombre del paciente (mínimo 2 letras)..."
+                 oninput="buscarPacienteCobro()">
+          <div id="cj_resultadosPaciente" style="display:none;position:absolute;z-index:20;left:0;right:0;background:white;border:1px solid var(--border);border-radius:8px;margin-top:2px;max-height:240px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.1);"></div>
+        </div>
+        <div id="cj_pacienteSeleccionado" style="display:none;margin-top:10px;padding:12px;border:1px solid var(--teal);border-radius:8px;background:var(--teal-light);">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+            <div>
+              <div style="font-weight:700;color:var(--navy);font-size:14px;" id="cj_pacNombre">—</div>
+              <div style="font-size:12px;color:var(--text-muted);margin-top:2px;" id="cj_pacDetalle">—</div>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="limpiarPacienteCobro()">Cambiar</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Datos generales del expediente -->
+      <div class="card">
+        <div class="card-title">2. Datos del expediente</div>
+        <div class="caja-grid">
+          <div><label>Expediente *</label><input type="text" id="cj_expediente"></div>
+          <div><label>Factura</label><input type="text" id="cj_factura"></div>
+          <div><label>Fecha de ingreso *</label><input type="date" id="cj_fechaIngreso"></div>
+          <div><label>Fecha de egreso</label><input type="date" id="cj_fechaEgreso"></div>
+          <div><label>Tipo de cliente</label><select id="cj_tipoCliente"></select></div>
+          <div><label>Habitación</label><select id="cj_habitacion"></select></div>
+        </div>
+        <input type="hidden" id="cj_nombre">
+        <input type="hidden" id="cj_idPaciente">
+      </div>
+
+      <!-- Cirugías -->
+      <div class="card">
+        <div class="card-title">Cirugías</div>
+        <div class="caja-grid">
+          <div><label>Especialidad</label><select id="cj_especialidad"></select></div>
+          <div><label>Cirugía</label><select id="cj_cirugia"></select></div>
+          <div><label>Tiempo de cirugía</label><input type="text" id="cj_tiempoCx" placeholder="ej: 01:30"></div>
+          <div><label>Tipo de anestesia</label><select id="cj_tipoAnestesia"></select></div>
+        </div>
+        <div style="margin-top:10px;">
+          <button class="btn btn-accent btn-sm" onclick="agregarCirugiaCaja()">+ Agregar cirugía a la lista</button>
+        </div>
+        <div id="cj_listaCirugias" style="margin-top:10px;"></div>
+      </div>
+
+      <!-- Conceptos: Clínica / Equipo / Laboratorio / Imagen -->
+      <div class="caja-cols">
+        <div class="card">
+          <div class="card-title-flex"><span>Total Clínica</span><span class="caja-total" id="cj_totClinica">$0.00</span></div>
+          <div class="caja-money">
+            <label>Hospitalización</label><input type="text" inputmode="decimal" data-caja="clinica" id="cj_hospitalizacion">
+            <label>Consulta externa</label><input type="text" inputmode="decimal" data-caja="clinica" id="cj_consultaExterna">
+            <label>Hora extra</label><input type="text" inputmode="decimal" data-caja="clinica" id="cj_horaExtra">
+            <label>Día extra</label><input type="text" inputmode="decimal" data-caja="clinica" id="cj_diaExtra">
+            <label>Materiales y medicamento</label><input type="text" inputmode="decimal" data-caja="clinica" id="cj_materiales">
+            <label>Oxígeno</label><input type="text" inputmode="decimal" data-caja="clinica" id="cj_oxigeno">
+            <label>Paquete globular</label><input type="text" inputmode="decimal" data-caja="clinica" id="cj_paqueteGlobular">
+            <label>Noche terapia</label><input type="text" inputmode="decimal" data-caja="clinica" id="cj_nocheTerapia">
+          </div>
+          <small id="cj_notaComision" style="display:none;color:#92400E;font-size:11px;">⚠ Hospitalización incluye la comisión bancaria de los depósitos/pagos con tarjeta.</small>
+        </div>
+
+        <div class="card">
+          <div class="card-title-flex"><span>Total Equipo</span><span class="caja-total" id="cj_totEquipo">$0.00</span></div>
+          <div class="caja-money">
+            <label>Bomba infusión</label><input type="text" inputmode="decimal" data-caja="equipo" id="cj_bombaInfusion">
+            <label>Fluoroscopio</label><input type="text" inputmode="decimal" data-caja="equipo" id="cj_fluoroscopio">
+            <label>Laparoscopio</label><input type="text" inputmode="decimal" data-caja="equipo" id="cj_laparoscopio">
+            <label>Artroscopio</label><input type="text" inputmode="decimal" data-caja="equipo" id="cj_artroscopio">
+            <label>Ligasure</label><input type="text" inputmode="decimal" data-caja="equipo" id="cj_ligasure">
+            <label>Ambulancia</label><input type="text" inputmode="decimal" data-caja="equipo" id="cj_ambulancia">
+            <label>Monitor</label><input type="text" inputmode="decimal" data-caja="equipo" id="cj_monitor">
+            <label>Ventilador</label><input type="text" inputmode="decimal" data-caja="equipo" id="cj_ventilador">
+          </div>
+        </div>
+      </div>
+
+      <div class="caja-cols">
+        <div class="card">
+          <div class="card-title-flex"><span>Total Laboratorio</span><span class="caja-total" id="cj_totLaboratorio">$0.00</span></div>
+          <div class="caja-money">
+            <label>Laboratorio</label><input type="text" inputmode="decimal" data-caja="laboratorio" id="cj_laboratorio">
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title-flex"><span>Total Imagen</span><span class="caja-total" id="cj_totImagen">$0.00</span></div>
+          <div class="caja-money">
+            <label>Imagen</label><input type="text" inputmode="decimal" data-caja="imagen" id="cj_imagen">
+            <label>Anestesia mixta</label><input type="text" inputmode="decimal" data-caja="imagen" id="cj_anestesiaMixta">
+          </div>
+        </div>
+      </div>
+
+      <!-- Honorarios médicos -->
+      <div class="card">
+        <div class="card-title-flex"><span>Total Honorarios Médicos</span><span class="caja-total" id="cj_totHonorarios">$0.00</span></div>
+        <div class="caja-hon">
+          <div class="caja-hon-row">
+            <label>Cirujano</label><select id="cj_cirujano"></select>
+            <input type="text" inputmode="decimal" data-caja="honorarios" id="cj_honCirujano" placeholder="Honorarios">
+          </div>
+          <div class="caja-hon-row">
+            <label>1er Ayudante</label><select id="cj_1erAyudante"></select>
+            <input type="text" inputmode="decimal" data-caja="honorarios" id="cj_hon1erAyudante" placeholder="Honorarios">
+          </div>
+          <div class="caja-hon-row">
+            <label>2do Ayudante</label><select id="cj_2doAyudante"></select>
+            <input type="text" inputmode="decimal" data-caja="honorarios" id="cj_hon2doAyudante" placeholder="Honorarios">
+          </div>
+          <div class="caja-hon-row">
+            <label>Anestesiólogo</label><select id="cj_anestesiologo"></select>
+            <input type="text" inputmode="decimal" data-caja="honorarios" id="cj_honAnestesiologo" placeholder="Honorarios">
+          </div>
+          <div class="caja-hon-row">
+            <label>Patólogo</label><select id="cj_patologo"></select>
+            <input type="text" inputmode="decimal" data-caja="honorarios" id="cj_honPatologo" placeholder="Honorarios">
+          </div>
+          <div class="caja-hon-row">
+            <label>Médico Internista</label><select id="cj_medicoInternista"></select>
+            <input type="text" inputmode="decimal" data-caja="honorarios" id="cj_honMedicoInternista" placeholder="Honorarios">
+          </div>
+          <div class="caja-hon-row">
+            <label>Otros Médicos</label><select id="cj_otrosMedicos"></select>
+            <input type="text" inputmode="decimal" data-caja="honorarios" id="cj_honOtrosMedicos" placeholder="Honorarios">
+          </div>
+        </div>
+      </div>
+
+      <!-- Depósitos y Pago Final -->
+      <div class="caja-cols">
+        <div class="card">
+          <div class="card-title-flex"><span>Total Depósitos</span><span class="caja-total" id="cj_totDepositos">$0.00</span></div>
+          <div class="caja-pago-row">
+            <select id="cj_depTipo">
+              <option value="">— Forma de pago —</option>
+              <option value="EFECTIVO">Efectivo</option>
+              <option value="TD">Tarjeta de Débito</option>
+              <option value="TC">Tarjeta de Crédito</option>
+              <option value="TRANSFERENCIA">Transferencia</option>
+            </select>
+            <input type="text" inputmode="decimal" id="cj_depMonto" placeholder="Monto">
+            <input type="text" id="cj_depBanco" placeholder="Banco (opcional)">
+            <button class="btn btn-accent btn-sm" onclick="agregarDeposito()">Registrar</button>
+          </div>
+          <div id="cj_listaDepositos" style="margin-top:10px;"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title-flex"><span>Pago Final</span><span class="caja-total" id="cj_totPagos">$0.00</span></div>
+          <div class="caja-pago-row">
+            <select id="cj_pagoTipo">
+              <option value="">— Forma de pago —</option>
+              <option value="EFECTIVO">Efectivo</option>
+              <option value="TD">Tarjeta de Débito</option>
+              <option value="TC">Tarjeta de Crédito</option>
+              <option value="TRANSFERENCIA">Transferencia</option>
+            </select>
+            <input type="text" inputmode="decimal" id="cj_pagoMonto" placeholder="Monto">
+            <input type="text" id="cj_pagoBanco" placeholder="Banco (opcional)">
+            <button class="btn btn-accent btn-sm" onclick="agregarPago()">Registrar</button>
+          </div>
+          <div id="cj_listaPagos" style="margin-top:10px;"></div>
+        </div>
+      </div>
+
+      <!-- Resumen final -->
+      <div class="card" style="background:var(--teal-light);">
+        <div class="card-title">Resumen de cuenta</div>
+        <div class="caja-resumen">
+          <div class="caja-res-item">
+            <span class="caja-res-lbl">Total en Tarjeta</span>
+            <span class="caja-res-val" id="cj_totalTarjeta">$0.00</span>
+          </div>
+          <div class="caja-res-item">
+            <span class="caja-res-lbl">Pendiente Tarjeta</span>
+            <span class="caja-res-val" id="cj_pendTarjeta">$0.00</span>
+          </div>
+          <div class="caja-res-item">
+            <span class="caja-res-lbl">Total Efectivo/Transf.</span>
+            <span class="caja-res-val" id="cj_totalEfectivo">$0.00</span>
+          </div>
+          <div class="caja-res-item">
+            <span class="caja-res-lbl">Pendiente Efectivo</span>
+            <span class="caja-res-val" id="cj_pendEfectivo">$0.00</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;align-items:center;">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+            <input type="checkbox" id="cj_operacion" style="width:auto;margin:0;"> Operación
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+            <input type="checkbox" id="cj_aplicarComision" style="width:auto;margin:0;"> Aplicar comisión bancaria (4%)
+          </label>
+          <span style="flex:1;"></span>
+          <span style="font-size:13px;color:var(--text-muted);">Comisión calculada: <strong id="cj_comisionTotal">$0.00</strong></span>
+          <button class="btn btn-primary" data-accion="cobro_caja" onclick="guardarCobro()">💾 Registrar cobro</button>
+        </div>
+      </div>
+    </div>
+
+
   </main>
 </div>
 
@@ -1213,7 +1482,8 @@ const PERMISOS = {
     inventario:   ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
     entradas:     ['ADMIN','JEFE_ENFERMERIA','ALMACEN'],
     libro:        ['ADMIN','JEFE_ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
-    catalogos:    ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO']
+    catalogos:    ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
+    cobro:        ['ADMIN','DIRECTOR_MEDICO','CAJERO']
   },
   // ============ ACCIONES (botones de crear/modificar) ============
   actions: {
@@ -1235,7 +1505,8 @@ const PERMISOS = {
     'terminar_cirugia':     ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO'], // A16
     'reabrir_cirugia':      ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],          // A17
     'exportar_libro':       ['ADMIN','JEFE_ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],  // A18
-    'registrar_consulta':   ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION']  // A19
+    'registrar_consulta':   ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],  // A19
+    'cobro_caja':           ['ADMIN','DIRECTOR_MEDICO','CAJERO']  // A20
   }
 };
 
@@ -1361,6 +1632,7 @@ function loadPage(page) {
     case 'inventario': loadInventario(); break;
     case 'libro': loadLibro(); break;
     case 'catalogos': loadCatalogosPage(); break;
+    case 'cobro': loadCobroPage(); break;
   }
 }
 
@@ -4892,6 +5164,726 @@ function showToast(msg, type = 'success') {
   el.style.display = 'block';
   setTimeout(() => { el.style.display = 'none'; }, 3500);
 }
+
+// ============================================================
+// MÓDULO COBRO DE CAJA
+// ------------------------------------------------------------
+// Replica la lógica de la Hoja de Trabajo en Excel.
+// - Los conceptos se suman en vivo conforme se escriben.
+// - Depósitos/pagos se manejan en listas (arrays en memoria).
+// - "Aplicar comisión bancaria" infla los depósitos con tarjeta
+//   dividiéndolos entre 0.96; esa comisión se suma a Hospitalización.
+// - Se calculan dos cuentas en paralelo: Tarjeta y Efectivo.
+// El backend RECALCULA todo al guardar; aquí solo es vista previa.
+// ============================================================
+
+const FACTOR_COMISION_CAJA = 0.96;
+
+// Estado en memoria del cobro actual
+let cajaDepositos = [];   // [{tipo, monto, banco}]
+let cajaPagos = [];       // [{tipo, monto, banco}]
+let cajaCirugias = [];    // [{cirugia, tiempo, especialidad, anestesia}]
+let cajaExpedienteCargado = null; // expediente si se está editando uno existente
+let cobroInicializado = false;
+
+function cajaNumJS(v) {
+  if (v === null || v === undefined || v === '') return 0;
+  if (typeof v === 'number') return v;
+  const s = String(v).replace(/[$\s,]/g, '').replace(/MXN/gi, '');
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
+function cajaRoundJS(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
+function cajaMoney(n) {
+  return '$' + cajaRoundJS(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+/**
+ * Se llama al entrar a la página de cobro. Llena los catálogos
+ * una sola vez y conecta los eventos de recálculo en vivo.
+ */
+function loadCobroPage() {
+  if (!cobroInicializado) {
+    llenarCatalogosCobro();
+    conectarEventosCobro();
+    cobroInicializado = true;
+    limpiarCobro();
+  }
+  recalcularCobro();
+}
+
+/**
+ * Llena los selects del módulo con los catálogos ya cargados
+ * en el sistema (mismos médicos, habitaciones, etc.).
+ */
+function llenarCatalogosCobro() {
+  // Médicos: todos los del catálogo del sistema. Se reutiliza el mismo
+  // catálogo para cirujano, ayudantes, anestesiólogo, etc.
+  const medicos = (catalogos.medicos || []);
+  const optsMedicos = '<option value="">— Seleccionar —</option>' +
+    medicos.map(m => `<option value="${cjEscAttr(m.Nombre_Completo)}">${m.Nombre_Completo}${m.Especialidad ? ' ('+m.Especialidad+')' : ''}</option>`).join('');
+
+  ['cj_cirujano','cj_1erAyudante','cj_2doAyudante','cj_anestesiologo',
+   'cj_patologo','cj_medicoInternista','cj_otrosMedicos'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = optsMedicos;
+  });
+
+  // Habitaciones del catálogo del sistema
+  const habs = (catalogos.habitaciones || []);
+  const optsHab = '<option value="">— Seleccionar —</option>' +
+    habs.map(h => {
+      const nombre = h.Numero || h.Nombre || h.ID_Habitacion || '';
+      return `<option value="${cjEscAttr(nombre)}">${nombre}</option>`;
+    }).join('');
+  const elHab = document.getElementById('cj_habitacion');
+  if (elHab) elHab.innerHTML = optsHab;
+
+  // Tipo de cliente: aseguradoras del sistema + opciones base
+  const aseg = (catalogos.aseguradoras || []);
+  const tiposCliente = ['Particular','Clínica','Urgencias'];
+  aseg.forEach(a => {
+    const n = a.Nombre || a.Nombre_Aseguradora;
+    if (n && tiposCliente.indexOf(n) === -1) tiposCliente.push(n);
+  });
+  const elTC = document.getElementById('cj_tipoCliente');
+  if (elTC) elTC.innerHTML = '<option value="">— Seleccionar —</option>' +
+    tiposCliente.map(t => `<option value="${cjEscAttr(t)}">${t}</option>`).join('');
+
+  // Especialidad: derivada de los médicos del catálogo
+  const especialidades = [];
+  medicos.forEach(m => {
+    if (m.Especialidad && especialidades.indexOf(m.Especialidad) === -1) {
+      especialidades.push(m.Especialidad);
+    }
+  });
+  especialidades.sort();
+  const elEsp = document.getElementById('cj_especialidad');
+  if (elEsp) elEsp.innerHTML = '<option value="">— Seleccionar —</option>' +
+    especialidades.map(e => `<option value="${cjEscAttr(e)}">${e}</option>`).join('');
+
+  // Cirugía: buscador del catálogo CPT sería ideal, pero por simplicidad
+  // se deja como campo de texto libre vía un input. Aquí dejamos opción vacía
+  // para que el cajero escriba; si prefieres select, se llena igual.
+  const elCx = document.getElementById('cj_cirugia');
+  if (elCx) elCx.innerHTML = '<option value="">— Escribir / seleccionar —</option>';
+
+  // Tipo de anestesia: valores fijos estándar
+  const anestesias = ['Bloqueo','Regional','General','Mixta','Sedación','Bloqueo más sedación','Local'];
+  const elAn = document.getElementById('cj_tipoAnestesia');
+  if (elAn) elAn.innerHTML = '<option value="">— Seleccionar —</option>' +
+    anestesias.map(a => `<option value="${cjEscAttr(a)}">${a}</option>`).join('');
+}
+
+function cjEscAttr(s) {
+  return String(s || '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+/**
+ * Conecta los eventos: cada input de dinero recalcula al escribir,
+ * y los checkboxes recalculan al cambiar.
+ */
+function conectarEventosCobro() {
+  document.querySelectorAll('[data-caja]').forEach(inp => {
+    inp.addEventListener('input', recalcularCobro);
+    inp.addEventListener('blur', () => {
+      // Formatear a 2 decimales al salir del campo
+      const v = cajaNumJS(inp.value);
+      inp.value = v ? v.toFixed(2) : '';
+      recalcularCobro();
+    });
+  });
+  ['cj_operacion','cj_aplicarComision'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', recalcularCobro);
+  });
+}
+
+/**
+ * RECÁLCULO EN VIVO de todos los totales (vista previa).
+ * Espeja exactamente la lógica del backend guardarIngreso().
+ */
+function recalcularCobro() {
+  const aplicaComision = document.getElementById('cj_aplicarComision').checked;
+
+  // --- Conceptos de clínica (base, sin comisión) ---
+  const hospBase = cajaNumJS(cjVal('cj_hospitalizacion'));
+  const clinicaBase = hospBase
+    + cajaNumJS(cjVal('cj_consultaExterna')) + cajaNumJS(cjVal('cj_horaExtra'))
+    + cajaNumJS(cjVal('cj_diaExtra')) + cajaNumJS(cjVal('cj_materiales'))
+    + cajaNumJS(cjVal('cj_oxigeno')) + cajaNumJS(cjVal('cj_paqueteGlobular'))
+    + cajaNumJS(cjVal('cj_nocheTerapia'));
+
+  const totalEquipo = cajaNumJS(cjVal('cj_bombaInfusion')) + cajaNumJS(cjVal('cj_fluoroscopio'))
+    + cajaNumJS(cjVal('cj_laparoscopio')) + cajaNumJS(cjVal('cj_artroscopio'))
+    + cajaNumJS(cjVal('cj_ligasure')) + cajaNumJS(cjVal('cj_ambulancia'))
+    + cajaNumJS(cjVal('cj_monitor')) + cajaNumJS(cjVal('cj_ventilador'));
+
+  const totalLaboratorio = cajaNumJS(cjVal('cj_laboratorio'));
+  const totalImagen = cajaNumJS(cjVal('cj_imagen')) + cajaNumJS(cjVal('cj_anestesiaMixta'));
+
+  const totalHonorarios = cajaNumJS(cjVal('cj_honCirujano')) + cajaNumJS(cjVal('cj_hon1erAyudante'))
+    + cajaNumJS(cjVal('cj_hon2doAyudante')) + cajaNumJS(cjVal('cj_honAnestesiologo'))
+    + cajaNumJS(cjVal('cj_honPatologo')) + cajaNumJS(cjVal('cj_honMedicoInternista'))
+    + cajaNumJS(cjVal('cj_honOtrosMedicos'));
+
+  // --- Depósitos y pagos ---
+  const dep = procesarMovsCaja(cajaDepositos, aplicaComision);
+  const pag = procesarMovsCaja(cajaPagos, false); // pagos finales sin gross-up
+  const comisionTotal = cajaRoundJS(dep.comision + pag.comision);
+
+  // La comisión se suma a Hospitalización (espejo del Excel)
+  const clinicaVisible = cajaRoundJS(clinicaBase + comisionTotal);
+
+  const totalTarjeta = cajaRoundJS(clinicaVisible + totalEquipo + totalHonorarios
+    + totalLaboratorio + totalImagen);
+  const totalEfectivo = cajaRoundJS(clinicaBase + totalEquipo + totalHonorarios
+    + totalLaboratorio + totalImagen);
+
+  let pendTarjeta = cajaRoundJS(totalTarjeta - (dep.aplicadoTarjeta + pag.aplicadoTarjeta
+    + dep.aplicadoEfectivo + pag.aplicadoEfectivo));
+  let pendEfectivo = cajaRoundJS(totalEfectivo - (dep.baseTarjeta + pag.baseTarjeta
+    + dep.baseEfectivo + pag.baseEfectivo));
+  if (Math.abs(pendTarjeta) <= 0.01) pendTarjeta = 0;
+  if (Math.abs(pendEfectivo) <= 0.01) pendEfectivo = 0;
+
+  const totalDepositos = cajaRoundJS(dep.aplicadoTarjeta + dep.aplicadoEfectivo);
+  const totalPagos = cajaRoundJS(pag.aplicadoTarjeta + pag.aplicadoEfectivo);
+
+  // --- Pintar resultados ---
+  cjSetText('cj_totClinica', cajaMoney(clinicaVisible));
+  cjSetText('cj_totEquipo', cajaMoney(totalEquipo));
+  cjSetText('cj_totLaboratorio', cajaMoney(totalLaboratorio));
+  cjSetText('cj_totImagen', cajaMoney(totalImagen));
+  cjSetText('cj_totHonorarios', cajaMoney(totalHonorarios));
+  cjSetText('cj_totDepositos', cajaMoney(totalDepositos));
+  cjSetText('cj_totPagos', cajaMoney(totalPagos));
+  cjSetText('cj_totalTarjeta', cajaMoney(totalTarjeta));
+  cjSetText('cj_totalEfectivo', cajaMoney(totalEfectivo));
+  cjSetText('cj_comisionTotal', cajaMoney(comisionTotal));
+
+  pintarPendiente('cj_pendTarjeta', pendTarjeta);
+  pintarPendiente('cj_pendEfectivo', pendEfectivo);
+
+  // Nota de comisión visible solo si hay comisión
+  const nota = document.getElementById('cj_notaComision');
+  if (nota) nota.style.display = comisionTotal > 0 ? 'block' : 'none';
+}
+
+function cjVal(id) {
+  const el = document.getElementById(id);
+  return el ? el.value : '';
+}
+function cjSetText(id, txt) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = txt;
+}
+function pintarPendiente(id, valor) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = cajaMoney(valor);
+  if (valor > 0)       el.style.color = '#C07800'; // falta cobrar — naranja
+  else if (valor === 0) el.style.color = '#008000'; // saldado — verde
+  else                  el.style.color = '#C80000'; // sobrepago — rojo
+}
+
+/**
+ * Procesa una lista de depósitos o pagos. Si aplicaGrossUp es true,
+ * los movimientos con tarjeta (TD/TC) se inflan dividiendo entre 0.96.
+ */
+function procesarMovsCaja(lista, aplicaGrossUp) {
+  const res = {
+    comision: 0,
+    aplicadoTarjeta: 0, aplicadoEfectivo: 0,
+    baseTarjeta: 0, baseEfectivo: 0
+  };
+  lista.forEach(mov => {
+    const tipo = String(mov.tipo || '').toUpperCase();
+    const montoCapturado = cajaNumJS(mov.monto);
+    if (montoCapturado <= 0) return;
+    const esTarjeta = (tipo === 'TD' || tipo === 'TC');
+    let montoAplicado, montoBase, comision;
+    if (aplicaGrossUp && esTarjeta) {
+      montoAplicado = cajaRoundJS(montoCapturado / FACTOR_COMISION_CAJA);
+      montoBase = montoCapturado;
+      comision = cajaRoundJS(montoAplicado - montoBase);
+    } else {
+      montoAplicado = montoCapturado;
+      montoBase = montoCapturado;
+      comision = 0;
+    }
+    res.comision += comision;
+    if (esTarjeta) {
+      res.aplicadoTarjeta += montoAplicado;
+      res.baseTarjeta += montoBase;
+    } else {
+      res.aplicadoEfectivo += montoAplicado;
+      res.baseEfectivo += montoBase;
+    }
+  });
+  res.comision = cajaRoundJS(res.comision);
+  return res;
+}
+
+// ---------- Depósitos ----------
+function agregarDeposito() {
+  const tipo = cjVal('cj_depTipo');
+  const monto = cajaNumJS(cjVal('cj_depMonto'));
+  const banco = cjVal('cj_depBanco').trim();
+  if (!tipo) { showToast('Selecciona la forma de pago del depósito', 'error'); return; }
+  if (monto <= 0) { showToast('Captura un monto válido (mayor a 0)', 'error'); return; }
+  if ((tipo === 'TD' || tipo === 'TC' || tipo === 'TRANSFERENCIA') && !banco) {
+    showToast('Captura el banco para depósitos con tarjeta o transferencia', 'error'); return;
+  }
+  cajaDepositos.push({ tipo, monto, banco });
+  document.getElementById('cj_depTipo').value = '';
+  document.getElementById('cj_depMonto').value = '';
+  document.getElementById('cj_depBanco').value = '';
+  renderListaDepositos();
+  recalcularCobro();
+}
+function quitarDeposito(idx) {
+  cajaDepositos.splice(idx, 1);
+  renderListaDepositos();
+  recalcularCobro();
+}
+function renderListaDepositos() {
+  const cont = document.getElementById('cj_listaDepositos');
+  if (!cont) return;
+  if (cajaDepositos.length === 0) {
+    cont.innerHTML = '<p style="color:var(--text-muted);font-size:12px;">Sin depósitos registrados.</p>';
+    return;
+  }
+  cont.innerHTML = cajaDepositos.map((d, i) => `
+    <div class="caja-item-fila">
+      <span><strong>${etiquetaTipo(d.tipo)}</strong> · ${cajaMoney(d.monto)}${d.banco ? ' · ' + d.banco : ''}</span>
+      <button onclick="quitarDeposito(${i})" title="Quitar">×</button>
+    </div>`).join('');
+}
+
+// ---------- Pagos finales ----------
+function agregarPago() {
+  const tipo = cjVal('cj_pagoTipo');
+  const monto = cajaNumJS(cjVal('cj_pagoMonto'));
+  const banco = cjVal('cj_pagoBanco').trim();
+  if (!tipo) { showToast('Selecciona la forma de pago final', 'error'); return; }
+  if (monto <= 0) { showToast('Captura un monto válido (mayor a 0)', 'error'); return; }
+  if ((tipo === 'TD' || tipo === 'TC' || tipo === 'TRANSFERENCIA') && !banco) {
+    showToast('Captura el banco para pagos con tarjeta o transferencia', 'error'); return;
+  }
+  cajaPagos.push({ tipo, monto, banco });
+  document.getElementById('cj_pagoTipo').value = '';
+  document.getElementById('cj_pagoMonto').value = '';
+  document.getElementById('cj_pagoBanco').value = '';
+  renderListaPagos();
+  recalcularCobro();
+}
+function quitarPago(idx) {
+  cajaPagos.splice(idx, 1);
+  renderListaPagos();
+  recalcularCobro();
+}
+function renderListaPagos() {
+  const cont = document.getElementById('cj_listaPagos');
+  if (!cont) return;
+  if (cajaPagos.length === 0) {
+    cont.innerHTML = '<p style="color:var(--text-muted);font-size:12px;">Sin pagos registrados.</p>';
+    return;
+  }
+  cont.innerHTML = cajaPagos.map((p, i) => `
+    <div class="caja-item-fila">
+      <span><strong>${etiquetaTipo(p.tipo)}</strong> · ${cajaMoney(p.monto)}${p.banco ? ' · ' + p.banco : ''}</span>
+      <button onclick="quitarPago(${i})" title="Quitar">×</button>
+    </div>`).join('');
+}
+
+function etiquetaTipo(t) {
+  switch (String(t).toUpperCase()) {
+    case 'EFECTIVO': return 'Efectivo';
+    case 'TD': return 'T. Débito';
+    case 'TC': return 'T. Crédito';
+    case 'TRANSFERENCIA': return 'Transferencia';
+    default: return t;
+  }
+}
+
+// ---------- Cirugías ----------
+function agregarCirugiaCaja() {
+  const cirSel = cjVal('cj_cirugia');
+  const especialidad = cjVal('cj_especialidad');
+  const tiempo = cjVal('cj_tiempoCx').trim();
+  const anestesia = cjVal('cj_tipoAnestesia');
+  const cirugia = cirSel || '';
+  if (!cirugia && !especialidad) {
+    showToast('Selecciona al menos la especialidad o la cirugía', 'error');
+    return;
+  }
+  cajaCirugias.push({ cirugia, tiempo, especialidad, anestesia });
+  document.getElementById('cj_tiempoCx').value = '';
+  renderListaCirugias();
+}
+function quitarCirugiaCaja(idx) {
+  cajaCirugias.splice(idx, 1);
+  renderListaCirugias();
+}
+function renderListaCirugias() {
+  const cont = document.getElementById('cj_listaCirugias');
+  if (!cont) return;
+  if (cajaCirugias.length === 0) {
+    cont.innerHTML = '<p style="color:var(--text-muted);font-size:12px;">Sin cirugías agregadas.</p>';
+    return;
+  }
+  cont.innerHTML = cajaCirugias.map((c, i) => `
+    <div class="caja-item-fila">
+      <span>${c.cirugia || '(sin nombre)'}${c.especialidad ? ' · ' + c.especialidad : ''}${c.tiempo ? ' · ' + c.tiempo : ''}${c.anestesia ? ' · ' + c.anestesia : ''}</span>
+      <button onclick="quitarCirugiaCaja(${i})" title="Quitar">×</button>
+    </div>`).join('');
+}
+
+/**
+ * Limpia todo el formulario de cobro.
+ */
+function limpiarCobro() {
+  ['cj_nombre','cj_idPaciente','cj_expediente','cj_factura','cj_fechaIngreso','cj_fechaEgreso',
+   'cj_tiempoCx','cj_depMonto','cj_depBanco','cj_pagoMonto','cj_pagoBanco','cj_buscarPaciente'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  document.querySelectorAll('[data-caja]').forEach(inp => inp.value = '');
+  ['cj_tipoCliente','cj_habitacion','cj_especialidad','cj_cirugia','cj_tipoAnestesia',
+   'cj_cirujano','cj_1erAyudante','cj_2doAyudante','cj_anestesiologo','cj_patologo',
+   'cj_medicoInternista','cj_otrosMedicos','cj_depTipo','cj_pagoTipo'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  const panelPac = document.getElementById('cj_pacienteSeleccionado');
+  if (panelPac) panelPac.style.display = 'none';
+  const resPac = document.getElementById('cj_resultadosPaciente');
+  if (resPac) resPac.style.display = 'none';
+  document.getElementById('cj_operacion').checked = false;
+  document.getElementById('cj_aplicarComision').checked = false;
+  cajaDepositos = [];
+  cajaPagos = [];
+  cajaCirugias = [];
+  cajaExpedienteCargado = null;
+  renderListaDepositos();
+  renderListaPagos();
+  renderListaCirugias();
+  recalcularCobro();
+}
+
+/**
+ * Guarda (o actualiza) la cuenta de caja en el Google Sheet.
+ */
+async function guardarCobro() {
+  const nombre = cjVal('cj_nombre').trim();
+  const expediente = cjVal('cj_expediente').trim();
+  const fechaIngreso = cjVal('cj_fechaIngreso');
+
+  if (!nombre) { showToast('Primero busca y selecciona al paciente', 'error'); return; }
+  if (!expediente) { showToast('Falta el número de expediente', 'error'); return; }
+  if (!fechaIngreso) { showToast('Falta la fecha de ingreso', 'error'); return; }
+
+  const data = {
+    expediente, nombrePaciente: nombre, factura: cjVal('cj_factura').trim(),
+    fechaIngreso, fechaEgreso: cjVal('cj_fechaEgreso'),
+    tipoCliente: cjVal('cj_tipoCliente'), habitacion: cjVal('cj_habitacion'),
+    cirugias: cajaCirugias,
+    hospitalizacion: cajaNumJS(cjVal('cj_hospitalizacion')),
+    consultaExterna: cajaNumJS(cjVal('cj_consultaExterna')),
+    horaExtra: cajaNumJS(cjVal('cj_horaExtra')),
+    diaExtra: cajaNumJS(cjVal('cj_diaExtra')),
+    materialesYMedicamentos: cajaNumJS(cjVal('cj_materiales')),
+    oxigeno: cajaNumJS(cjVal('cj_oxigeno')),
+    paqueteGlobular: cajaNumJS(cjVal('cj_paqueteGlobular')),
+    nocheTerapia: cajaNumJS(cjVal('cj_nocheTerapia')),
+    bombaInfusion: cajaNumJS(cjVal('cj_bombaInfusion')),
+    fluoroscopio: cajaNumJS(cjVal('cj_fluoroscopio')),
+    laparoscopio: cajaNumJS(cjVal('cj_laparoscopio')),
+    artroscopio: cajaNumJS(cjVal('cj_artroscopio')),
+    ligasure: cajaNumJS(cjVal('cj_ligasure')),
+    ambulancia: cajaNumJS(cjVal('cj_ambulancia')),
+    monitor: cajaNumJS(cjVal('cj_monitor')),
+    ventilador: cajaNumJS(cjVal('cj_ventilador')),
+    laboratorioDinero: cajaNumJS(cjVal('cj_laboratorio')),
+    imagenDinero: cajaNumJS(cjVal('cj_imagen')),
+    anestesiaMixta: cajaNumJS(cjVal('cj_anestesiaMixta')),
+    cirujano: cjVal('cj_cirujano'), honCirujano: cajaNumJS(cjVal('cj_honCirujano')),
+    primerAyudante: cjVal('cj_1erAyudante'), hon1erAyudante: cajaNumJS(cjVal('cj_hon1erAyudante')),
+    segundoAyudante: cjVal('cj_2doAyudante'), hon2doAyudante: cajaNumJS(cjVal('cj_hon2doAyudante')),
+    anestesiologo: cjVal('cj_anestesiologo'), honAnestesiologo: cajaNumJS(cjVal('cj_honAnestesiologo')),
+    patologo: cjVal('cj_patologo'), honPatologo: cajaNumJS(cjVal('cj_honPatologo')),
+    medicoInternista: cjVal('cj_medicoInternista'), honMedicoInternista: cajaNumJS(cjVal('cj_honMedicoInternista')),
+    otrosMedicos: cjVal('cj_otrosMedicos'), honOtrosMedicos: cajaNumJS(cjVal('cj_honOtrosMedicos')),
+    depositos: cajaDepositos,
+    pagos: cajaPagos,
+    operacion: document.getElementById('cj_operacion').checked,
+    aplicarComision: document.getElementById('cj_aplicarComision').checked,
+    idPaciente: cjVal('cj_idPaciente'),
+    capturadoPor: (currentUser && currentUser.nombre) || ''
+  };
+
+  const resp = await apiPost('guardarIngreso', data);
+  if (resp.ok) {
+    showToast(resp.actualizado ? 'Cobro actualizado: ' + resp.expediente
+                               : 'Cobro registrado: ' + resp.expediente);
+    cajaExpedienteCargado = resp.expediente;
+  } else {
+    showToast(resp.error || 'No se pudo registrar el cobro', 'error');
+  }
+}
+
+/**
+ * Busca pacientes por nombre y muestra los resultados en vivo.
+ * El cobro es el último paso del ciclo: el paciente ya existe en el
+ * sistema, así que aquí se localiza en vez de capturarlo a mano.
+ */
+let cajaBusquedaTimer = null;
+async function buscarPacienteCobro() {
+  const q = cjVal('cj_buscarPaciente').trim();
+  const cont = document.getElementById('cj_resultadosPaciente');
+  if (q.length < 2) { cont.style.display = 'none'; return; }
+
+  // Debounce: esperar a que el cajero termine de escribir
+  clearTimeout(cajaBusquedaTimer);
+  cajaBusquedaTimer = setTimeout(async () => {
+    const resp = await apiGet('buscarPacientesCobro', { q });
+    if (!resp.ok) { cont.style.display = 'none'; return; }
+    const lista = resp.resultados || [];
+    if (lista.length === 0) {
+      cont.innerHTML = '<div style="padding:12px;font-size:13px;color:var(--text-muted);text-align:center;">'
+        + 'No se encontró ningún paciente con ese nombre.<br>'
+        + '<span style="font-size:12px;">Verifica que ya esté dado de alta en Recepción.</span></div>';
+      cont.style.display = 'block';
+      return;
+    }
+    cont.innerHTML = lista.map(p => `
+      <div onclick="seleccionarPacienteCobro('${escJs(p.idPaciente)}')"
+           style="padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px;"
+           onmouseover="this.style.background='var(--teal-light)'"
+           onmouseout="this.style.background='white'">
+        <div style="font-weight:600;color:var(--navy);">${p.nombrePaciente}</div>
+        <div style="font-size:11px;color:var(--text-muted);">
+          ${p.idPaciente}${p.curp ? ' · ' + p.curp : ''}${p.edad ? ' · ' + p.edad + ' años' : ''}
+        </div>
+      </div>`).join('');
+    cont.style.display = 'block';
+  }, 280);
+}
+
+function escJs(s) {
+  return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+/**
+ * Al elegir un paciente, trae TODA su información de cobro:
+ * datos personales, sus cirugías, y si ya tiene una cuenta empezada.
+ */
+async function seleccionarPacienteCobro(idPaciente) {
+  document.getElementById('cj_resultadosPaciente').style.display = 'none';
+  const resp = await apiGet('getDatosPacienteParaCobro', { idPaciente });
+  if (!resp.ok) {
+    showToast(resp.error || 'No se pudo cargar el paciente', 'error');
+    return;
+  }
+
+  // Si el paciente ya tiene una cuenta de caja empezada, se carga completa
+  if (resp.cuentaExistente) {
+    cargarCobroEnFormulario(resp.cuentaExistente);
+    pintarPacienteSeleccionado(resp.paciente);
+    showToast('Cuenta de caja existente cargada para ' + resp.paciente.nombrePaciente);
+    return;
+  }
+
+  // Cuenta nueva: se precargan los datos del paciente y sus cirugías
+  limpiarCobro();
+  pintarPacienteSeleccionado(resp.paciente);
+  cjSetVal('cj_nombre', resp.paciente.nombrePaciente);
+  cjSetVal('cj_idPaciente', resp.paciente.idPaciente);
+
+  // Precargar datos generales que ya tiene el paciente en el sistema.
+  // Si vienen vacíos, el cajero los completa; si traen valor, se sugieren.
+  if (resp.paciente.fechaIngreso) cjSetVal('cj_fechaIngreso', resp.paciente.fechaIngreso);
+  preseleccionarOpcion('cj_tipoCliente', resp.paciente.tipoCliente);
+  preseleccionarOpcion('cj_habitacion', resp.paciente.habitacion);
+
+  // Precargar las cirugías que ya tiene registradas el paciente
+  cajaCirugias = (resp.cirugias || []).map(c => ({
+    cirugia: c.cirugia, tiempo: c.tiempo,
+    especialidad: c.especialidad, anestesia: c.anestesia
+  }));
+  renderListaCirugias();
+
+  // Si tiene una sola cirugía, también llena los campos sueltos de cirugía
+  if (resp.cirugias && resp.cirugias.length === 1) {
+    const c = resp.cirugias[0];
+    cjSetVal('cj_especialidad', c.especialidad);
+    cjSetVal('cj_tipoAnestesia', c.anestesia);
+  }
+  // Si una cirugía trae cirujano, se sugiere en honorarios
+  const conCirujano = (resp.cirugias || []).find(c => c.cirujano);
+  if (conCirujano) {
+    const sel = document.getElementById('cj_cirujano');
+    if (sel) {
+      for (let i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value === conCirujano.cirujano) { sel.selectedIndex = i; break; }
+      }
+    }
+  }
+
+  recalcularCobro();
+  const msg = (resp.cirugias && resp.cirugias.length)
+    ? 'Paciente cargado con ' + resp.cirugias.length + ' cirugía(s). Captura los montos del cobro.'
+    : 'Paciente cargado. Captura los datos del cobro.';
+  showToast(msg);
+}
+
+function pintarPacienteSeleccionado(p) {
+  document.getElementById('cj_buscarPaciente').value = '';
+  const box = document.getElementById('cj_pacienteSeleccionado');
+  document.getElementById('cj_pacNombre').textContent = p.nombrePaciente;
+  const detalle = [
+    p.idPaciente,
+    p.curp ? 'CURP: ' + p.curp : '',
+    p.edad ? p.edad + ' años' : '',
+    p.telefono ? 'Tel: ' + p.telefono : ''
+  ].filter(Boolean).join('  ·  ');
+  document.getElementById('cj_pacDetalle').textContent = detalle;
+  box.style.display = 'block';
+}
+
+function limpiarPacienteCobro() {
+  document.getElementById('cj_pacienteSeleccionado').style.display = 'none';
+  document.getElementById('cj_buscarPaciente').value = '';
+  cjSetVal('cj_nombre', '');
+  cjSetVal('cj_idPaciente', '');
+}
+
+/**
+ * Selecciona en un <select> la opción que coincida con el valor dado.
+ * Compara sin distinguir mayúsculas/acentos. Si no hay coincidencia,
+ * deja el select sin cambios (el cajero elige a mano).
+ */
+function preseleccionarOpcion(idSelect, valor) {
+  if (!valor) return;
+  const sel = document.getElementById(idSelect);
+  if (!sel) return;
+  const norm = s => String(s || '').toLowerCase().trim()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const objetivo = norm(valor);
+  for (let i = 0; i < sel.options.length; i++) {
+    if (norm(sel.options[i].value) === objetivo
+        || norm(sel.options[i].textContent) === objetivo) {
+      sel.selectedIndex = i;
+      return;
+    }
+  }
+}
+
+
+/**
+ * Vuelca los datos de una cuenta cargada al formulario.
+ */
+function cargarCobroEnFormulario(g) {
+  limpiarCobro();
+  cajaExpedienteCargado = g.expediente;
+
+  cjSetVal('cj_nombre', g.nombrePaciente);
+  cjSetVal('cj_idPaciente', g.idPaciente || '');
+  cjSetVal('cj_expediente', g.expediente);
+  cjSetVal('cj_factura', g.factura);
+  cjSetVal('cj_fechaIngreso', g.fechaIngreso);
+  cjSetVal('cj_fechaEgreso', g.fechaEgreso);
+  cjSetVal('cj_tipoCliente', g.tipoCliente);
+  cjSetVal('cj_habitacion', g.habitacion);
+
+  cjSetVal('cj_hospitalizacion', moneyOrBlank(g.hospitalizacion));
+  cjSetVal('cj_consultaExterna', moneyOrBlank(g.consultaExterna));
+  cjSetVal('cj_horaExtra', moneyOrBlank(g.horaExtra));
+  cjSetVal('cj_diaExtra', moneyOrBlank(g.diaExtra));
+  cjSetVal('cj_materiales', moneyOrBlank(g.materialesYMedicamentos));
+  cjSetVal('cj_oxigeno', moneyOrBlank(g.oxigeno));
+  cjSetVal('cj_paqueteGlobular', moneyOrBlank(g.paqueteGlobular));
+  cjSetVal('cj_nocheTerapia', moneyOrBlank(g.nocheTerapia));
+  cjSetVal('cj_bombaInfusion', moneyOrBlank(g.bombaInfusion));
+  cjSetVal('cj_fluoroscopio', moneyOrBlank(g.fluoroscopio));
+  cjSetVal('cj_laparoscopio', moneyOrBlank(g.laparoscopio));
+  cjSetVal('cj_artroscopio', moneyOrBlank(g.artroscopio));
+  cjSetVal('cj_ligasure', moneyOrBlank(g.ligasure));
+  cjSetVal('cj_ambulancia', moneyOrBlank(g.ambulancia));
+  cjSetVal('cj_monitor', moneyOrBlank(g.monitor));
+  cjSetVal('cj_ventilador', moneyOrBlank(g.ventilador));
+  cjSetVal('cj_laboratorio', moneyOrBlank(g.laboratorioDinero));
+  cjSetVal('cj_imagen', moneyOrBlank(g.imagenDinero));
+  cjSetVal('cj_anestesiaMixta', moneyOrBlank(g.anestesiaMixta));
+
+  cjSetVal('cj_cirujano', g.cirujano);
+  cjSetVal('cj_honCirujano', moneyOrBlank(g.honCirujano));
+  cjSetVal('cj_1erAyudante', g.primerAyudante);
+  cjSetVal('cj_hon1erAyudante', moneyOrBlank(g.hon1erAyudante));
+  cjSetVal('cj_2doAyudante', g.segundoAyudante);
+  cjSetVal('cj_hon2doAyudante', moneyOrBlank(g.hon2doAyudante));
+  cjSetVal('cj_anestesiologo', g.anestesiologo);
+  cjSetVal('cj_honAnestesiologo', moneyOrBlank(g.honAnestesiologo));
+  cjSetVal('cj_patologo', g.patologo);
+  cjSetVal('cj_honPatologo', moneyOrBlank(g.honPatologo));
+  cjSetVal('cj_medicoInternista', g.medicoInternista);
+  cjSetVal('cj_honMedicoInternista', moneyOrBlank(g.honMedicoInternista));
+  cjSetVal('cj_otrosMedicos', g.otrosMedicos);
+  cjSetVal('cj_honOtrosMedicos', moneyOrBlank(g.honOtrosMedicos));
+
+  document.getElementById('cj_operacion').checked = !!g.operacion;
+  document.getElementById('cj_aplicarComision').checked = !!g.aplicarComision;
+
+  cajaCirugias = Array.isArray(g.cirugias) ? g.cirugias.slice() : [];
+  // Los depósitos/pagos guardados se reconstruyen desde los detalles.
+  cajaDepositos = parseMovsGuardados(g.detDepositoEfectivo, g.detDepositoTD, g.detDepositoTC, g.detDepositoTransferencia, g.aplicarComision);
+  cajaPagos = parseMovsGuardados(g.detPagoEfectivo, g.detPagoTD, g.detPagoTC, g.detPagoTransferencia, false);
+
+  renderListaCirugias();
+  renderListaDepositos();
+  renderListaPagos();
+  recalcularCobro();
+}
+
+/**
+ * Reconstruye la lista de movimientos desde los detalles guardados.
+ * Los detalles vienen como "1000.00 (Banamex) + 500.00".
+ * Para tarjetas con comisión, el detalle guarda el monto YA inflado;
+ * se revierte (×0.96) para que la lista vuelva a tener el monto capturado.
+ */
+function parseMovsGuardados(detEf, detTD, detTC, detTR, comisionEstabaActiva) {
+  const movs = [];
+  const agregar = (det, tipo) => {
+    if (!det) return;
+    String(det).split('+').forEach(parte => {
+      const txt = parte.trim();
+      if (!txt) return;
+      const m = txt.match(/^([\d.,]+)\s*(?:\(([^)]*)\))?/);
+      if (!m) return;
+      let monto = cajaNumJS(m[1]);
+      const banco = (m[2] || '').trim();
+      // Revertir el gross-up si era tarjeta y la comisión estaba activa
+      if (comisionEstabaActiva && (tipo === 'TD' || tipo === 'TC')) {
+        monto = cajaRoundJS(monto * FACTOR_COMISION_CAJA);
+      }
+      if (monto > 0) movs.push({ tipo, monto, banco });
+    });
+  };
+  agregar(detEf, 'EFECTIVO');
+  agregar(detTD, 'TD');
+  agregar(detTC, 'TC');
+  agregar(detTR, 'TRANSFERENCIA');
+  return movs;
+}
+
+function cjSetVal(id, v) {
+  const el = document.getElementById(id);
+  if (el) el.value = (v === null || v === undefined) ? '' : v;
+}
+function moneyOrBlank(n) {
+  const v = cajaNumJS(n);
+  return v ? v.toFixed(2) : '';
+}
+
 </script>
 </body>
 </html>
