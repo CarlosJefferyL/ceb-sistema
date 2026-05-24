@@ -1199,7 +1199,6 @@ textarea { resize: vertical; min-height: 70px; }
             <label>Paquete globular</label><input type="text" inputmode="decimal" data-caja="clinica" id="cj_paqueteGlobular">
             <label>Noche terapia</label><input type="text" inputmode="decimal" data-caja="clinica" id="cj_nocheTerapia">
           </div>
-          <small id="cj_notaComision" style="display:none;color:#92400E;font-size:11px;">⚠ Hospitalización incluye la comisión bancaria de los depósitos/pagos con tarjeta.</small>
         </div>
 
         <div class="card">
@@ -1308,24 +1307,39 @@ textarea { resize: vertical; min-height: 70px; }
       <!-- Resumen final -->
       <div class="card" style="background:var(--teal-light);">
         <div class="card-title">Resumen de cuenta</div>
-        <div class="caja-resumen">
+
+        <!-- Total de la cuenta y saldo pendiente -->
+        <div class="caja-resumen" style="grid-template-columns:1fr 1fr;">
           <div class="caja-res-item">
-            <span class="caja-res-lbl">Total en Tarjeta</span>
-            <span class="caja-res-val" id="cj_totalTarjeta">$0.00</span>
+            <span class="caja-res-lbl">Total de la cuenta</span>
+            <span class="caja-res-val" id="cj_totalCuenta" style="color:var(--navy);">$0.00</span>
           </div>
           <div class="caja-res-item">
-            <span class="caja-res-lbl">Pendiente Tarjeta</span>
-            <span class="caja-res-val" id="cj_pendTarjeta">$0.00</span>
-          </div>
-          <div class="caja-res-item">
-            <span class="caja-res-lbl">Total Efectivo/Transf.</span>
-            <span class="caja-res-val" id="cj_totalEfectivo">$0.00</span>
-          </div>
-          <div class="caja-res-item">
-            <span class="caja-res-lbl">Pendiente Efectivo</span>
-            <span class="caja-res-val" id="cj_pendEfectivo">$0.00</span>
+            <span class="caja-res-lbl">Saldo pendiente</span>
+            <span class="caja-res-val" id="cj_saldoPendiente">$0.00</span>
           </div>
         </div>
+
+        <!-- Ayuda visual: cuánto cobrar según forma de pago -->
+        <div style="margin-top:10px;padding:12px;background:white;border-radius:8px;border:1px solid var(--border);">
+          <div style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:8px;text-transform:uppercase;letter-spacing:.03em;">
+            Cuánto cobrar por el saldo pendiente
+          </div>
+          <div class="caja-resumen" style="grid-template-columns:1fr 1fr;">
+            <div class="caja-res-item" style="background:var(--teal-light);">
+              <span class="caja-res-lbl">Si paga con tarjeta (TD/TC)</span>
+              <span class="caja-res-val" id="cj_cobrarTarjeta" style="color:var(--teal-dark);">$0.00</span>
+            </div>
+            <div class="caja-res-item" style="background:var(--teal-light);">
+              <span class="caja-res-lbl">Si paga en efectivo / transferencia</span>
+              <span class="caja-res-val" id="cj_cobrarEfectivo" style="color:var(--teal-dark);">$0.00</span>
+            </div>
+          </div>
+          <small id="cj_notaComision" style="display:none;color:#92400E;font-size:11px;margin-top:6px;display:block;">
+            ⚠ El monto con tarjeta incluye la comisión bancaria del 4%. La diferencia es lo que retiene el banco; a la cuenta del paciente se abona el saldo real.
+          </small>
+        </div>
+
         <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;align-items:center;">
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
             <input type="checkbox" id="cj_operacion" style="width:auto;margin:0;"> Operación
@@ -5229,12 +5243,23 @@ function llenarCatalogosCobro() {
     if (el) el.innerHTML = optsMedicos;
   });
 
-  // Habitaciones del catálogo del sistema
-  const habs = (catalogos.habitaciones || []);
+  // Habitaciones del catálogo del sistema, mostradas como "Grupo | Número".
+  // Se agrupan por Tipo y se ordenan por número dentro de cada grupo.
+  const habs = (catalogos.habitaciones || []).slice();
+  habs.sort((a, b) => {
+    const tA = String(a.Tipo || ''), tB = String(b.Tipo || '');
+    if (tA !== tB) return tA.localeCompare(tB);
+    const nA = parseInt(a.Numero, 10), nB = parseInt(b.Numero, 10);
+    if (!isNaN(nA) && !isNaN(nB)) return nA - nB;
+    return String(a.Numero || '').localeCompare(String(b.Numero || ''));
+  });
   const optsHab = '<option value="">— Seleccionar —</option>' +
     habs.map(h => {
-      const nombre = h.Numero || h.Nombre || h.ID_Habitacion || '';
-      return `<option value="${cjEscAttr(nombre)}">${nombre}</option>`;
+      const grupo = h.Tipo || '';
+      const numero = h.Numero || '';
+      const etiqueta = (grupo && numero) ? `${grupo} | ${numero}`
+                     : (grupo || numero || h.ID_Habitacion || '');
+      return `<option value="${cjEscAttr(etiqueta)}">${etiqueta}</option>`;
     }).join('');
   const elHab = document.getElementById('cj_habitacion');
   if (elHab) elHab.innerHTML = optsHab;
@@ -5306,9 +5331,8 @@ function conectarEventosCobro() {
 function recalcularCobro() {
   const aplicaComision = document.getElementById('cj_aplicarComision').checked;
 
-  // --- Conceptos de clínica (base, sin comisión) ---
-  const hospBase = cajaNumJS(cjVal('cj_hospitalizacion'));
-  const clinicaBase = hospBase
+  // --- Conceptos de clínica (sin comisión: la comisión NO se mete aquí) ---
+  const clinicaBase = cajaNumJS(cjVal('cj_hospitalizacion'))
     + cajaNumJS(cjVal('cj_consultaExterna')) + cajaNumJS(cjVal('cj_horaExtra'))
     + cajaNumJS(cjVal('cj_diaExtra')) + cajaNumJS(cjVal('cj_materiales'))
     + cajaNumJS(cjVal('cj_oxigeno')) + cajaNumJS(cjVal('cj_paqueteGlobular'))
@@ -5327,47 +5351,67 @@ function recalcularCobro() {
     + cajaNumJS(cjVal('cj_honPatologo')) + cajaNumJS(cjVal('cj_honMedicoInternista'))
     + cajaNumJS(cjVal('cj_honOtrosMedicos'));
 
-  // --- Depósitos y pagos ---
+  // === TOTAL DE LA CUENTA ===
+  // Un solo número real. Es lo que el paciente debe, sin comisión.
+  const totalCuenta = cajaRoundJS(clinicaBase + totalEquipo + totalHonorarios
+    + totalLaboratorio + totalImagen);
+
+  // === DEPÓSITOS Y PAGOS ===
+  // El gross-up de tarjeta se aplica por movimiento: si el paciente paga
+  // $10,000 con tarjeta, la terminal cobra $10,416.67; a la cuenta llegan
+  // $10,000 y $416.67 son comisión del banco. Efectivo/transferencia no
+  // generan comisión.
   const dep = procesarMovsCaja(cajaDepositos, aplicaComision);
-  const pag = procesarMovsCaja(cajaPagos, false); // pagos finales sin gross-up
+  const pag = procesarMovsCaja(cajaPagos, aplicaComision);
   const comisionTotal = cajaRoundJS(dep.comision + pag.comision);
 
-  // La comisión se suma a Hospitalización (espejo del Excel)
-  const clinicaVisible = cajaRoundJS(clinicaBase + comisionTotal);
+  // Lo que YA se abonó a la cuenta (a valor real, sin comisión).
+  const abonadoALaCuenta = cajaRoundJS(
+    dep.baseTarjeta + dep.baseEfectivo + pag.baseTarjeta + pag.baseEfectivo);
 
-  const totalTarjeta = cajaRoundJS(clinicaVisible + totalEquipo + totalHonorarios
-    + totalLaboratorio + totalImagen);
-  const totalEfectivo = cajaRoundJS(clinicaBase + totalEquipo + totalHonorarios
-    + totalLaboratorio + totalImagen);
+  // === SALDO PENDIENTE de la cuenta (real, sin comisión) ===
+  let saldoPendiente = cajaRoundJS(totalCuenta - abonadoALaCuenta);
+  if (Math.abs(saldoPendiente) <= 0.01) saldoPendiente = 0;
 
-  let pendTarjeta = cajaRoundJS(totalTarjeta - (dep.aplicadoTarjeta + pag.aplicadoTarjeta
-    + dep.aplicadoEfectivo + pag.aplicadoEfectivo));
-  let pendEfectivo = cajaRoundJS(totalEfectivo - (dep.baseTarjeta + pag.baseTarjeta
-    + dep.baseEfectivo + pag.baseEfectivo));
-  if (Math.abs(pendTarjeta) <= 0.01) pendTarjeta = 0;
-  if (Math.abs(pendEfectivo) <= 0.01) pendEfectivo = 0;
+  // === AYUDA VISUAL: cuánto cobrar según la forma de pago ===
+  // Si el saldo pendiente se pagara TODO con tarjeta, la terminal debe
+  // cobrar saldo / 0.96 para que a la cuenta lleguen los pesos completos.
+  // Si se paga en efectivo/transferencia, se cobra el saldo tal cual.
+  const cobrarSiTarjeta = (aplicaComision && saldoPendiente > 0)
+    ? cajaRoundJS(saldoPendiente / FACTOR_COMISION_CAJA)
+    : saldoPendiente;
+  const cobrarSiEfectivo = saldoPendiente;
 
-  const totalDepositos = cajaRoundJS(dep.aplicadoTarjeta + dep.aplicadoEfectivo);
-  const totalPagos = cajaRoundJS(pag.aplicadoTarjeta + pag.aplicadoEfectivo);
+  const totalDepositos = cajaRoundJS(dep.cobradoTotal);
+  const totalPagos = cajaRoundJS(pag.cobradoTotal);
 
   // --- Pintar resultados ---
-  cjSetText('cj_totClinica', cajaMoney(clinicaVisible));
+  cjSetText('cj_totClinica', cajaMoney(clinicaBase));
   cjSetText('cj_totEquipo', cajaMoney(totalEquipo));
   cjSetText('cj_totLaboratorio', cajaMoney(totalLaboratorio));
   cjSetText('cj_totImagen', cajaMoney(totalImagen));
   cjSetText('cj_totHonorarios', cajaMoney(totalHonorarios));
   cjSetText('cj_totDepositos', cajaMoney(totalDepositos));
   cjSetText('cj_totPagos', cajaMoney(totalPagos));
-  cjSetText('cj_totalTarjeta', cajaMoney(totalTarjeta));
-  cjSetText('cj_totalEfectivo', cajaMoney(totalEfectivo));
   cjSetText('cj_comisionTotal', cajaMoney(comisionTotal));
 
-  pintarPendiente('cj_pendTarjeta', pendTarjeta);
-  pintarPendiente('cj_pendEfectivo', pendEfectivo);
+  // Resumen: la "ayuda visual" para la cajera
+  cjSetText('cj_totalCuenta', cajaMoney(totalCuenta));
+  cjSetText('cj_saldoPendiente', cajaMoney(saldoPendiente));
+  cjSetText('cj_cobrarTarjeta', cajaMoney(cobrarSiTarjeta));
+  cjSetText('cj_cobrarEfectivo', cajaMoney(cobrarSiEfectivo));
 
-  // Nota de comisión visible solo si hay comisión
+  // Color del saldo pendiente: verde si saldado, naranja si falta, rojo si sobrepago
+  const elSaldo = document.getElementById('cj_saldoPendiente');
+  if (elSaldo) {
+    if (saldoPendiente > 0)      elSaldo.style.color = '#C07800';
+    else if (saldoPendiente === 0) elSaldo.style.color = '#008000';
+    else                          elSaldo.style.color = '#C80000';
+  }
+
+  // La nota de comisión: visible cuando la casilla está marcada y hay saldo
   const nota = document.getElementById('cj_notaComision');
-  if (nota) nota.style.display = comisionTotal > 0 ? 'block' : 'none';
+  if (nota) nota.style.display = (aplicaComision && saldoPendiente > 0) ? 'block' : 'none';
 }
 
 function cjVal(id) {
@@ -5378,50 +5422,49 @@ function cjSetText(id, txt) {
   const el = document.getElementById(id);
   if (el) el.textContent = txt;
 }
-function pintarPendiente(id, valor) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.textContent = cajaMoney(valor);
-  if (valor > 0)       el.style.color = '#C07800'; // falta cobrar — naranja
-  else if (valor === 0) el.style.color = '#008000'; // saldado — verde
-  else                  el.style.color = '#C80000'; // sobrepago — rojo
-}
-
 /**
- * Procesa una lista de depósitos o pagos. Si aplicaGrossUp es true,
- * los movimientos con tarjeta (TD/TC) se inflan dividiendo entre 0.96.
+ * Procesa una lista de depósitos o pagos.
+ * IMPORTANTE: el monto que captura el cajero es lo que se ABONA A LA CUENTA
+ * (el monto base). Si es pago con tarjeta y la comisión está activa, el
+ * sistema calcula cuánto debe cobrar la terminal: base / 0.96.
+ * Ejemplo: el paciente abona $10,000 con tarjeta -> la terminal cobra
+ * $10,416.67, de los cuales $416.67 son comisión del banco.
+ *   - montoBase    = lo que llega a la cuenta (lo que captura el cajero)
+ *   - cobradoTotal = lo que pasó por la terminal/caja (base + comisión)
+ *   - comision     = la diferencia (solo en tarjeta)
  */
 function procesarMovsCaja(lista, aplicaGrossUp) {
   const res = {
     comision: 0,
-    aplicadoTarjeta: 0, aplicadoEfectivo: 0,
-    baseTarjeta: 0, baseEfectivo: 0
+    cobradoTarjeta: 0, cobradoEfectivo: 0,
+    baseTarjeta: 0, baseEfectivo: 0,
+    cobradoTotal: 0
   };
   lista.forEach(mov => {
     const tipo = String(mov.tipo || '').toUpperCase();
-    const montoCapturado = cajaNumJS(mov.monto);
-    if (montoCapturado <= 0) return;
+    const montoBase = cajaNumJS(mov.monto); // lo que se abona a la cuenta
+    if (montoBase <= 0) return;
     const esTarjeta = (tipo === 'TD' || tipo === 'TC');
-    let montoAplicado, montoBase, comision;
+    let cobrado, comision;
     if (aplicaGrossUp && esTarjeta) {
-      montoAplicado = cajaRoundJS(montoCapturado / FACTOR_COMISION_CAJA);
-      montoBase = montoCapturado;
-      comision = cajaRoundJS(montoAplicado - montoBase);
+      cobrado = cajaRoundJS(montoBase / FACTOR_COMISION_CAJA);
+      comision = cajaRoundJS(cobrado - montoBase);
     } else {
-      montoAplicado = montoCapturado;
-      montoBase = montoCapturado;
+      cobrado = montoBase;
       comision = 0;
     }
     res.comision += comision;
+    res.cobradoTotal += cobrado;
     if (esTarjeta) {
-      res.aplicadoTarjeta += montoAplicado;
+      res.cobradoTarjeta += cobrado;
       res.baseTarjeta += montoBase;
     } else {
-      res.aplicadoEfectivo += montoAplicado;
+      res.cobradoEfectivo += cobrado;
       res.baseEfectivo += montoBase;
     }
   });
   res.comision = cajaRoundJS(res.comision);
+  res.cobradoTotal = cajaRoundJS(res.cobradoTotal);
   return res;
 }
 
@@ -5701,7 +5744,10 @@ async function seleccionarPacienteCobro(idPaciente) {
 
   // Precargar datos generales que ya tiene el paciente en el sistema.
   // Si vienen vacíos, el cajero los completa; si traen valor, se sugieren.
+  // - Fecha de ingreso = fecha de la cirugía
+  // - Fecha de egreso  = fecha de alta de la habitación
   if (resp.paciente.fechaIngreso) cjSetVal('cj_fechaIngreso', resp.paciente.fechaIngreso);
+  if (resp.paciente.fechaEgreso) cjSetVal('cj_fechaEgreso', resp.paciente.fechaEgreso);
   preseleccionarOpcion('cj_tipoCliente', resp.paciente.tipoCliente);
   preseleccionarOpcion('cj_habitacion', resp.paciente.habitacion);
 
