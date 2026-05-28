@@ -727,6 +727,7 @@ textarea { resize: vertical; min-height: 70px; }
     <div class="nav-section-title">Inventario</div>
     <div class="nav-item" data-page="inventario"><span class="icon">▦</span>Saldos</div>
     <div class="nav-item" data-page="entradas"><span class="icon">↓</span>Entradas</div>
+    <div class="nav-item" data-page="cajas"><span class="icon">📦</span>Cajas / Lotes</div>
     <div class="nav-section-title">Bitácora</div>
     <div class="nav-item" data-page="libro"><span class="icon">📕</span>Libro COFEPRIS</div>
     <div class="nav-section-title">Catálogos</div>
@@ -1056,6 +1057,25 @@ textarea { resize: vertical; min-height: 70px; }
           El saldo se actualiza automáticamente.
         </p>
       </div>
+    </div>
+
+    <!-- CAJAS / LOTES -->
+    <div id="page-cajas" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Cajas / Lotes de medicamento</h1>
+          <div class="subtitle">Control por caja cerrada y cirugías que la consumieron</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <select id="cajasFiltroEstado" onchange="loadLotes()" style="font-size:13px;">
+            <option value="ABIERTA">Abiertas (con saldo)</option>
+            <option value="AGOTADA">Agotadas</option>
+            <option value="TODAS">Todas</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="loadLotes()">↻ Actualizar</button>
+        </div>
+      </div>
+      <div class="card"><div id="cajasTable">Cargando...</div></div>
     </div>
 
     <!-- LIBRO COFEPRIS -->
@@ -1494,6 +1514,7 @@ const PERMISOS = {
     consultas:    ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
     urgencias:    ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
     inventario:   ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
+    cajas:        ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
     entradas:     ['ADMIN','JEFE_ENFERMERIA','ALMACEN'],
     libro:        ['ADMIN','JEFE_ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
     catalogos:    ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
@@ -1644,6 +1665,7 @@ function loadPage(page) {
     case 'consultas': loadConsultas(); break;
     case 'urgencias': loadUrgencias(); break;
     case 'inventario': loadInventario(); break;
+    case 'cajas': loadLotes(); break;
     case 'libro': loadLibro(); break;
     case 'catalogos': loadCatalogosPage(); break;
     case 'cobro': loadCobroPage(); break;
@@ -3074,6 +3096,78 @@ async function loadInventario() {
 }
 
 // ============================================================
+// CAJAS / LOTES
+// ============================================================
+async function loadLotes() {
+  const cont = document.getElementById('cajasTable');
+  if (!cont) return;
+  cont.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  const estado = (document.getElementById('cajasFiltroEstado') || {}).value || 'ABIERTA';
+  const resp = await apiGet('getLotes', { estado });
+  const list = (resp && resp.ok) ? (resp.data || []) : [];
+  cache.lotes = list;
+  if (!list.length) {
+    cont.innerHTML = '<div class="empty-state"><div class="icon">📦</div>Sin cajas para este filtro</div>';
+    return;
+  }
+  const rows = list.map(l => {
+    const agotada = l.estado === 'AGOTADA';
+    const cad = l.fechaCaducidad ? formatDateShort(l.fechaCaducidad) : '—';
+    const pctSaldo = l.cantidadInicial ? Math.round((l.saldo / l.cantidadInicial) * 100) : 0;
+    return `
+    <tr style="${l.caducada ? 'background:var(--warn-bg);' : ''}">
+      <td><strong>${l.nombreMedicamento||'—'}</strong><br><small style="color:var(--text-muted);">Lote ${l.loteFabricante||'s/n'}</small></td>
+      <td>${l.folioReceta||'—'}</td>
+      <td><strong style="color:${agotada?'var(--danger)':'var(--navy)'};font-size:15px;">${l.saldo}</strong> / ${l.cantidadInicial} ${l.unidad||''}<br><small style="color:var(--text-muted);">${pctSaldo}% disponible</small></td>
+      <td>${cad}${l.caducada?' <span class="badge badge-cancelada">CADUCADA</span>':''}</td>
+      <td>${agotada
+        ? '<span class="badge badge-cancelada">AGOTADA</span>'
+        : (l.estado==='ABIERTA' ? '<span class="badge badge-realizada">ABIERTA</span>' : '<span class="badge">'+l.estado+'</span>')}</td>
+      <td><button class="btn btn-secondary btn-sm" onclick="verConsumosLote('${l.idLote}')">Ver cirugías</button></td>
+    </tr>`;
+  }).join('');
+  cont.innerHTML = `<table><thead><tr><th>Medicamento / Lote</th><th>Receta</th><th>Saldo</th><th>Caducidad</th><th>Estado</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+async function verConsumosLote(idLote) {
+  openModal('Cirugías que consumieron esta caja', '<div id="loteConsumos_content"><div class="loading"><div class="spinner"></div> Cargando...</div></div>');
+  const resp = await apiGet('getConsumosPorLote', { idLote });
+  const cont = document.getElementById('loteConsumos_content');
+  if (!cont) return;
+  if (!resp || !resp.ok) { cont.innerHTML = '<div class="empty-state">Error al cargar</div>'; return; }
+  const lote = resp.lote || {};
+  const consumos = (resp.data || []).filter(c => c.Estado !== 'CANCELADO');
+  const cancelados = (resp.data || []).filter(c => c.Estado === 'CANCELADO');
+  const inicial = parseFloat(lote.Cantidad_Inicial) || 0;
+  const consumida = parseFloat(lote.Cantidad_Consumida) || 0;
+
+  let html = `
+    <div style="background:var(--teal-light);padding:12px 14px;border-radius:8px;margin-bottom:14px;font-size:13px;color:var(--navy);">
+      <strong>${lote.Nombre_Medicamento||''}</strong> · Lote ${lote.Lote_Fabricante||'s/n'}<br>
+      Receta respaldo: <strong>${lote.Folio_Receta||'—'}</strong> · Consumido <strong>${consumida}</strong> de ${inicial} ${lote.Unidad||''} · Saldo <strong>${(inicial-consumida)}</strong>
+    </div>`;
+
+  if (consumos.length === 0) {
+    html += '<div class="empty-state"><div class="icon">◉</div>Esta caja aún no se ha consumido</div>';
+  } else {
+    const rows = consumos.map(c => `
+      <tr>
+        <td>${formatDateShort(c.Fecha_Consumo)} ${c.Hora_Consumo||''}</td>
+        <td>${c.Folio_Cirugia||'—'}</td>
+        <td>${c.Nombre_Paciente||'—'}</td>
+        <td><strong>${c.Cantidad_Consumida}</strong> ${c.Unidad||''}</td>
+        <td>${c.Nombre_Medico||'—'}</td>
+      </tr>`).join('');
+    html += `<table><thead><tr><th>Fecha</th><th>Cirugía</th><th>Paciente</th><th>Usó</th><th>Médico</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+  if (cancelados.length) {
+    html += `<div style="margin-top:10px;font-size:12px;color:var(--text-muted);">+ ${cancelados.length} consumo(s) cancelado(s) (revertidos al saldo)</div>`;
+  }
+  html += '<div class="form-actions"><button type="button" class="btn btn-secondary" onclick="closeModal()">Cerrar</button></div>';
+  cont.innerHTML = html;
+}
+
+// ============================================================
 // LIBRO COFEPRIS
 // ============================================================
 async function loadLibro() {
@@ -3328,9 +3422,11 @@ async function emitirReceta(folioCirugia) {
 
 // MODAL: REGISTRAR CONSUMO (múltiples medicamentos)
 let consumosBuffer = []; // buffer de medicamentos del consumo en captura
+let lotesDisponibles = []; // cajas abiertas cargadas al abrir el modal de consumo
 
-function openModalConsumo(folioCirugia) {
+async function openModalConsumo(folioCirugia) {
   consumosBuffer = [];
+  lotesDisponibles = [];
   let cxOpts = '<option value="">— Seleccionar cirugía —</option>';
   const candidatas = cache.cirugias.filter(c =>
     c.Estado === 'RECETA_VINCULADA' || c.Estado === 'PROGRAMADA' || c.Estado === 'REALIZADA'
@@ -3340,9 +3436,6 @@ function openModalConsumo(folioCirugia) {
     const sufijo = c.Estado === 'REALIZADA' ? ' [+ adicional]' : '';
     cxOpts += `<option value="${c.Folio_Cirugia}" ${sel}>${c.Folio_Cirugia} — ${c.Nombre_Paciente} (${c.Tipo_Cirugia})${sufijo}</option>`;
   });
-  const medsOpts = catalogos.medicamentos.map(m =>
-    `<option value="${m.ID_Medicamento}" data-nombre="${m.Nombre_Comercial}" data-unidad="${m.Unidad}">${m.Nombre_Comercial} (${m.Sustancia_Activa||''})</option>`
-  ).join('');
 
   openModal('Registrar consumo', `
     <form onsubmit="event.preventDefault();registrarConsumo()">
@@ -3352,15 +3445,15 @@ function openModalConsumo(folioCirugia) {
         <div><label>Hora</label><input type="time" id="cn_hora" value="${nowTime()}"></div>
 
         <div class="full" style="background:var(--teal-light);padding:14px;border-radius:8px;border:1px solid var(--teal);">
-          <label style="color:var(--navy);">Medicamentos consumidos</label>
+          <label style="color:var(--navy);">Medicamentos consumidos — selecciona la caja de la que se descuenta</label>
 
           <div id="consumos_lista" style="margin-bottom:10px;"></div>
 
           <div style="display:grid;grid-template-columns:1fr 100px 90px;gap:8px;align-items:end;">
             <div>
-              <label style="font-size:10px;">Medicamento</label>
-              <select id="cn_med_temp" style="font-size:13px;padding:8px;">
-                <option value="">— Seleccionar —</option>${medsOpts}
+              <label style="font-size:10px;">Caja / Lote disponible</label>
+              <select id="cn_lote_temp" style="font-size:13px;padding:8px;">
+                <option value="">Cargando cajas…</option>
               </select>
             </div>
             <div>
@@ -3369,7 +3462,7 @@ function openModalConsumo(folioCirugia) {
             </div>
             <button type="button" class="btn btn-accent btn-sm" onclick="agregarMedicamentoConsumo()" style="padding:8px;">+ Agregar</button>
           </div>
-          <small style="color:var(--text-muted);font-size:11px;display:block;margin-top:6px;">Solo enteros. Agrega todos los medicamentos consumidos en esta cirugía.</small>
+          <small style="color:var(--text-muted);font-size:11px;display:block;margin-top:6px;">Solo enteros. Si una caja no alcanza, agrega otra línea con la siguiente caja.</small>
         </div>
 
         <div class="full"><label>Administrado por</label><input type="text" id="cn_admin" placeholder="Nombre del personal" required value="${currentUser.nombre}"></div>
@@ -3382,30 +3475,55 @@ function openModalConsumo(folioCirugia) {
     </form>
   `);
 
-  // Si hay cirugía preseleccionada y tiene medicamentos estimados, sugerirlos en log (opcional, no precarga)
   renderConsumosBuffer();
+
+  // Cargar cajas abiertas (saldo > 0) frescas desde el servidor
+  const resp = await apiGet('getLotes', { estado: 'ABIERTA' });
+  lotesDisponibles = (resp && resp.ok) ? (resp.data || []) : [];
+  const sel = document.getElementById('cn_lote_temp');
+  if (!sel) return; // el modal pudo cerrarse
+  if (lotesDisponibles.length === 0) {
+    sel.innerHTML = '<option value="">— No hay cajas abiertas. Registra una entrada. —</option>';
+    return;
+  }
+  sel.innerHTML = '<option value="">— Seleccionar caja —</option>' + lotesDisponibles.map(l => {
+    const cad = l.fechaCaducidad ? ' · cad ' + formatDateShort(l.fechaCaducidad) : '';
+    const alerta = l.caducada ? ' ⚠CADUCADA' : '';
+    return `<option value="${l.idLote}">${l.nombreMedicamento} · Lote ${l.loteFabricante||'s/n'} · saldo ${l.saldo}/${l.cantidadInicial}${cad}${alerta}</option>`;
+  }).join('');
 }
 
 function agregarMedicamentoConsumo() {
-  const sel = document.getElementById('cn_med_temp');
+  const sel = document.getElementById('cn_lote_temp');
   const cantInput = document.getElementById('cn_cantidad_temp');
-  const idMed = sel.value;
+  const idLote = sel.value;
   const cantidad = parseInt(cantInput.value, 10);
 
-  if (!idMed) { showToast('Selecciona un medicamento', 'error'); return; }
+  if (!idLote) { showToast('Selecciona una caja/lote', 'error'); return; }
   if (!cantidad || cantidad < 1) { showToast('Cantidad debe ser entero ≥ 1', 'error'); return; }
 
-  if (consumosBuffer.some(m => m.idMedicamento === idMed)) {
-    showToast('Ese medicamento ya está agregado. Quítalo y vuélvelo a agregar.', 'warn');
+  const lote = lotesDisponibles.find(l => l.idLote === idLote);
+  if (!lote) { showToast('Caja no encontrada, recarga el modal', 'error'); return; }
+
+  if (consumosBuffer.some(m => m.idLote === idLote)) {
+    showToast('Esa caja ya está en la lista. Quítala y vuelve a agregarla con la cantidad total.', 'warn');
     return;
   }
 
-  const opt = sel.options[sel.selectedIndex];
+  // Validar contra el saldo de la caja
+  if (cantidad > lote.saldo) {
+    showToast(`La caja solo tiene ${lote.saldo} ${lote.unidad||''} disponibles`, 'error');
+    return;
+  }
+
   consumosBuffer.push({
-    idMedicamento: idMed,
-    nombreMedicamento: opt.dataset.nombre,
+    idLote: lote.idLote,
+    loteFabricante: lote.loteFabricante,
+    idMedicamento: lote.idMedicamento,
+    nombreMedicamento: lote.nombreMedicamento,
     cantidadConsumida: cantidad,
-    unidad: opt.dataset.unidad
+    unidad: lote.unidad,
+    saldoLote: lote.saldo
   });
 
   sel.value = '';
@@ -3413,8 +3531,8 @@ function agregarMedicamentoConsumo() {
   renderConsumosBuffer();
 }
 
-function quitarMedicamentoConsumo(idMed) {
-  consumosBuffer = consumosBuffer.filter(m => m.idMedicamento !== idMed);
+function quitarMedicamentoConsumo(idLote) {
+  consumosBuffer = consumosBuffer.filter(m => m.idLote !== idLote);
   renderConsumosBuffer();
 }
 
@@ -3426,10 +3544,10 @@ function renderConsumosBuffer() {
     return;
   }
   cont.innerHTML = consumosBuffer.map(m => `
-    <div style="display:grid;grid-template-columns:1fr 80px 30px;gap:8px;align-items:center;background:white;padding:8px 12px;border-radius:6px;margin-bottom:4px;border:1px solid var(--border);">
-      <div><strong style="font-size:13px;">${m.nombreMedicamento}</strong></div>
-      <div style="text-align:center;font-size:13px;"><strong>${m.cantidadConsumida}</strong> ${m.unidad}</div>
-      <button type="button" onclick="quitarMedicamentoConsumo('${m.idMedicamento}')" style="background:var(--danger-bg);color:var(--danger);border:none;border-radius:4px;width:26px;height:26px;cursor:pointer;font-weight:bold;">×</button>
+    <div style="display:grid;grid-template-columns:1fr 90px 30px;gap:8px;align-items:center;background:white;padding:8px 12px;border-radius:6px;margin-bottom:4px;border:1px solid var(--border);">
+      <div><strong style="font-size:13px;">${m.nombreMedicamento}</strong><br><small style="color:var(--text-muted);">Lote ${m.loteFabricante||'s/n'}</small></div>
+      <div style="text-align:center;font-size:13px;"><strong>${m.cantidadConsumida}</strong> ${m.unidad||''}</div>
+      <button type="button" onclick="quitarMedicamentoConsumo('${m.idLote}')" style="background:var(--danger-bg);color:var(--danger);border:none;border-radius:4px;width:26px;height:26px;cursor:pointer;font-weight:bold;">×</button>
     </div>
   `).join('');
 }
@@ -3450,7 +3568,7 @@ async function registrarConsumo() {
     administradoPor: document.getElementById('cn_admin').value,
     observaciones: document.getElementById('cn_obs').value,
     capturadoPor: currentUser.nombre,
-    medicamentos: consumosBuffer.slice() // array completo
+    medicamentos: consumosBuffer.slice() // array completo, cada uno con idLote
   };
   const resp = await apiPost('registrarConsumo', data);
   if (resp.ok) {
@@ -3740,20 +3858,24 @@ async function guardarConsulta(tipo) {
 // MODAL: ENTRADA INVENTARIO
 function openModalEntrada() {
   const medOpts = catalogos.medicamentos.map(m => `<option value="${m.ID_Medicamento}">${m.Nombre_Comercial}</option>`).join('');
-  openModal('Nueva entrada de inventario', `
+  openModal('Nueva entrada · Caja de medicamento', `
     <form onsubmit="event.preventDefault();registrarEntrada()">
+      <div style="background:var(--teal-light);padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:12px;color:var(--navy);">
+        📦 Cada entrada registra <strong>una caja cerrada</strong>. La caja queda ligada a la receta que la respalda y se irá descontando por cirugía hasta agotarse.
+      </div>
       <div class="form-grid">
-        <div><label>Fecha</label><input type="date" id="en_fecha" value="${todayISO()}" required></div>
+        <div><label>Fecha de entrada</label><input type="date" id="en_fecha" value="${todayISO()}" required></div>
         <div><label>Medicamento</label><select id="en_med" required><option value="">— Seleccionar —</option>${medOpts}</select></div>
-        <div><label>Cantidad recibida</label><input type="number" id="en_cantidad" step="0.01" min="0.01" required></div>
-        <div><label>Lote</label><input type="text" id="en_lote"></div>
+        <div><label>Unidades en la caja *</label><input type="number" id="en_cantidad" step="1" min="1" placeholder="Ej: 10" required></div>
+        <div><label>Folio de receta (respaldo) *</label><input type="text" id="en_folio_receta" placeholder="Folio COFEPRIS" required></div>
+        <div><label>Lote del fabricante</label><input type="text" id="en_lote" placeholder="Impreso en la caja"></div>
         <div><label>Fecha de caducidad</label><input type="date" id="en_caducidad"></div>
         <div><label>Proveedor</label><input type="text" id="en_proveedor"></div>
-        <div class="full"><label>Referencia (orden de compra / folio receta resguardo)</label><input type="text" id="en_ref"></div>
+        <div class="full"><label>Referencia (orden de compra)</label><input type="text" id="en_ref"></div>
       </div>
       <div class="form-actions">
         <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-        <button type="submit" class="btn btn-primary">Registrar entrada</button>
+        <button type="submit" class="btn btn-primary">Registrar caja</button>
       </div>
     </form>
   `);
@@ -3762,19 +3884,23 @@ function openModalEntrada() {
 async function registrarEntrada() {
   const idMed = document.getElementById('en_med').value;
   const med = catalogos.medicamentos.find(m => m.ID_Medicamento === idMed);
+  if (!med) { showToast('Selecciona un medicamento', 'error'); return; }
+  const folioReceta = document.getElementById('en_folio_receta').value.trim();
+  if (!folioReceta) { showToast('El folio de receta que respalda la caja es obligatorio', 'error'); return; }
   const data = {
     fecha: document.getElementById('en_fecha').value,
     idMedicamento: idMed, nombreMedicamento: med.Nombre_Comercial,
-    cantidad: parseFloat(document.getElementById('en_cantidad').value),
+    cantidad: parseInt(document.getElementById('en_cantidad').value, 10),
     unidad: med.Unidad,
-    lote: document.getElementById('en_lote').value,
+    folioReceta: folioReceta,
+    loteFabricante: document.getElementById('en_lote').value.trim(),
     fechaCaducidad: document.getElementById('en_caducidad').value,
     proveedor: document.getElementById('en_proveedor').value,
     referencia: document.getElementById('en_ref').value,
     capturadoPor: currentUser.nombre
   };
   const resp = await apiPost('registrarEntrada', data);
-  if (resp.ok) { showToast('Entrada registrada. Saldo nuevo: ' + resp.saldoNuevo); closeModal(); }
+  if (resp.ok) { showToast('✓ Caja registrada. Saldo global: ' + resp.saldoNuevo); closeModal(); }
   else { showToast('Error: ' + resp.error, 'error'); }
 }
 
@@ -4649,7 +4775,7 @@ async function loadRecepcion() {
   `;
 }
 
-function abrirFormularioRecepcion(desdeConsulta) {
+async function abrirFormularioRecepcion(desdeConsulta) {
   // Si se abre desde el botón normal de Recepción (sin argumento),
   // limpiar cualquier retorno a consulta que hubiera quedado pendiente.
   if (!desdeConsulta) {
@@ -4662,6 +4788,28 @@ function abrirFormularioRecepcion(desdeConsulta) {
   const medicosOpts = catalogos.medicos.map(m =>
     `<option value="${m.Nombre_Completo}">${m.Nombre_Completo} (${m.Especialidad || 's/esp'})</option>`
   ).join('');
+
+  // Cajas → habitaciones libres por tipo (Cambio 2: ocupar al momento del alta)
+  let habitacionesOpts = '<option value="">— Sin asignar (no ocupa habitación) —</option>';
+  try {
+    const tablero = await apiGet('getTableroHabitaciones');
+    if (tablero && tablero.ok && tablero.porTipo) {
+      const etiquetas = {
+        PRIVADA: 'Habitaciones Privadas',
+        SALA_GENERAL: 'Sala General',
+        URGENCIAS: 'Urgencias',
+        TERAPIA_INTENSIVA: 'Terapia Intensiva'
+      };
+      ['PRIVADA','SALA_GENERAL','URGENCIAS','TERAPIA_INTENSIVA'].forEach(tipo => {
+        const libres = (tablero.porTipo[tipo] || []).filter(h => !h.ocupada);
+        if (libres.length) {
+          habitacionesOpts += `<optgroup label="${etiquetas[tipo]}">` +
+            libres.map(h => `<option value="${h.idHabitacion}" data-label="${etiquetas[tipo]} ${h.numero}">${etiquetas[tipo]} ${h.numero}</option>`).join('') +
+            `</optgroup>`;
+        }
+      });
+    }
+  } catch (e) { /* si falla, queda solo "Sin asignar" */ }
 
   openModal('Alta de Paciente · Recepción', `
     <div style="background:var(--teal-light);padding:12px 14px;border-radius:8px;margin-bottom:16px;font-size:12px;color:var(--navy);">
@@ -4735,7 +4883,10 @@ function abrirFormularioRecepcion(desdeConsulta) {
           </div>
           <div id="rec_poliza_wrap" style="display:none;"><label>Número de póliza</label><input type="text" id="rec_poliza"></div>
           <div><label>Caso / Expediente</label><input type="text" id="rec_caso" placeholder="Número interno"></div>
-          <div><label>Habitación asignada</label><input type="text" id="rec_habitacion" onblur="applyTitleCase(this)" placeholder="Ej: Privada 1"></div>
+          <div><label>Habitación asignada</label>
+            <select id="rec_habitacion">${habitacionesOpts}</select>
+            <small style="color:var(--text-muted);font-size:11px;">Si eliges una habitación, se ocupa al instante.</small>
+          </div>
           <div class="full"><label>Procedimiento (motivo de ingreso)</label><input type="text" id="rec_procedimiento" onblur="applyTitleCase(this)"></div>
           <div><label>Fecha de nacimiento</label><input type="date" id="rec_fecha_nac" onchange="calcularEdadDesdeFecha()"></div>
           <div><label>Edad</label><input type="number" id="rec_edad" min="0" max="120"></div>
@@ -4865,7 +5016,8 @@ async function guardarPacienteRecepcion() {
     nombreAseguradora: document.getElementById('rec_aseguradora_nombre') ? document.getElementById('rec_aseguradora_nombre').value : '',
     numeroPoliza: document.getElementById('rec_poliza') ? document.getElementById('rec_poliza').value.trim() : '',
     caso: document.getElementById('rec_caso').value.trim(),
-    habitacionAsignada: document.getElementById('rec_habitacion').value.trim(),
+    habitacionAsignada: (function(){ var s=document.getElementById('rec_habitacion'); return s && s.selectedOptions[0] ? (s.selectedOptions[0].dataset.label || '') : ''; })(),
+    idHabitacion: (document.getElementById('rec_habitacion') || {}).value || '',
     procedimientoInicial: document.getElementById('rec_procedimiento').value.trim(),
     fechaNacimiento: document.getElementById('rec_fecha_nac').value,
     edad: parseInt(document.getElementById('rec_edad').value, 10) || '',
@@ -4886,7 +5038,13 @@ async function guardarPacienteRecepcion() {
 
   const resp = await apiPost('altaPaciente', data);
   if (resp.ok) {
-    showToast(`Paciente registrado: ${resp.folioRecepcion}`);
+    if (resp.hospitalizacion && resp.hospitalizacion.ok) {
+      showToast(`Paciente registrado: ${resp.folioRecepcion} · Habitación ${resp.hospitalizacion.habitacion} ocupada`);
+    } else if (resp.hospitalizacion && !resp.hospitalizacion.ok) {
+      showToast(`Paciente registrado (${resp.folioRecepcion}), pero la habitación no se pudo ocupar: ${resp.hospitalizacion.error}`, 'warn');
+    } else {
+      showToast(`Paciente registrado: ${resp.folioRecepcion}`);
+    }
     closeModal();
     await loadCatalogos();
     // Si veníamos del formulario de consulta, regresar a él con el
