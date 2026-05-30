@@ -1533,7 +1533,7 @@ const PERMISOS = {
     'cancelar_consumo':     ['ADMIN','JEFE_ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],// A9
     'nueva_entrada':        ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'], // A10
     'alta_medicamento':     ['ADMIN','JEFE_ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],// A11
-    'alta_medico':          ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],          // A12
+    'alta_medico':          ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],          // A12
     'alta_tipo_cirugia':    ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],          // A13
     'editar_cirugia':       ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO'], // A14
     'cancelar_cirugia':     ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],          // A15
@@ -4651,14 +4651,18 @@ async function confirmarEgreso(idHosp) {
 // MODAL: Mover paciente
 function openModalMover(idHosp, nombrePaciente, idHabActual) {
   const habs = (cacheHabitaciones && cacheHabitaciones.habitaciones) || [];
-  const habsDisponibles = habs.filter(h => !h.ocupada && h.idHabitacion !== idHabActual);
-  if (habsDisponibles.length === 0) {
-    showToast('No hay habitaciones disponibles para mover', 'warn');
+  const candidatas = habs.filter(h => h.idHabitacion !== idHabActual);
+  if (candidatas.length === 0) {
+    showToast('No hay otras habitaciones registradas', 'warn');
     return;
   }
-  const habsOpts = habsDisponibles.map(h => {
-    const tipoLbl = h.tipo === 'PRIVADA' ? 'Privada' : h.tipo === 'SALA_GENERAL' ? 'Sala Gral.' : 'Urgencias';
-    return `<option value="${h.idHabitacion}">${tipoLbl} ${h.numero}</option>`;
+  const tipoLbl = (t) => t === 'PRIVADA' ? 'Privada' : t === 'SALA_GENERAL' ? 'Sala Gral.' : t === 'TERAPIA_INTENSIVA' ? 'UCI' : 'Urgencias';
+  // Primero las libres, luego las ocupadas
+  candidatas.sort((a, b) => (a.ocupada === b.ocupada) ? 0 : (a.ocupada ? 1 : -1));
+  const habsOpts = candidatas.map(h => {
+    const ocupante = h.ocupada && h.hospitalizacion ? h.hospitalizacion.nombrePaciente : '';
+    const sufijo = h.ocupada ? ` — ocupada: ${ocupante}` : ' — libre';
+    return `<option value="${h.idHabitacion}" data-ocupada="${h.ocupada ? '1' : '0'}" data-ocupante="${encodeURIComponent(ocupante)}">${tipoLbl(h.tipo)} ${h.numero}${sufijo}</option>`;
   }).join('');
   openModal('Mover paciente', `
     <form onsubmit="event.preventDefault();confirmarMover('${idHosp}')">
@@ -4666,32 +4670,61 @@ function openModalMover(idHosp, nombrePaciente, idHabActual) {
         <strong>Paciente:</strong> ${nombrePaciente}
       </div>
       <div class="form-grid">
-        <div class="full"><label>Nueva habitación</label><select id="mv_habitacion" required><option value="">—</option>${habsOpts}</select></div>
-        <div class="full"><label>Motivo del cambio (obligatorio)</label><textarea id="mv_motivo" placeholder="Ej: Solicitud familiar, mejora de comodidad, alta de UCI" required minlength="5"></textarea></div>
+        <div class="full"><label>Nueva habitación</label><select id="mv_habitacion" required onchange="actualizarNotaMover()"><option value="">—</option>${habsOpts}</select></div>
+        <div class="full" id="mv_nota_intercambio" style="display:none;background:#fff7e6;border:1px solid #ffd591;color:#ad6800;padding:10px 12px;border-radius:8px;font-size:13px;line-height:1.5;"></div>
+        <div class="full"><label>Motivo del cambio (obligatorio)</label><textarea id="mv_motivo" placeholder="Ej: Reacomodo de camas, solicitud familiar, mejora de comodidad" required minlength="5"></textarea></div>
       </div>
       <div class="form-actions">
         <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-        <button type="submit" class="btn btn-primary">Mover paciente</button>
+        <button type="submit" class="btn btn-primary" id="mv_btn_submit">Mover paciente</button>
       </div>
     </form>
   `);
 }
 
+// Actualiza el aviso de intercambio según la cama elegida
+function actualizarNotaMover() {
+  const sel = document.getElementById('mv_habitacion');
+  const opt = sel.options[sel.selectedIndex];
+  const nota = document.getElementById('mv_nota_intercambio');
+  const btn = document.getElementById('mv_btn_submit');
+  if (opt && opt.getAttribute('data-ocupada') === '1') {
+    const ocupante = decodeURIComponent(opt.getAttribute('data-ocupante') || '');
+    nota.style.display = 'block';
+    nota.innerHTML = `↔ <strong>Intercambio de camas:</strong> esa habitación está ocupada por <strong>${ocupante}</strong>. Al confirmar, <strong>${ocupante}</strong> pasará a la cama actual de este paciente. Se intercambian sin egresar a nadie.`;
+    btn.textContent = 'Intercambiar camas';
+  } else {
+    nota.style.display = 'none';
+    nota.innerHTML = '';
+    btn.textContent = 'Mover paciente';
+  }
+}
+
 async function confirmarMover(idHosp) {
+  const sel = document.getElementById('mv_habitacion');
+  const idHabNueva = sel.value;
+  if (!idHabNueva) { showToast('Selecciona una habitación', 'error'); return; }
   const motivo = document.getElementById('mv_motivo').value.trim();
   if (motivo.length < 5) {
     showToast('Motivo muy corto (mínimo 5 caracteres)', 'error');
     return;
   }
+  const opt = sel.options[sel.selectedIndex];
+  const esIntercambio = !!(opt && opt.getAttribute('data-ocupada') === '1');
   const data = {
     idHospitalizacion: idHosp,
-    idHabitacionNueva: document.getElementById('mv_habitacion').value,
+    idHabitacionNueva: idHabNueva,
     motivo,
-    capturadoPor: currentUser.nombre
+    capturadoPor: currentUser.nombre,
+    confirmarIntercambio: esIntercambio
   };
   const resp = await apiPost('moverPaciente', data);
   if (resp.ok) {
-    showToast(`Movido de ${resp.habitacionAnterior} a ${resp.habitacionNueva}`);
+    if (resp.intercambio) {
+      showToast(`Intercambio hecho: ${resp.habitacionAnterior} ↔ ${resp.habitacionNueva}`);
+    } else {
+      showToast(`Movido de ${resp.habitacionAnterior} a ${resp.habitacionNueva}`);
+    }
     closeModal();
     loadHabitaciones();
   } else {
