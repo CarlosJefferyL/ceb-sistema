@@ -734,6 +734,8 @@ textarea { resize: vertical; min-height: 70px; }
     <div class="nav-item" data-page="catalogos"><span class="icon">⚙</span>Médicos y cirugías</div>
     <div class="nav-section-title">Caja</div>
     <div class="nav-item" data-page="cobro"><span class="icon">💵</span>Cobro de caja</div>
+    <div class="nav-item" data-page="recibos"><span class="icon">🧾</span>Recibos de caja</div>
+    <div class="nav-item" data-page="ventas"><span class="icon">📊</span>Registro de ventas</div>
     <div class="user-card">
       <div class="uname" id="userName">—</div>
       <div class="urol" id="userRol">—</div>
@@ -1374,6 +1376,52 @@ textarea { resize: vertical; min-height: 70px; }
       </div>
     </div>
 
+    <!-- ============ RECIBOS DE CAJA ============ -->
+    <div id="page-recibos" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Recibos de caja</h1>
+          <div class="subtitle">Recibos de nómina, limpieza, pago de paciente y caja general · libro de registro</div>
+        </div>
+        <button class="btn btn-accent" data-accion="emitir_recibo" onclick="openModalRecibo()">+ Nuevo recibo</button>
+      </div>
+      <div class="toolbar">
+        <div class="toolbar-row">
+          <input type="date" id="recibosDesde" onchange="loadRecibos()">
+          <input type="date" id="recibosHasta" onchange="loadRecibos()">
+          <select id="recibosTipoFiltro" onchange="renderRecibos()">
+            <option value="">Todos los tipos</option>
+            <option value="CAJA">Caja general</option>
+            <option value="NOMINA">Nómina</option>
+            <option value="LIMPIEZA">Limpieza</option>
+            <option value="PAGO">Pago de paciente</option>
+          </select>
+          <input type="search" id="searchRecibos" placeholder="Buscar folio, beneficiario o concepto..." oninput="renderRecibos()">
+        </div>
+      </div>
+      <div class="card"><div id="recibosTable">Cargando...</div></div>
+    </div>
+
+    <!-- ============ REGISTRO DE VENTAS ============ -->
+    <div id="page-ventas" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Registro de ventas</h1>
+          <div class="subtitle">Ventas e ingresos capturados desde Cobro de caja · un renglón por cuenta</div>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="exportVentasCSV()">⬇ Exportar a Excel (CSV)</button>
+      </div>
+      <div class="toolbar">
+        <div class="toolbar-row">
+          <input type="date" id="ventasDesde" onchange="loadVentas()">
+          <input type="date" id="ventasHasta" onchange="loadVentas()">
+          <input type="search" id="searchVentas" placeholder="Buscar paciente, expediente o cirugía..." oninput="renderVentas()">
+          <span style="flex:1;"></span>
+          <span style="font-size:13px;color:var(--text-muted);">Total del periodo: <strong id="ventasTotalPeriodo">$0.00</strong> · <span id="ventasConteo">0</span> ventas</span>
+        </div>
+      </div>
+      <div class="card"><div id="ventasTable">Cargando...</div></div>
+    </div>
 
   </main>
 </div>
@@ -1389,7 +1437,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbwYgsRz2nZajq1wrCzjcgUM
 
 let currentUser = null;
 let catalogos = { medicamentos: [], medicos: [], cirugiasTipo: [], pacientes: [], aseguradoras: [], config: {} };
-let cache = { cirugias: [], recetas: [], consumos: [], libro: [], inventario: [], consultas: [], urgencias: [] };
+let cache = { cirugias: [], recetas: [], consumos: [], libro: [], inventario: [], consultas: [], urgencias: [], recibos: [], ventas: [] };
 let currentHorizonte = 7;
 let currentQuickFilter = 'todas';
 
@@ -1507,7 +1555,7 @@ const PERMISOS = {
     dashboard:    ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO','RECEPCION'],
     programacion: ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],
     cirugias:     ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
-    habitaciones: ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
+    habitaciones: ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO'],
     pacientes:    ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO','RECEPCION'],
     recetas:      ['ADMIN','JEFE_ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
     consumos:     ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],
@@ -1518,13 +1566,15 @@ const PERMISOS = {
     entradas:     ['ADMIN','JEFE_ENFERMERIA','ALMACEN'],
     libro:        ['ADMIN','JEFE_ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
     catalogos:    ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
-    cobro:        ['ADMIN','DIRECTOR_MEDICO','CAJERO']
+    cobro:        ['ADMIN','DIRECTOR_MEDICO','CAJERO'],
+    recibos:      ['ADMIN','DIRECTOR_MEDICO','CAJERO'],
+    ventas:       ['ADMIN','DIRECTOR_MEDICO','CAJERO']
   },
   // ============ ACCIONES (botones de crear/modificar) ============
   actions: {
     'programar_cirugia':    ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],          // A1
     'nueva_cirugia':        ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],          // A2
-    'ingresar_habitacion':  ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'], // A3
+    'ingresar_habitacion':  ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO'], // A3
     'nuevo_paciente_recep': ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],  // A4
     'nuevo_paciente_dir':   ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'], // A5
     'editar_paciente':      ['ADMIN','JEFE_ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],// A6
@@ -1533,7 +1583,7 @@ const PERMISOS = {
     'cancelar_consumo':     ['ADMIN','JEFE_ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],// A9
     'nueva_entrada':        ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'], // A10
     'alta_medicamento':     ['ADMIN','JEFE_ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],// A11
-    'alta_medico':          ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],          // A12
+    'alta_medico':          ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],          // A12
     'alta_tipo_cirugia':    ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],          // A13
     'editar_cirugia':       ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO'], // A14
     'cancelar_cirugia':     ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],          // A15
@@ -1541,7 +1591,10 @@ const PERMISOS = {
     'reabrir_cirugia':      ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],          // A17
     'exportar_libro':       ['ADMIN','JEFE_ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],  // A18
     'registrar_consulta':   ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],  // A19
-    'cobro_caja':           ['ADMIN','DIRECTOR_MEDICO','CAJERO']  // A20
+    'cobro_caja':           ['ADMIN','DIRECTOR_MEDICO','CAJERO'],  // A20
+    'emitir_recibo':        ['ADMIN','DIRECTOR_MEDICO','CAJERO'],  // A21
+    'cancelar_recibo':      ['ADMIN','DIRECTOR_MEDICO','CAJERO'],  // A22
+    'alta_beneficiario':    ['ADMIN','DIRECTOR_MEDICO','CAJERO']   // A23
   }
 };
 
@@ -1669,6 +1722,8 @@ function loadPage(page) {
     case 'libro': loadLibro(); break;
     case 'catalogos': loadCatalogosPage(); break;
     case 'cobro': loadCobroPage(); break;
+    case 'recibos': loadRecibos(); break;
+    case 'ventas': loadVentas(); break;
   }
 }
 
@@ -4651,18 +4706,14 @@ async function confirmarEgreso(idHosp) {
 // MODAL: Mover paciente
 function openModalMover(idHosp, nombrePaciente, idHabActual) {
   const habs = (cacheHabitaciones && cacheHabitaciones.habitaciones) || [];
-  const candidatas = habs.filter(h => h.idHabitacion !== idHabActual);
-  if (candidatas.length === 0) {
-    showToast('No hay otras habitaciones registradas', 'warn');
+  const habsDisponibles = habs.filter(h => !h.ocupada && h.idHabitacion !== idHabActual);
+  if (habsDisponibles.length === 0) {
+    showToast('No hay habitaciones disponibles para mover', 'warn');
     return;
   }
-  const tipoLbl = (t) => t === 'PRIVADA' ? 'Privada' : t === 'SALA_GENERAL' ? 'Sala Gral.' : t === 'TERAPIA_INTENSIVA' ? 'UCI' : 'Urgencias';
-  // Primero las libres, luego las ocupadas
-  candidatas.sort((a, b) => (a.ocupada === b.ocupada) ? 0 : (a.ocupada ? 1 : -1));
-  const habsOpts = candidatas.map(h => {
-    const ocupante = h.ocupada && h.hospitalizacion ? h.hospitalizacion.nombrePaciente : '';
-    const sufijo = h.ocupada ? ` — ocupada: ${ocupante}` : ' — libre';
-    return `<option value="${h.idHabitacion}" data-ocupada="${h.ocupada ? '1' : '0'}" data-ocupante="${encodeURIComponent(ocupante)}">${tipoLbl(h.tipo)} ${h.numero}${sufijo}</option>`;
+  const habsOpts = habsDisponibles.map(h => {
+    const tipoLbl = h.tipo === 'PRIVADA' ? 'Privada' : h.tipo === 'SALA_GENERAL' ? 'Sala Gral.' : 'Urgencias';
+    return `<option value="${h.idHabitacion}">${tipoLbl} ${h.numero}</option>`;
   }).join('');
   openModal('Mover paciente', `
     <form onsubmit="event.preventDefault();confirmarMover('${idHosp}')">
@@ -4670,61 +4721,32 @@ function openModalMover(idHosp, nombrePaciente, idHabActual) {
         <strong>Paciente:</strong> ${nombrePaciente}
       </div>
       <div class="form-grid">
-        <div class="full"><label>Nueva habitación</label><select id="mv_habitacion" required onchange="actualizarNotaMover()"><option value="">—</option>${habsOpts}</select></div>
-        <div class="full" id="mv_nota_intercambio" style="display:none;background:#fff7e6;border:1px solid #ffd591;color:#ad6800;padding:10px 12px;border-radius:8px;font-size:13px;line-height:1.5;"></div>
-        <div class="full"><label>Motivo del cambio (obligatorio)</label><textarea id="mv_motivo" placeholder="Ej: Reacomodo de camas, solicitud familiar, mejora de comodidad" required minlength="5"></textarea></div>
+        <div class="full"><label>Nueva habitación</label><select id="mv_habitacion" required><option value="">—</option>${habsOpts}</select></div>
+        <div class="full"><label>Motivo del cambio (obligatorio)</label><textarea id="mv_motivo" placeholder="Ej: Solicitud familiar, mejora de comodidad, alta de UCI" required minlength="5"></textarea></div>
       </div>
       <div class="form-actions">
         <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-        <button type="submit" class="btn btn-primary" id="mv_btn_submit">Mover paciente</button>
+        <button type="submit" class="btn btn-primary">Mover paciente</button>
       </div>
     </form>
   `);
 }
 
-// Actualiza el aviso de intercambio según la cama elegida
-function actualizarNotaMover() {
-  const sel = document.getElementById('mv_habitacion');
-  const opt = sel.options[sel.selectedIndex];
-  const nota = document.getElementById('mv_nota_intercambio');
-  const btn = document.getElementById('mv_btn_submit');
-  if (opt && opt.getAttribute('data-ocupada') === '1') {
-    const ocupante = decodeURIComponent(opt.getAttribute('data-ocupante') || '');
-    nota.style.display = 'block';
-    nota.innerHTML = `↔ <strong>Intercambio de camas:</strong> esa habitación está ocupada por <strong>${ocupante}</strong>. Al confirmar, <strong>${ocupante}</strong> pasará a la cama actual de este paciente. Se intercambian sin egresar a nadie.`;
-    btn.textContent = 'Intercambiar camas';
-  } else {
-    nota.style.display = 'none';
-    nota.innerHTML = '';
-    btn.textContent = 'Mover paciente';
-  }
-}
-
 async function confirmarMover(idHosp) {
-  const sel = document.getElementById('mv_habitacion');
-  const idHabNueva = sel.value;
-  if (!idHabNueva) { showToast('Selecciona una habitación', 'error'); return; }
   const motivo = document.getElementById('mv_motivo').value.trim();
   if (motivo.length < 5) {
     showToast('Motivo muy corto (mínimo 5 caracteres)', 'error');
     return;
   }
-  const opt = sel.options[sel.selectedIndex];
-  const esIntercambio = !!(opt && opt.getAttribute('data-ocupada') === '1');
   const data = {
     idHospitalizacion: idHosp,
-    idHabitacionNueva: idHabNueva,
+    idHabitacionNueva: document.getElementById('mv_habitacion').value,
     motivo,
-    capturadoPor: currentUser.nombre,
-    confirmarIntercambio: esIntercambio
+    capturadoPor: currentUser.nombre
   };
   const resp = await apiPost('moverPaciente', data);
   if (resp.ok) {
-    if (resp.intercambio) {
-      showToast(`Intercambio hecho: ${resp.habitacionAnterior} ↔ ${resp.habitacionNueva}`);
-    } else {
-      showToast(`Movido de ${resp.habitacionAnterior} a ${resp.habitacionNueva}`);
-    }
+    showToast(`Movido de ${resp.habitacionAnterior} a ${resp.habitacionNueva}`);
     closeModal();
     loadHabitaciones();
   } else {
@@ -5932,6 +5954,7 @@ async function seleccionarPacienteCobro(idPaciente) {
   pintarPacienteSeleccionado(resp.paciente);
   cjSetVal('cj_nombre', resp.paciente.nombrePaciente);
   cjSetVal('cj_idPaciente', resp.paciente.idPaciente);
+  if (resp.paciente.expediente) cjSetVal('cj_expediente', resp.paciente.expediente);
 
   // Precargar datos generales que ya tiene el paciente en el sistema.
   // Si vienen vacíos, el cajero los completa; si traen valor, se sugieren.
@@ -6120,6 +6143,567 @@ function moneyOrBlank(n) {
   const v = cajaNumJS(n);
   return v ? v.toFixed(2) : '';
 }
+
+
+// ============================================================
+// (MÓDULO RECIBOS DE CAJA — agregado)
+// ============================================================
+// ============================================================
+// RECIBOS DE CAJA
+// Cuatro tipos de recibo (CAJA, NOMINA, LIMPIEZA, PAGO) que se
+// registran en la pestaña "Recibos". Beneficiarios desde catálogo
+// con alta en línea; recibos de pago usan el catálogo de pacientes.
+// ============================================================
+
+let recibosBeneficiarios = [];
+let recibosBeneficiariosCargados = false;
+
+const REC_FORMAS_PAGO = ['EFECTIVO', 'TRANSFERENCIA', 'DEPOSITO'];
+
+function recMoney(n) {
+  const v = Number(n) || 0;
+  return '$' + v.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function recEscape(s) { return String(s == null ? '' : s).replace(/"/g, '&quot;'); }
+
+// ---- Catálogo de beneficiarios ----
+async function cargarBeneficiarios(force) {
+  if (recibosBeneficiariosCargados && !force) return;
+  const resp = await apiGet('getBeneficiarios');
+  recibosBeneficiarios = (resp && resp.ok && resp.data) ? resp.data : [];
+  recibosBeneficiariosCargados = true;
+}
+
+// ---- Listado ----
+async function loadRecibos() {
+  const cont = document.getElementById('recibosTable');
+  if (cont) cont.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  // Por defecto, del primer día del mes en curso a hoy
+  const dDesde = document.getElementById('recibosDesde');
+  const dHasta = document.getElementById('recibosHasta');
+  if (dDesde && !dDesde.value) {
+    const hoy = new Date();
+    dDesde.value = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().split('T')[0];
+  }
+  if (dHasta && !dHasta.value) dHasta.value = todayISO();
+
+  await cargarBeneficiarios();
+  const resp = await apiGet('getRecibos', {
+    desde: dDesde ? dDesde.value : '',
+    hasta: dHasta ? dHasta.value : ''
+  });
+  cache.recibos = (resp && resp.data) ? resp.data : [];
+  renderRecibos();
+}
+
+function recTipoLabel(t) {
+  return { CAJA: 'Caja general', NOMINA: 'Nómina', LIMPIEZA: 'Limpieza', PAGO: 'Pago paciente' }[t] || (t || '—');
+}
+
+function renderRecibos() {
+  const cont = document.getElementById('recibosTable');
+  if (!cont) return;
+  let rows = (cache.recibos || []).slice();
+  const search = (document.getElementById('searchRecibos').value || '').toLowerCase();
+  const tipoF = document.getElementById('recibosTipoFiltro').value;
+  if (tipoF) rows = rows.filter(r => String(r.Tipo) === tipoF);
+  if (search) {
+    rows = rows.filter(r =>
+      (r.Folio || '').toLowerCase().includes(search) ||
+      (r.Beneficiario || '').toLowerCase().includes(search) ||
+      (r.Concepto || '').toLowerCase().includes(search)
+    );
+  }
+
+  const html = rows.map(r => {
+    const cancelado = String(r.Estado).toUpperCase() === 'CANCELADO';
+    const accion = (typeof puede === 'function' && puede('cancelar_recibo') && !cancelado)
+      ? `<button class="btn btn-secondary btn-sm" onclick="cancelarReciboUI('${r.Folio}')">Cancelar</button>`
+      : '';
+    return `
+    <tr ${cancelado ? 'style="opacity:.5;text-decoration:line-through;"' : ''}>
+      <td>${r.Folio || '—'}</td>
+      <td>${formatDateShort(r.Fecha)}</td>
+      <td>${recTipoLabel(r.Tipo)}</td>
+      <td><strong>${r.Beneficiario || '—'}</strong>${r.Puesto ? '<br><small>' + r.Puesto + '</small>' : ''}</td>
+      <td>${r.Concepto || r.Periodo || '—'}</td>
+      <td style="text-align:right;">${recMoney(r.Monto)}</td>
+      <td>${r.FormaPago || '—'}</td>
+      <td><small>${r.CapturadoPor || '—'}</small></td>
+      <td style="white-space:nowrap;">
+        <button class="btn btn-secondary btn-sm" onclick="imprimirReciboFolio('${r.Folio}')">🖨 Imprimir</button>
+        ${accion}
+      </td>
+    </tr>`;
+  }).join('');
+
+  cont.innerHTML = rows.length
+    ? `<table><thead><tr><th>Folio</th><th>Fecha</th><th>Tipo</th><th>Beneficiario</th><th>Concepto / periodo</th><th style="text-align:right;">Monto</th><th>Forma pago</th><th>Capturó</th><th></th></tr></thead><tbody>${html}</tbody></table>`
+    : '<div class="empty-state"><div class="icon">🧾</div>Sin recibos en el rango seleccionado</div>';
+}
+
+// ---- Modal de nuevo recibo ----
+async function openModalRecibo() {
+  await cargarBeneficiarios();
+
+  const formasOpts = REC_FORMAS_PAGO.map(f =>
+    `<option value="${f}" ${f === 'EFECTIVO' ? 'selected' : ''}>${f.charAt(0) + f.slice(1).toLowerCase()}</option>`
+  ).join('');
+
+  openModal('Nuevo recibo de caja', `
+    <form onsubmit="event.preventDefault();guardarRecibo()">
+      <div class="form-grid">
+        <div><label>Tipo de recibo *</label>
+          <select id="rec_tipo" onchange="cambiarTipoRecibo()" required>
+            <option value="CAJA">Recibo de caja (general)</option>
+            <option value="NOMINA">Recibo de nómina</option>
+            <option value="LIMPIEZA">Recibo de nómina · limpieza</option>
+            <option value="PAGO">Recibo de pago de paciente</option>
+          </select>
+        </div>
+        <div><label>Fecha *</label><input type="date" id="rec_fecha" value="${todayISO()}" required></div>
+
+        <div class="full" id="rec_w_beneficiario">
+          <label>Beneficiario *</label>
+          <select id="rec_beneficiario" onchange="recPrefillPuesto()"></select>
+          <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="toggleNuevoBeneficiario()">+ Beneficiario nuevo</button>
+          <div id="rec_nuevoBenef" style="display:none;margin-top:10px;padding:10px;border:1px dashed var(--border,#cbd5e1);border-radius:8px;">
+            <div class="form-grid">
+              <div class="full"><label>Nombre completo *</label><input type="text" id="rec_nb_nombre" onblur="applyTitleCase(this)" placeholder="Nombre del beneficiario"></div>
+              <div class="full"><label>Puesto / referencia</label><input type="text" id="rec_nb_puesto" placeholder="Ej. Enfermero general, Limpieza, Proveedor..."></div>
+            </div>
+            <div style="margin-top:8px;text-align:right;">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="toggleNuevoBeneficiario()">Cancelar</button>
+              <button type="button" class="btn btn-primary btn-sm" onclick="altaBeneficiarioInline()">Guardar beneficiario</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="full" id="rec_w_paciente" style="display:none;">
+          <label>Paciente *</label>
+          <select id="rec_paciente">
+            <option value="">— Seleccionar paciente —</option>
+            ${(catalogos.pacientes || []).map(p => `<option value="${p.ID_Paciente}" data-nombre="${recEscape(p.Nombre_Completo)}">${p.Nombre_Completo} (${p.ID_Paciente})</option>`).join('')}
+          </select>
+        </div>
+
+        <div id="rec_w_puesto" style="display:none;"><label>Puesto</label><input type="text" id="rec_puesto" placeholder="Puesto"></div>
+
+        <div class="full" id="rec_w_periodo" style="display:none;">
+          <label id="rec_lbl_periodo">Periodo</label>
+          <input type="text" id="rec_periodo" placeholder="Ej. DEL 13 AL 26 DE ABRIL 2026">
+        </div>
+
+        <div class="full" id="rec_w_concepto">
+          <label id="rec_lbl_concepto">Concepto / descripción *</label>
+          <textarea id="rec_concepto" placeholder="Describe el concepto del recibo"></textarea>
+        </div>
+
+        <div><label>Monto (MXN) *</label><input type="number" id="rec_monto" step="0.01" min="0" oninput="actualizarLetraPreview()" required></div>
+        <div><label>Forma de pago *</label><select id="rec_formaPago">${formasOpts}</select></div>
+
+        <div class="full"><label>Cantidad en letra (automática)</label>
+          <input type="text" id="rec_letraPreview" readonly style="background:#f1f5f9;color:#475569;" value="—">
+        </div>
+
+        <div class="full"><label>Observaciones</label><textarea id="rec_obs" placeholder="Opcional"></textarea></div>
+      </div>
+      <div class="form-actions" style="margin-top:16px;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Emitir e imprimir</button>
+      </div>
+    </form>
+  `);
+
+  recRellenarSelectBeneficiarios();
+  cambiarTipoRecibo();
+}
+
+function recRellenarSelectBeneficiarios(seleccionarId) {
+  const sel = document.getElementById('rec_beneficiario');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Seleccionar beneficiario —</option>' +
+    recibosBeneficiarios.map(b =>
+      `<option value="${recEscape(b.Nombre)}" data-puesto="${recEscape(b.Puesto)}" ${seleccionarId === b.ID_Beneficiario ? 'selected' : ''}>${b.Nombre}${b.Puesto ? ' — ' + b.Puesto : ''}</option>`
+    ).join('');
+  if (seleccionarId) {
+    // si pedimos seleccionar uno recién creado, marcarlo por nombre
+    const nuevo = recibosBeneficiarios.find(b => b.ID_Beneficiario === seleccionarId);
+    if (nuevo) sel.value = nuevo.Nombre;
+  }
+  recPrefillPuesto();
+}
+
+function recPrefillPuesto() {
+  const sel = document.getElementById('rec_beneficiario');
+  const inp = document.getElementById('rec_puesto');
+  if (!sel || !inp) return;
+  const opt = sel.options[sel.selectedIndex];
+  const puesto = opt ? (opt.dataset.puesto || '') : '';
+  if (puesto && !inp.value) inp.value = puesto;
+}
+
+function cambiarTipoRecibo() {
+  const tipo = document.getElementById('rec_tipo').value;
+  const show = (id, cond) => { const el = document.getElementById(id); if (el) el.style.display = cond ? '' : 'none'; };
+
+  show('rec_w_beneficiario', tipo !== 'PAGO');
+  show('rec_w_paciente', tipo === 'PAGO');
+  show('rec_w_puesto', tipo === 'NOMINA');
+  show('rec_w_periodo', tipo === 'NOMINA' || tipo === 'LIMPIEZA');
+
+  const lblPeriodo = document.getElementById('rec_lbl_periodo');
+  const inpPeriodo = document.getElementById('rec_periodo');
+  if (tipo === 'LIMPIEZA') {
+    if (lblPeriodo) lblPeriodo.textContent = 'Semana';
+    if (inpPeriodo) inpPeriodo.placeholder = 'Ej. SEMANA DEL 25 AL 31 DE MAYO 2026';
+  } else {
+    if (lblPeriodo) lblPeriodo.textContent = 'Periodo (catorcena)';
+    if (inpPeriodo) inpPeriodo.placeholder = 'Ej. DEL 13 AL 26 DE ABRIL 2026';
+  }
+
+  const lblConcepto = document.getElementById('rec_lbl_concepto');
+  if (lblConcepto) {
+    if (tipo === 'PAGO') lblConcepto.textContent = 'Descripción del servicio *';
+    else if (tipo === 'CAJA') lblConcepto.textContent = 'Concepto / descripción *';
+    else lblConcepto.textContent = 'Concepto (opcional)';
+  }
+}
+
+function toggleNuevoBeneficiario() {
+  const b = document.getElementById('rec_nuevoBenef');
+  if (b) b.style.display = (b.style.display === 'none' || !b.style.display) ? '' : 'none';
+}
+
+async function altaBeneficiarioInline() {
+  const nombre = (document.getElementById('rec_nb_nombre').value || '').trim();
+  const puesto = (document.getElementById('rec_nb_puesto').value || '').trim();
+  if (!nombre) { showToast('Escribe el nombre del beneficiario', 'error'); return; }
+  const tipo = document.getElementById('rec_tipo').value;
+  const resp = await apiPost('altaBeneficiario', {
+    nombre, puesto,
+    tipo: tipo === 'LIMPIEZA' ? 'LIMPIEZA' : (tipo === 'NOMINA' ? 'EMPLEADO' : 'GENERAL')
+  });
+  if (resp.ok) {
+    showToast('Beneficiario agregado: ' + resp.nombre);
+    await cargarBeneficiarios(true);
+    recRellenarSelectBeneficiarios(resp.idBeneficiario);
+    document.getElementById('rec_nb_nombre').value = '';
+    document.getElementById('rec_nb_puesto').value = '';
+    toggleNuevoBeneficiario();
+  } else {
+    showToast(resp.error || 'No se pudo agregar el beneficiario', 'error');
+  }
+}
+
+function actualizarLetraPreview() {
+  const monto = Number(document.getElementById('rec_monto').value);
+  const out = document.getElementById('rec_letraPreview');
+  if (!out) return;
+  out.value = (!isNaN(monto) && monto > 0) ? numeroALetrasJS(monto) : '—';
+}
+
+async function guardarRecibo() {
+  const tipo = document.getElementById('rec_tipo').value;
+  const fecha = document.getElementById('rec_fecha').value;
+  const monto = Number(document.getElementById('rec_monto').value);
+  const formaPago = document.getElementById('rec_formaPago').value;
+  const concepto = (document.getElementById('rec_concepto').value || '').trim();
+  const periodo = (document.getElementById('rec_periodo').value || '').trim();
+  const obs = (document.getElementById('rec_obs').value || '').trim();
+
+  if (!monto || monto <= 0) { showToast('Captura un monto mayor a 0', 'error'); return; }
+
+  let beneficiario = '', puesto = '', idPaciente = '';
+  if (tipo === 'PAGO') {
+    const selP = document.getElementById('rec_paciente');
+    idPaciente = selP.value;
+    if (!idPaciente) { showToast('Selecciona el paciente', 'error'); return; }
+    beneficiario = selP.options[selP.selectedIndex].dataset.nombre || '';
+    if (!concepto) { showToast('Describe el servicio / concepto', 'error'); return; }
+  } else {
+    const selB = document.getElementById('rec_beneficiario');
+    beneficiario = selB.value;
+    if (!beneficiario) { showToast('Selecciona el beneficiario', 'error'); return; }
+    if (tipo === 'LIMPIEZA') puesto = 'LIMPIEZA';
+    else if (tipo === 'NOMINA') puesto = (document.getElementById('rec_puesto').value || '').trim();
+    if (tipo === 'CAJA' && !concepto) { showToast('Describe el concepto del recibo', 'error'); return; }
+  }
+
+  const resp = await apiPost('emitirRecibo', {
+    tipo, fecha, monto, formaPago, concepto, periodo,
+    beneficiario, puesto, idPaciente, observaciones: obs,
+    capturadoPor: (currentUser && currentUser.nombre) || ''
+  });
+
+  if (resp.ok) {
+    showToast('Recibo emitido: ' + resp.folio);
+    closeModal();
+    imprimirReciboObj(resp);
+    loadRecibos();
+  } else {
+    showToast(resp.error || 'No se pudo emitir el recibo', 'error');
+  }
+}
+
+async function cancelarReciboUI(folio) {
+  if (!confirm('¿Cancelar el recibo ' + folio + '? Quedará marcado como CANCELADO en el registro.')) return;
+  const resp = await apiPost('cancelarRecibo', { folio });
+  if (resp.ok) { showToast('Recibo cancelado: ' + folio); loadRecibos(); }
+  else showToast(resp.error || 'No se pudo cancelar', 'error');
+}
+
+// ---- Impresión ----
+function imprimirReciboFolio(folio) {
+  const r = (cache.recibos || []).find(x => String(x.Folio) === String(folio));
+  if (!r) { showToast('No se encontró el recibo', 'error'); return; }
+  imprimirReciboObj({
+    folio: r.Folio, fecha: r.Fecha, tipo: r.Tipo, beneficiario: r.Beneficiario,
+    puesto: r.Puesto, idPaciente: r.ID_Paciente, concepto: r.Concepto,
+    periodo: r.Periodo, monto: r.Monto, montoLetra: r.MontoLetra, formaPago: r.FormaPago
+  });
+}
+
+function imprimirReciboObj(r) {
+  const nombreClinica = (catalogos.config && catalogos.config.nombreClinica) || 'CLÍNICA ESTAR BIEN';
+  const montoLetra = r.montoLetra || numeroALetrasJS(r.monto);
+  const f = String(r.fecha || '').substring(0, 10).split('-'); // yyyy-mm-dd
+  const dia = f[2] ? parseInt(f[2], 10) : '';
+  const mes = f[1] ? parseInt(f[1], 10) : '';
+  const anio = f[0] || '';
+
+  const titulos = { CAJA: 'RECIBO DE CAJA', NOMINA: 'RECIBO DE NÓMINA', LIMPIEZA: 'RECIBO DE NÓMINA', PAGO: 'RECIBO DE PAGO' };
+  const titulo = titulos[r.tipo] || 'RECIBO DE CAJA';
+
+  function cuerpoHtml() {
+    if (r.tipo === 'PAGO') {
+      return `
+        <p><strong>PACIENTE:</strong> ${r.beneficiario || ''}${r.idPaciente ? ' &nbsp; <strong>EXP:</strong> ' + r.idPaciente : ''}</p>
+        <p><strong>DESCRIPCIÓN:</strong> ${r.concepto || ''}</p>
+        <p class="cantidad">IMPORTE: ${recMoney(r.monto)} <span class="letra">(${montoLetra})</span></p>
+        <p><strong>FORMA DE PAGO:</strong> ${r.formaPago || 'EFECTIVO'}</p>`;
+    }
+    const concImp = r.tipo === 'CAJA'
+      ? (r.concepto ? 'Por concepto de: ' + r.concepto : '')
+      : ('Por concepto de pago de nómina' + (r.periodo ? ' ' + r.periodo : ''));
+    return `
+      <p class="cantidad">Recibí de ${nombreClinica} la cantidad de ${recMoney(r.monto)}</p>
+      <p class="letra">(${montoLetra})</p>
+      ${concImp ? `<p>${concImp}</p>` : ''}
+      <p><strong>NOMBRE:</strong> ${r.beneficiario || ''}${r.puesto ? ' &nbsp; <strong>PUESTO:</strong> ' + r.puesto : ''} &nbsp; <strong>PAGO:</strong> ${r.formaPago || 'EFECTIVO'}</p>`;
+  }
+
+  function reciboCard(etiqueta) {
+    return `
+      <div class="recibo">
+        <div class="top">
+          <div>
+            <div class="clinica">${nombreClinica}</div>
+            <div class="tipo">${titulo} &nbsp;·&nbsp; Folio ${r.folio || ''}</div>
+          </div>
+          <div class="topright">
+            <div class="copia">${etiqueta}</div>
+            <table class="fecha"><tr><td>D</td><td>M</td><td>A</td></tr><tr><td>${dia}</td><td>${mes}</td><td>${anio}</td></tr></table>
+          </div>
+        </div>
+        ${cuerpoHtml()}
+        <div class="firmas"><div>NOMBRE</div><div>FIRMA</div></div>
+      </div>`;
+  }
+
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>${r.folio || 'Recibo'}</title>
+    <style>
+      @page { size: Letter portrait; margin: 10mm; }
+      * { box-sizing: border-box; }
+      body { font-family: Georgia, 'Times New Roman', serif; color: #111; margin: 0; }
+      .recibo { border: 1px solid #555; border-radius: 6px; padding: 14px 18px; page-break-inside: avoid; min-height: 116mm; display: flex; flex-direction: column; }
+      .top { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1.5px solid #00838F; padding-bottom: 5px; margin-bottom: 8px; }
+      .clinica { font-size: 14px; font-weight: bold; color: #00838F; }
+      .tipo { font-size: 10px; letter-spacing: .05em; color: #555; margin-top: 1px; }
+      .topright { text-align: right; }
+      .copia { display: inline-block; font-size: 9px; color: #888; border: 1px solid #bbb; border-radius: 3px; padding: 1px 6px; margin-bottom: 3px; letter-spacing: .08em; }
+      table.fecha { border-collapse: collapse; margin-left: auto; }
+      table.fecha td { border: 1px solid #999; padding: 1px 7px; text-align: center; font-size: 10px; }
+      p { margin: 4px 0; font-size: 12px; line-height: 1.35; }
+      .cantidad { font-size: 13px; font-weight: bold; }
+      .letra { font-style: italic; font-size: 11px; color: #333; }
+      .firmas { display: flex; justify-content: space-around; margin-top: auto; padding-top: 30px; text-align: center; font-size: 10px; }
+      .firmas div { width: 42%; border-top: 1px solid #333; padding-top: 4px; }
+      .cut { text-align: center; color: #aaa; font-size: 9px; letter-spacing: 3px; border-top: 1px dashed #bbb; margin: 9px 0 11px; padding-top: 1px; }
+      .noprint { text-align: center; margin-top: 14px; }
+      @media print { .noprint { display: none; } }
+    </style></head><body>
+    ${reciboCard('ORIGINAL')}
+    <div class="cut">✂ — — — — — — — — — — — — — — — — — — — — — — — — — — — —</div>
+    ${reciboCard('COPIA')}
+    <div class="noprint"><button onclick="window.print()" style="padding:8px 18px;font-size:14px;cursor:pointer;">🖨 Imprimir</button></div>
+    <script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script>
+    </body></html>`;
+
+  const w = window.open('', '_blank');
+  if (!w) { showToast('Permite las ventanas emergentes para imprimir', 'warn'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
+// ---- Número a letras (preview en cliente; el backend guarda la versión oficial) ----
+function numeroALetrasJS(monto) {
+  let n = Math.floor(Math.abs(Number(monto)));
+  let centavos = Math.round((Math.abs(Number(monto)) - n) * 100);
+  if (centavos === 100) { n += 1; centavos = 0; }
+  const unidades = ['', 'UNO', 'DOS', 'TRES', 'CUATRO', 'CINCO', 'SEIS', 'SIETE', 'OCHO', 'NUEVE', 'DIEZ', 'ONCE', 'DOCE', 'TRECE', 'CATORCE', 'QUINCE', 'DIECISEIS', 'DIECISIETE', 'DIECIOCHO', 'DIECINUEVE', 'VEINTE'];
+  const decenas = ['', '', 'VEINTI', 'TREINTA', 'CUARENTA', 'CINCUENTA', 'SESENTA', 'SETENTA', 'OCHENTA', 'NOVENTA'];
+  const centenas = ['', 'CIENTO', 'DOSCIENTOS', 'TRESCIENTOS', 'CUATROCIENTOS', 'QUINIENTOS', 'SEISCIENTOS', 'SETECIENTOS', 'OCHOCIENTOS', 'NOVECIENTOS'];
+  function tres(c) {
+    if (c === 100) return 'CIEN';
+    let res = '';
+    const cen = Math.floor(c / 100), resto = c % 100;
+    if (cen > 0) res += centenas[cen];
+    if (resto > 0) {
+      if (res) res += ' ';
+      if (resto <= 20) res += unidades[resto];
+      else {
+        const dec = Math.floor(resto / 10), uni = resto % 10;
+        if (dec === 2) res += 'VEINTI' + unidades[uni];
+        else { res += decenas[dec]; if (uni > 0) res += ' Y ' + unidades[uni]; }
+      }
+    }
+    return res;
+  }
+  function frase(num) {
+    if (num === 0) return 'CERO';
+    if (num === 100) return 'CIEN';
+    const millones = Math.floor(num / 1000000), miles = Math.floor((num % 1000000) / 1000), resto = num % 1000;
+    const partes = [];
+    if (millones > 0) partes.push(millones === 1 ? 'UN MILLON' : tres(millones) + ' MILLONES');
+    if (miles > 0) partes.push(miles === 1 ? 'MIL' : tres(miles) + ' MIL');
+    if (resto > 0) partes.push(tres(resto));
+    return partes.join(' ').replace(/\s+/g, ' ').trim();
+  }
+  let letras = (n === 0) ? 'CERO' : frase(n);
+  if (/UNO$/.test(letras)) letras = letras.replace(/UNO$/, 'UN');
+  const moneda = (n === 1) ? 'PESO' : 'PESOS';
+  const cent = centavos < 10 ? '0' + centavos : String(centavos);
+  return (letras + ' ' + moneda + ' ' + cent + '/100 M.N.').toUpperCase();
+}
+
+
+
+// ===== REGISTRO DE VENTAS (agregado) =====
+// ============================================================
+// REGISTRO DE VENTAS  (solo captura/consulta; sin precios ni análisis)
+// Lee getIngresos (proyección de los cobros de Caja) y lo muestra
+// como un renglón por venta, estilo la pestaña "Ingresos". Permite
+// exportar el rango a CSV (abre en Excel) con las columnas crudas.
+// ============================================================
+
+async function loadVentas() {
+  const cont = document.getElementById('ventasTable');
+  if (cont) cont.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  const dDesde = document.getElementById('ventasDesde');
+  const dHasta = document.getElementById('ventasHasta');
+  if (dDesde && !dDesde.value) {
+    const hoy = new Date();
+    dDesde.value = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().split('T')[0];
+  }
+  if (dHasta && !dHasta.value) dHasta.value = todayISO();
+
+  const resp = await apiGet('getIngresos', {
+    desde: dDesde ? dDesde.value : '',
+    hasta: dHasta ? dHasta.value : ''
+  });
+  cache.ventas = (resp && resp.data) ? resp.data : [];
+  cjSetText('ventasTotalPeriodo', recMoney(resp && resp.totalPeriodo ? resp.totalPeriodo : 0));
+  cjSetText('ventasConteo', String(resp && resp.conteo ? resp.conteo : cache.ventas.length));
+  renderVentas();
+}
+
+function ventasFiltradas() {
+  const search = (document.getElementById('searchVentas').value || '').toLowerCase();
+  let rows = (cache.ventas || []).slice();
+  if (search) {
+    rows = rows.filter(v =>
+      (v.nombrePaciente || '').toLowerCase().includes(search) ||
+      (v.expediente || '').toLowerCase().includes(search) ||
+      (v.cirugia || '').toLowerCase().includes(search) ||
+      (v.especialidad || '').toLowerCase().includes(search)
+    );
+  }
+  return rows;
+}
+
+function renderVentas() {
+  const cont = document.getElementById('ventasTable');
+  if (!cont) return;
+  const rows = ventasFiltradas();
+
+  const html = rows.map(v => `
+    <tr>
+      <td>${v.expediente || '—'}</td>
+      <td>${formatDateShort(v.fechaEgreso || v.fechaIngreso)}</td>
+      <td><strong>${v.nombrePaciente || '—'}</strong>${v.tipoCliente ? '<br><small>' + v.tipoCliente + '</small>' : ''}</td>
+      <td>${v.cirugia || '—'}${v.especialidad ? '<br><small>' + v.especialidad + '</small>' : ''}</td>
+      <td style="text-align:right;"><strong>${recMoney(v.total)}</strong></td>
+      <td>${v.formaPago || '—'}${v.banco ? '<br><small>' + v.banco + '</small>' : ''}</td>
+      <td style="text-align:right;">${v.comision ? recMoney(v.comision) : '—'}</td>
+      <td><small>${v.mes || ''}${v.semana ? ' · sem ' + v.semana : ''}</small></td>
+    </tr>`).join('');
+
+  cont.innerHTML = rows.length
+    ? `<table><thead><tr><th>Expediente</th><th>Fecha egreso</th><th>Paciente</th><th>Cirugía / especialidad</th><th style="text-align:right;">Total</th><th>Forma de pago</th><th style="text-align:right;">Comisión</th><th>Periodo</th></tr></thead><tbody>${html}</tbody></table>`
+    : '<div class="empty-state"><div class="icon">📊</div>Sin ventas en el rango seleccionado</div>';
+}
+
+// ---- Exportación a CSV (abre en Excel) ----
+function exportVentasCSV() {
+  const rows = ventasFiltradas();
+  if (!rows.length) { showToast('No hay ventas para exportar en este rango', 'warn'); return; }
+
+  const cols = [
+    ['FECHA INGRESO', 'fechaIngreso'], ['FECHA EGRESO', 'fechaEgreso'],
+    ['TIPO CLIENTE', 'tipoCliente'], ['EXPEDIENTE', 'expediente'], ['NOMBRE PACIENTE', 'nombrePaciente'],
+    ['CIRUGIA', 'cirugia'], ['ESPECIALIDAD', 'especialidad'],
+    ['HOSPITALIZACION', 'hospitalizacion'], ['HORA EXTRA', 'horaExtra'], ['DIA EXTRA', 'diaExtra'],
+    ['MATERIALES Y MEDICAMENTOS', 'materiales'], ['AMBULANCIA', 'ambulancia'], ['MONITOR', 'monitor'],
+    ['VENTILADOR', 'ventilador'], ['NOCHE TERAPIA', 'nocheTerapia'], ['OXIGENO', 'oxigeno'],
+    ['BOMBA INFUSION', 'bombaInfusion'], ['PAQUETE GLOBULAR', 'paqueteGlobular'],
+    ['LABORATORIO', 'laboratorio'], ['IMAGEN', 'imagen'], ['HONORARIOS MEDICOS', 'honorariosMedicos'],
+    ['CONSULTAS Y URGENCIAS', 'consultasUrgencias'], ['RENTA ARTROSCOPIO', 'rentaArtroscopio'],
+    ['RENTA LAPAROSCOPIO', 'rentaLaparoscopio'], ['FLUOROSCOPIO', 'fluoroscopio'], ['LIGASURE', 'ligasure'],
+    ['ANESTESIA MIXTA', 'anestesiaMixta'],
+    ['INGRESO', 'total'], ['FORMA DE PAGO', 'formaPago'], ['CUENTA', 'banco'], ['$$ COMISION', 'comision'],
+    ['SE FACTURA', 'facturado'], ['COMENTARIOS', 'comentarios'],
+    ['SEMANA', 'semana'], ['AÑO', 'anio'], ['DIA', 'dia'], ['MES', 'mes'], ['MES PAGO', 'mesPago']
+  ];
+
+  const esc = (val) => {
+    let s = (val === null || val === undefined) ? '' : String(val);
+    if (/[",\n;]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  };
+
+  const lineas = [];
+  lineas.push(cols.map(c => esc(c[0])).join(','));
+  rows.forEach(v => {
+    lineas.push(cols.map(c => esc(v[c[1]])).join(','));
+  });
+
+  const desde = document.getElementById('ventasDesde').value || '';
+  const hasta = document.getElementById('ventasHasta').value || '';
+  // BOM para que Excel respete los acentos
+  const csv = '\uFEFF' + lineas.join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'ventas_' + (desde || 'inicio') + '_a_' + (hasta || 'hoy') + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('Exportadas ' + rows.length + ' ventas');
+}
+
 
 </script>
 </body>
