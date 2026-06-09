@@ -1580,7 +1580,7 @@ const PERMISOS = {
     'ingresar_habitacion':  ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'], // A3
     'nuevo_paciente_recep': ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],  // A4
     'nuevo_paciente_dir':   ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'], // A5
-    'editar_paciente':      ['ADMIN','JEFE_ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],// A6
+    'editar_paciente':      ['ADMIN','JEFE_ENFERMERIA','ALMACEN','DIRECTOR_MEDICO','RECEPCION'],// A6
     'vincular_receta':      ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'], // A7
     'registrar_consumo':    ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'], // A8
     'cancelar_consumo':     ['ADMIN','JEFE_ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],// A9
@@ -4834,7 +4834,14 @@ async function loadRecepcion() {
   `;
 }
 
-async function abrirFormularioRecepcion(desdeConsulta) {
+async function abrirFormularioRecepcion(desdeConsulta, idPaciente) {
+  const esEdicion = !!idPaciente;
+  let p = null;
+  if (esEdicion) {
+    const rp = await apiGet('getPaciente', { idPaciente });
+    if (!rp.ok) { showToast('Error cargando paciente: ' + (rp.error || ''), 'error'); return; }
+    p = rp.data;
+  }
   // Si se abre desde el botón normal de Recepción (sin argumento),
   // limpiar cualquier retorno a consulta que hubiera quedado pendiente.
   if (!desdeConsulta) {
@@ -4870,9 +4877,9 @@ async function abrirFormularioRecepcion(desdeConsulta) {
     }
   } catch (e) { /* si falla, queda solo "Sin asignar" */ }
 
-  openModal('Alta de Paciente · Recepción', `
+  openModal(esEdicion ? ('Editar paciente · ' + (p.Nombre_Completo || '')) : 'Alta de Paciente · Recepción', `
     <div style="background:var(--teal-light);padding:12px 14px;border-radius:8px;margin-bottom:16px;font-size:12px;color:var(--navy);">
-      💡 Completa los datos en 3 secciones. Solo el <strong>nombre</strong> es obligatorio. El folio de recepción se genera automáticamente.
+      💡 ${esEdicion ? 'Edita los datos del paciente.' : 'Completa los datos en 3 secciones.'} <strong>Todos los campos son obligatorios</strong> salvo los marcados como opcional. El folio de recepción se genera automáticamente.
     </div>
 
     <div class="rec-tabs" style="display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid var(--border);">
@@ -4881,7 +4888,7 @@ async function abrirFormularioRecepcion(desdeConsulta) {
       <button type="button" class="rec-tab-btn" data-tab="datos" onclick="cambiarTabRecepcion('datos')" style="padding:10px 18px;background:none;border:none;border-bottom:3px solid transparent;cursor:pointer;color:var(--text-muted);font-family:inherit;">Datos particulares</button>
     </div>
 
-    <form onsubmit="event.preventDefault();guardarPacienteRecepcion()">
+    <form onsubmit="event.preventDefault();guardarPacienteRecepcion('${idPaciente || ''}')">
       <!-- TAB GENERAL -->
       <div class="rec-tab-content" data-tab="general">
         <div class="form-grid">
@@ -4943,8 +4950,9 @@ async function abrirFormularioRecepcion(desdeConsulta) {
           <div id="rec_poliza_wrap" style="display:none;"><label>Número de póliza</label><input type="text" id="rec_poliza"></div>
           <div><label>Caso / Expediente</label><input type="text" id="rec_caso" placeholder="Número interno"></div>
           <div><label>Habitación asignada</label>
-            <select id="rec_habitacion">${habitacionesOpts}</select>
-            <small style="color:var(--text-muted);font-size:11px;">Si eliges una habitación, se ocupa al instante.</small>
+            ${esEdicion
+              ? `<input type="text" id="rec_habitacion_display" value="${(p.Habitacion_Asignada || '')}" disabled style="background:#f1f5f9;color:#475569;"><small style="color:var(--text-muted);font-size:11px;">Para cambiar de habitación usa el módulo de Hospitalización.</small>`
+              : `<select id="rec_habitacion">${habitacionesOpts}</select><small style="color:var(--text-muted);font-size:11px;">Si eliges una habitación, se ocupa al instante.</small>`}
           </div>
           <div class="full"><label>Procedimiento (motivo de ingreso)</label><input type="text" id="rec_procedimiento" onblur="applyTitleCase(this)"></div>
           <div><label>Fecha de nacimiento</label><input type="date" id="rec_fecha_nac" onchange="calcularEdadDesdeFecha()"></div>
@@ -4990,10 +4998,54 @@ async function abrirFormularioRecepcion(desdeConsulta) {
 
       <div class="form-actions" style="margin-top:16px;">
         <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-        <button type="submit" class="btn btn-primary">Dar de alta</button>
+        <button type="submit" class="btn btn-primary">${esEdicion ? 'Guardar cambios' : 'Dar de alta'}</button>
       </div>
     </form>
   `);
+  if (esEdicion) prefillRecepcion(p);
+}
+
+function prefillRecepcion(p) {
+  const setV = (id, val) => { const el = document.getElementById(id); if (el) el.value = (val == null ? '' : val); };
+  const fechaIn = (v) => v ? String(v).substring(0, 10) : '';
+  setV('rec_nombre', p.Nombre_Completo);
+  setV('rec_contacto1', p.Contacto_1);
+  setV('rec_contacto2', p.Contacto_2);
+  setV('rec_tipo_cliente', p.Tipo_Cliente);
+  setV('rec_vendedor', p.Vendedor_Medico);
+  setV('rec_domicilio', p.Domicilio);
+  setV('rec_calle', p.Calle);
+  setV('rec_num_ext', p.Numero_Exterior);
+  setV('rec_num_int', p.Numero_Interior);
+  setV('rec_colonia', p.Colonia);
+  setV('rec_cp', p.CP);
+  setV('rec_ciudad', p.Ciudad);
+  setV('rec_estado', p.Estado);
+  setV('rec_telefono1', p.Telefono_1 || p.Telefono);
+  setV('rec_telefono2', p.Telefono_2);
+  setV('rec_email', p.Email);
+  setV('rec_fecha_ingreso', fechaIn(p.Fecha_Ingreso));
+  setV('rec_servicio', p.Servicio);
+  setV('rec_caso', p.Caso);
+  setV('rec_procedimiento', p.Procedimiento_Inicial);
+  setV('rec_fecha_nac', fechaIn(p.Fecha_Nacimiento));
+  setV('rec_edad', p.Edad);
+  setV('rec_genero', p.Genero);
+  setV('rec_estado_civil', p.Estado_Civil);
+  setV('rec_religion', p.Religion);
+  setV('rec_conyuge', p.Conyuge);
+  setV('rec_responsable', p.Responsable);
+  setV('rec_telefono_resp', p.Telefono_Responsable);
+  setV('rec_curp', p.CURP);
+  setV('rec_rfc', p.RFC);
+  setV('rec_alergias', p.Alergias);
+  setV('rec_medico_tratante', p.Medico_Tratante);
+  setV('rec_especialidad', p.Especialidad);
+  setV('rec_observaciones', p.Observaciones);
+  setV('rec_aseguradora', p.ID_Aseguradora);
+  setV('rec_aseguradora_nombre', p.Nombre_Aseguradora);
+  setV('rec_poliza', p.Numero_Poliza);
+  if (typeof toggleAseguradora === 'function') toggleAseguradora();
 }
 
 function cambiarTabRecepcion(tab) {
@@ -5041,12 +5093,50 @@ function calcularEdadDesdeFecha() {
   }
 }
 
-async function guardarPacienteRecepcion() {
-  const nombre = document.getElementById('rec_nombre').value.trim();
-  if (!nombre) {
-    showToast('El nombre completo es obligatorio', 'error');
-    cambiarTabRecepcion('general');
-    return;
+async function guardarPacienteRecepcion(idPaciente) {
+  const esEdicion = !!idPaciente;
+  const valEl = (id) => { const el = document.getElementById(id); return el ? String(el.value).trim() : ''; };
+
+  const nombre = valEl('rec_nombre');
+  if (!nombre) { showToast('El nombre completo es obligatorio', 'error'); cambiarTabRecepcion('general'); return; }
+
+  // En el ALTA todos los campos son obligatorios (salvo los marcados opcional).
+  if (!esEdicion) {
+    const requeridos = [
+      { id: 'rec_contacto1', label: 'Contacto 1', tab: 'general' },
+      { id: 'rec_tipo_cliente', label: 'Tipo de cliente', tab: 'general' },
+      { id: 'rec_telefono1', label: 'Teléfono 1', tab: 'direccion' },
+      { id: 'rec_fecha_ingreso', label: 'Fecha de ingreso', tab: 'datos' },
+      { id: 'rec_servicio', label: 'Servicio', tab: 'datos' },
+      { id: 'rec_caso', label: 'Caso / Expediente', tab: 'datos' },
+      { id: 'rec_procedimiento', label: 'Procedimiento (motivo de ingreso)', tab: 'datos' },
+      { id: 'rec_fecha_nac', label: 'Fecha de nacimiento', tab: 'datos' },
+      { id: 'rec_edad', label: 'Edad', tab: 'datos' },
+      { id: 'rec_genero', label: 'Género', tab: 'datos' },
+      { id: 'rec_estado_civil', label: 'Estado civil', tab: 'datos' },
+      { id: 'rec_responsable', label: 'Responsable / Familiar a cargo', tab: 'datos' },
+      { id: 'rec_telefono_resp', label: 'Teléfono del responsable', tab: 'datos' },
+      { id: 'rec_curp', label: 'CURP', tab: 'datos' },
+      { id: 'rec_alergias', label: 'Alergias', tab: 'datos' },
+      { id: 'rec_medico_tratante', label: 'Médico tratante', tab: 'datos' },
+      { id: 'rec_especialidad', label: 'Especialidad', tab: 'datos' }
+    ];
+    for (const r of requeridos) {
+      if (!valEl(r.id)) { showToast('Falta capturar: ' + r.label, 'error'); cambiarTabRecepcion(r.tab); const el = document.getElementById(r.id); if (el) el.focus(); return; }
+    }
+    // Dirección: al menos domicilio (texto libre) o calle
+    if (!valEl('rec_domicilio') && !valEl('rec_calle')) {
+      showToast('Captura el domicilio o la calle', 'error'); cambiarTabRecepcion('direccion'); return;
+    }
+    // Condicional: aseguradora + póliza si el servicio es ASEGURADORA
+    if (valEl('rec_servicio') === 'ASEGURADORA') {
+      if (!valEl('rec_aseguradora')) { showToast('Selecciona la aseguradora', 'error'); cambiarTabRecepcion('datos'); return; }
+      if (!valEl('rec_poliza')) { showToast('Captura el número de póliza', 'error'); cambiarTabRecepcion('datos'); return; }
+    }
+    // Condicional: cónyuge si está casado(a)
+    if (/casado/i.test(valEl('rec_estado_civil')) && !valEl('rec_conyuge')) {
+      showToast('Captura el cónyuge', 'error'); cambiarTabRecepcion('datos'); return;
+    }
   }
 
   const data = {
@@ -5094,6 +5184,23 @@ async function guardarPacienteRecepcion() {
     observaciones: document.getElementById('rec_observaciones').value.trim(),
     capturadoPor: currentUser.nombre
   };
+
+  if (esEdicion) {
+    data.idPaciente = idPaciente;
+    data.actualizadoPor = currentUser.nombre;
+    delete data.habitacionAsignada;   // la habitación se gestiona en Hospitalización
+    delete data.idHabitacion;
+    const respE = await apiPost('actualizarPaciente', data);
+    if (respE.ok) {
+      showToast('Paciente actualizado');
+      closeModal();
+      await loadCatalogos();
+      if (document.getElementById('pacientesLista')) { loadPacientes(); } else { loadRecepcion(); }
+    } else {
+      showToast('Error: ' + respE.error, 'error');
+    }
+    return;
+  }
 
   const resp = await apiPost('altaPaciente', data);
   if (resp.ok) {
@@ -5262,57 +5369,8 @@ function openModalPacienteNuevo() {
 }
 
 async function openModalEditarPaciente(idPaciente, folioCirugiaOrigen) {
-  let p = null;
-  if (idPaciente) {
-    // Cargar datos del paciente
-    const resp = await apiGet('getPaciente', { idPaciente });
-    if (!resp.ok) {
-      showToast('Error cargando paciente: ' + resp.error, 'error');
-      return;
-    }
-    p = resp.data;
-  }
-
-  const titulo = p ? `Editar paciente · ${p.Nombre_Completo}` : 'Nuevo paciente';
-  const v = (campo) => p ? (p[campo] || '') : '';
-
-  openModal(titulo, `
-    <form onsubmit="event.preventDefault();guardarPaciente('${idPaciente || ''}', '${folioCirugiaOrigen || ''}')">
-      <div style="background:var(--teal-light);padding:12px;border-radius:8px;margin-bottom:16px;font-size:12px;color:var(--navy);">
-        💡 <strong>Tip:</strong> Si el paciente entró con nombre incompleto al programar la cirugía, aquí puedes corregirlo. El nombre se actualizará en todas las cirugías y hospitalizaciones activas.
-      </div>
-
-      <div class="form-grid">
-        <div class="full"><label>Nombre completo *</label><input type="text" id="ep_nombre" value="${v('Nombre_Completo')}" required placeholder="Como aparece en su identificación" onblur="applyTitleCase(this)"></div>
-        <div><label>Edad</label><input type="number" id="ep_edad" min="0" max="120" value="${v('Edad')}" placeholder="años"></div>
-        <div><label>Teléfono</label><input type="text" id="ep_telefono" value="${v('Telefono')}" placeholder="10 dígitos"></div>
-        <div class="full"><label>CURP</label><input type="text" id="ep_curp" value="${v('CURP')}" maxlength="18" placeholder="18 caracteres" style="text-transform:uppercase;"></div>
-      </div>
-
-      <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px;">
-        <strong style="color:var(--navy);font-size:13px;">Dirección</strong>
-        <div class="form-grid" style="margin-top:8px;">
-          <div class="full"><label>Calle</label><input type="text" id="ep_calle" value="${v('Calle')}" placeholder="Opcional" onblur="applyTitleCase(this)"></div>
-          <div><label>Número exterior</label><input type="text" id="ep_num_ext" value="${v('Numero_Exterior')}" placeholder="Opcional"></div>
-          <div><label>Número interior</label><input type="text" id="ep_num_int" value="${v('Numero_Interior')}" placeholder="Opcional"></div>
-          <div><label>Colonia</label><input type="text" id="ep_colonia" value="${v('Colonia')}" placeholder="Opcional" onblur="applyTitleCase(this)"></div>
-          <div><label>CP</label><input type="text" id="ep_cp" value="${v('CP')}" maxlength="5" placeholder="5 dígitos"></div>
-          <div><label>Ciudad</label><input type="text" id="ep_ciudad" value="${v('Ciudad')}" placeholder="Opcional" onblur="applyTitleCase(this)"></div>
-          <div class="full"><label>Estado</label><input type="text" id="ep_estado" value="${v('Estado')}" placeholder="Opcional" onblur="applyTitleCase(this)"></div>
-        </div>
-      </div>
-
-      <div style="margin-top:12px;">
-        <label>Observaciones</label>
-        <textarea id="ep_obs" placeholder="Notas adicionales sobre el paciente">${v('Observaciones')}</textarea>
-      </div>
-
-      <div class="form-actions" style="margin-top:16px;">
-        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-        <button type="submit" class="btn btn-primary">${p ? 'Guardar cambios' : 'Crear paciente'}</button>
-      </div>
-    </form>
-  `);
+  // La edición ahora reutiliza el mismo formulario completo del alta, ya prellenado.
+  return abrirFormularioRecepcion(false, idPaciente);
 }
 
 async function guardarPaciente(idPaciente, folioCirugiaOrigen) {
