@@ -999,7 +999,7 @@ textarea { resize: vertical; min-height: 70px; }
           <h1>Consultas</h1>
           <div class="subtitle">Registro de consultas médicas</div>
         </div>
-        <button class="btn btn-accent" data-accion="registrar_consulta" onclick="openModalConsulta('CONSULTA')">+ Nueva consulta</button>
+        <button class="btn btn-accent" data-accion="registrar_consulta" onclick="openModalNuevaConsulta()">+ Nueva consulta</button>
       </div>
       <div class="toolbar">
         <div class="toolbar-row">
@@ -1587,6 +1587,7 @@ const PERMISOS = {
     'nueva_entrada':        ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'], // A10
     'alta_medicamento':     ['ADMIN','JEFE_ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],// A11
     'alta_medico':          ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'], // A12
+    'alta_medico_consulta': ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
     'alta_tipo_cirugia':    ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],          // A13
     'editar_cirugia':       ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO'], // A14
     'cancelar_cirugia':     ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],          // A15
@@ -3912,6 +3913,402 @@ async function guardarConsulta(tipo) {
   } else {
     showToast('Error: ' + resp.error, 'error');
   }
+}
+
+// ============================================================
+// NUEVA CONSULTA — alta ligera dedicada + consentimiento informado
+// Crea/usa un paciente con Servicio='CONSULTA EXTERNA', registra la
+// consulta y, opcionalmente, imprime el consentimiento (Consulta Externa).
+// No toca el backend: reutiliza altaPaciente + registrarConsulta.
+// ============================================================
+
+// Texto oficial del formato (Sección para Consulta Externa).
+const CONSENT_PARRAFOS_CONSULTA = [
+  'Declaro por derecho propio, en forma voluntaria, libre y sin presión alguna; solicitar consulta médica para mí o para el paciente al cual represento, al personal Médico de la Clínica Estar Bien Salud Accesible.',
+  'Estoy consciente de que, en la consulta, el médico explora la preocupación, malestar, dolor, sufrimiento o daño en la persona; haciendo uso de sus conocimientos, experiencia, sensibilidad, intuición y conciencia para brindar un diagnóstico y dar tratamiento.',
+  'En caso de que así se requiera por indicación médica, autorizo al personal de enfermería para que me aplique el medicamento indicado en la receta que adjunto y que puede incluir inyecciones. Reconozco que puedo presentar reacciones secundarias propias del medicamento, de la cual me hago responsable, sin implicaciones para la institución.'
+];
+
+const MESES_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+function fechaLargaES(iso) {
+  if (!iso) return '';
+  const p = String(iso).substring(0, 10).split('-');
+  if (p.length < 3) return iso;
+  const d = parseInt(p[2], 10), m = parseInt(p[1], 10), a = p[0];
+  return d + ' de ' + (MESES_ES[m - 1] || '') + ' de ' + a;
+}
+
+function calcEdadDesdeISO(iso) {
+  if (!iso) return '';
+  const f = new Date(iso);
+  if (isNaN(f.getTime())) return '';
+  const hoy = new Date();
+  let e = hoy.getFullYear() - f.getFullYear();
+  const mm = hoy.getMonth() - f.getMonth();
+  if (mm < 0 || (mm === 0 && hoy.getDate() < f.getDate())) e--;
+  return (e >= 0 && e < 130) ? e : '';
+}
+
+function openModalNuevaConsulta() {
+  const medicosOpts = (catalogos.medicosConsulta || []).map(m =>
+    `<option value="${m.ID_MedicoConsulta}" data-nombre="${(m.Nombre_Completo || '').replace(/"/g, '&quot;')}" data-titulo="${(m.Titulo || '').replace(/"/g, '&quot;')}" data-cedula="${m.Cedula_Profesional || ''}">${m.Nombre_Completo}${m.Titulo ? ' (' + m.Titulo + ')' : ''}</option>`
+  ).join('');
+
+  const puedeAltaLigera = puede('nuevo_paciente_recep');
+  const puedeCrearMedico = puede('alta_medico_consulta');
+
+  openModal('Nueva consulta', `
+    <form onsubmit="event.preventDefault();guardarNuevaConsulta(false)">
+      <!-- PACIENTE -->
+      <div class="form-grid">
+        <div class="full">
+          <label>Paciente *</label>
+          <input type="hidden" id="nc_id_paciente">
+          <input type="hidden" id="nc_nombre_paciente">
+          <input type="hidden" id="nc_fnac_paciente">
+          <input type="search" id="nc_busqueda" autocomplete="off" placeholder="Buscar por nombre, CURP o folio..." oninput="buscarPacienteConsulta()">
+          <div id="nc_resultados" style="display:none;border:1px solid var(--border);border-radius:6px;margin-top:4px;max-height:220px;overflow:auto;background:white;"></div>
+          <div id="nc_paciente_sel" style="display:none;margin-top:8px;padding:8px 12px;background:var(--teal-light);border-radius:6px;font-size:13px;"></div>
+          ${puedeAltaLigera
+            ? '<button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="toggleAltaLigera()">+ Registrar paciente nuevo (ligero)</button>'
+            : '<small style="color:var(--text-muted);font-size:11px;">Si el paciente no existe, Recepción debe darlo de alta primero.</small>'}
+        </div>
+      </div>
+
+      <!-- ALTA LIGERA (oculto por defecto) -->
+      <div id="nc_nuevo_block" style="display:none;border:1px dashed var(--teal);border-radius:8px;padding:12px;margin-top:10px;">
+        <div style="font-size:12px;color:var(--navy);font-weight:600;margin-bottom:8px;">Alta ligera de consulta — solo lo necesario</div>
+        <div class="form-grid">
+          <div class="full"><label>Nombre completo *</label><input type="text" id="nc_nuevo_nombre" placeholder="Nombre del paciente"></div>
+          <div><label>Fecha de nacimiento</label><input type="date" id="nc_nuevo_fnac" oninput="document.getElementById('nc_nuevo_edad').value=calcEdadDesdeISO(this.value)"></div>
+          <div><label>Edad</label><input type="number" id="nc_nuevo_edad" min="0" max="130" placeholder="auto"></div>
+          <div><label>Género</label><select id="nc_nuevo_genero"><option value="">—</option><option value="Femenino">Femenino</option><option value="Masculino">Masculino</option><option value="Otro">Otro</option></select></div>
+          <div><label>Teléfono</label><input type="tel" id="nc_nuevo_tel" placeholder="Opcional"></div>
+          <div class="full"><label>Alergias</label><input type="text" id="nc_nuevo_alergias" placeholder="Opcional"></div>
+        </div>
+      </div>
+
+      <!-- DATOS DE LA CONSULTA -->
+      <div class="form-grid" style="margin-top:10px;">
+        <div><label>Fecha</label><input type="date" id="nc_fecha" value="${todayISO()}" required></div>
+        <div><label>Hora</label><input type="time" id="nc_hora" value="${nowTime()}"></div>
+        <div class="full"><label>Médico de consulta que atiende</label>
+          <select id="nc_medico"><option value="">— Seleccionar médico —</option>${medicosOpts}</select>
+          ${puedeCrearMedico
+            ? '<button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="toggleNuevoMedicoConsulta(true)">+ Nuevo médico de consulta</button>'
+            : ''}
+          <div id="nc_med_nuevo_block" style="display:none;border:1px dashed var(--teal);border-radius:8px;padding:12px;margin-top:8px;">
+            <div style="font-size:12px;color:var(--navy);font-weight:600;margin-bottom:8px;">Nuevo médico de consulta</div>
+            <div class="form-grid">
+              <div class="full"><label>Nombre completo *</label><input type="text" id="nc_med_nuevo_nombre" placeholder="Dr(a). Nombre Apellido"></div>
+              <div><label>Título</label><input type="text" id="nc_med_nuevo_titulo" placeholder="Médico General, Especialista..."></div>
+              <div><label>Cédula profesional</label><input type="text" id="nc_med_nuevo_cedula" placeholder="Cédula"></div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:8px;">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="toggleNuevoMedicoConsulta(false)">Cancelar</button>
+              <button type="button" class="btn btn-accent btn-sm" onclick="guardarMedicoConsultaInline()">Guardar médico</button>
+            </div>
+          </div>
+        </div>
+        <div class="full"><label>Motivo de la consulta</label><textarea id="nc_motivo" placeholder="Describe el motivo"></textarea></div>
+        <div class="full"><label>Indicaciones médicas</label><textarea id="nc_indicaciones" placeholder="Indicaciones, tratamiento, recomendaciones"></textarea></div>
+      </div>
+
+      <!-- DATOS DEL CONSENTIMIENTO -->
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+        <div style="font-size:12px;color:var(--navy);font-weight:600;margin-bottom:8px;">Consentimiento informado (consulta externa)</div>
+        <div class="form-grid">
+          <div><label>Quién suscribe</label><input type="text" id="nc_suscribe" placeholder="El propio paciente"></div>
+          <div><label>Parentesco</label><input type="text" id="nc_parentesco" placeholder="El propio paciente"></div>
+          <div><label>Talla (m)</label><input type="text" id="nc_talla" placeholder="Ej: 1.68"></div>
+          <div><label>Peso (kg)</label><input type="text" id="nc_peso" placeholder="Ej: 99.2"></div>
+          <div class="full"><label>Enfermera(o)</label><input type="text" id="nc_enfermera" placeholder="Opcional"></div>
+        </div>
+      </div>
+
+      <div class="form-actions" style="margin-top:16px;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar consulta</button>
+        <button type="button" class="btn btn-accent" onclick="guardarNuevaConsulta(true)">Guardar e imprimir consentimiento</button>
+      </div>
+    </form>
+  `);
+}
+
+function buscarPacienteConsulta() {
+  const q = (document.getElementById('nc_busqueda').value || '').trim().toLowerCase();
+  const cont = document.getElementById('nc_resultados');
+  if (q.length < 2) { cont.style.display = 'none'; return; }
+  const resultados = (catalogos.pacientes || []).filter(p => {
+    if (p.Estatus === 'Suspendido') return false;
+    const text = ((p.Nombre_Completo || '') + ' ' + (p.CURP || '') + ' ' + (p.Folio_Recepcion || '') + ' ' + (p.ID_Paciente || '')).toLowerCase();
+    return text.includes(q);
+  }).slice(0, 15);
+
+  if (resultados.length === 0) {
+    cont.innerHTML = '<div style="padding:12px;font-size:13px;color:var(--text-muted);text-align:center;">No hay pacientes con ese nombre. Usa "Registrar paciente nuevo (ligero)".</div>';
+    cont.style.display = 'block';
+    return;
+  }
+
+  cont.innerHTML = resultados.map(p => {
+    const nom = (p.Nombre_Completo || '').replace(/'/g, '\\\'');
+    const fn = p.Fecha_Nacimiento ? String(p.Fecha_Nacimiento).substring(0, 10) : '';
+    const al = (p.Alergias || '').replace(/'/g, '\\\'');
+    return `<div onclick="seleccionarPacienteConsulta('${p.ID_Paciente}','${nom}',${p.Edad || 0},'${fn}','${al}')"
+        style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px;"
+        onmouseover="this.style.background='var(--teal-light)'" onmouseout="this.style.background='white'">
+        <div style="font-weight:600;color:var(--navy);">${p.Nombre_Completo}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${p.Folio_Recepcion ? p.Folio_Recepcion + ' · ' : ''}${p.Edad ? p.Edad + ' años' : ''}${p.Genero ? ' · ' + p.Genero : ''}${p.Servicio ? ' · ' + p.Servicio : ''}</div>
+        ${p.Alergias ? '<div style="font-size:11px;color:var(--danger);margin-top:2px;">⚠ Alergias: ' + p.Alergias + '</div>' : ''}
+      </div>`;
+  }).join('');
+  cont.style.display = 'block';
+}
+
+function seleccionarPacienteConsulta(id, nombre, edad, fnac, alergias) {
+  document.getElementById('nc_id_paciente').value = id;
+  document.getElementById('nc_nombre_paciente').value = nombre;
+  document.getElementById('nc_fnac_paciente').value = fnac || '';
+  document.getElementById('nc_busqueda').value = '';
+  document.getElementById('nc_resultados').style.display = 'none';
+  const blk = document.getElementById('nc_nuevo_block');
+  if (blk) blk.style.display = 'none';
+
+  let html = `<strong style="color:var(--navy);">${nombre}</strong>`;
+  if (edad) html += ` <span style="color:var(--text-muted);">(${edad} años)</span>`;
+  if (alergias) html += `<div style="margin-top:6px;padding:6px 8px;background:#FEE2E2;border-radius:4px;color:#991B1B;font-size:11px;"><strong>⚠ Alergias:</strong> ${alergias}</div>`;
+  html += ` <a href="#" onclick="event.preventDefault();limpiarPacienteConsulta()" style="color:var(--teal);font-size:11px;margin-left:6px;">cambiar</a>`;
+  const sel = document.getElementById('nc_paciente_sel');
+  sel.innerHTML = html;
+  sel.style.display = 'block';
+}
+
+function limpiarPacienteConsulta() {
+  document.getElementById('nc_id_paciente').value = '';
+  document.getElementById('nc_nombre_paciente').value = '';
+  document.getElementById('nc_fnac_paciente').value = '';
+  document.getElementById('nc_paciente_sel').style.display = 'none';
+  const b = document.getElementById('nc_busqueda');
+  if (b) b.focus();
+}
+
+function toggleAltaLigera() {
+  const blk = document.getElementById('nc_nuevo_block');
+  if (!blk) return;
+  const abrir = blk.style.display === 'none';
+  blk.style.display = abrir ? 'block' : 'none';
+  if (abrir) {
+    limpiarPacienteConsulta();
+    const n = document.getElementById('nc_nuevo_nombre');
+    if (n) n.focus();
+  }
+}
+
+async function guardarNuevaConsulta(imprimir) {
+  // 1) Resolver paciente: existente seleccionado o alta ligera nueva
+  let idPaciente = document.getElementById('nc_id_paciente').value;
+  let nombrePaciente = document.getElementById('nc_nombre_paciente').value;
+  let fnacPaciente = document.getElementById('nc_fnac_paciente').value;
+
+  const blk = document.getElementById('nc_nuevo_block');
+  const usandoNuevo = blk && blk.style.display !== 'none';
+
+  if (!idPaciente && usandoNuevo) {
+    const nombre = (document.getElementById('nc_nuevo_nombre').value || '').trim();
+    if (!nombre) { showToast('Captura el nombre del paciente nuevo', 'error'); return; }
+    const fnac = document.getElementById('nc_nuevo_fnac').value;
+    const edad = document.getElementById('nc_nuevo_edad').value || calcEdadDesdeISO(fnac);
+    const alta = await apiPost('altaPaciente', {
+      contexto: 'recepcion',
+      servicio: 'CONSULTA EXTERNA',
+      nombre: nombre,
+      fechaNacimiento: fnac,
+      edad: edad,
+      genero: document.getElementById('nc_nuevo_genero').value,
+      telefono1: document.getElementById('nc_nuevo_tel').value.trim(),
+      alergias: document.getElementById('nc_nuevo_alergias').value.trim(),
+      capturadoPor: currentUser.nombre
+    });
+    if (!alta.ok) { showToast('Error al dar de alta: ' + (alta.error || ''), 'error'); return; }
+    idPaciente = alta.idPaciente;
+    nombrePaciente = nombre;
+    fnacPaciente = fnac;
+    await loadCatalogos(); // refrescar el catálogo de pacientes en memoria
+  }
+
+  if (!idPaciente) { showToast('Selecciona un paciente o registra uno nuevo', 'error'); return; }
+
+  // 2) Registrar la consulta (reutiliza el backend existente)
+  const selMed = document.getElementById('nc_medico');
+  const idMedico = selMed.value;
+  const optMed = idMedico ? selMed.options[selMed.selectedIndex] : null;
+  const nombreMedico = optMed ? (optMed.dataset.nombre || '') : '';
+  const cedulaMedico = optMed ? (optMed.dataset.cedula || '') : '';
+  const tituloMedico = optMed ? (optMed.dataset.titulo || '') : '';
+
+  const fecha = document.getElementById('nc_fecha').value;
+  const hora = document.getElementById('nc_hora').value;
+
+  const resp = await apiPost('registrarConsulta', {
+    tipo: 'CONSULTA',
+    fecha: fecha,
+    hora: hora,
+    idPaciente: idPaciente,
+    nombrePaciente: nombrePaciente,
+    idMedico: idMedico,
+    nombreMedico: nombreMedico,
+    motivo: document.getElementById('nc_motivo').value,
+    indicaciones: document.getElementById('nc_indicaciones').value,
+    capturadoPor: currentUser.nombre
+  });
+
+  if (!resp.ok) { showToast('Error: ' + resp.error, 'error'); return; }
+  showToast('Consulta registrada: ' + resp.folio);
+
+  // 3) Reunir datos del consentimiento ANTES de cerrar el modal
+  const datosConsent = {
+    folio: resp.folio,
+    paciente: nombrePaciente,
+    fechaNacimiento: fnacPaciente,
+    suscribe: (document.getElementById('nc_suscribe').value || '').trim() || nombrePaciente,
+    parentesco: (document.getElementById('nc_parentesco').value || '').trim() || 'El propio paciente',
+    fecha: fecha,
+    hora: hora,
+    medicoNombre: nombreMedico,
+    medicoCedula: cedulaMedico,
+    medicoTitulo: tituloMedico,
+    talla: (document.getElementById('nc_talla').value || '').trim(),
+    peso: (document.getElementById('nc_peso').value || '').trim(),
+    enfermera: (document.getElementById('nc_enfermera').value || '').trim()
+  };
+
+  closeModal();
+  loadConsultas();
+
+  if (imprimir) imprimirConsentimientoConsulta(datosConsent);
+}
+
+function imprimirConsentimientoConsulta(d) {
+  const nombreClinica = (catalogos.config && catalogos.config.nombreClinica) || 'CLÍNICA ESTAR BIEN';
+  const fechaTxt = fechaLargaES(d.fecha);
+  const horaTxt = d.hora || '';
+  const fnacTxt = d.fechaNacimiento ? fechaLargaES(d.fechaNacimiento) : '';
+  const parrafos = CONSENT_PARRAFOS_CONSULTA.map(p => `<p>${p}</p>`).join('');
+  const medicoLinea = (d.medicoNombre || '') + (d.medicoTitulo ? ' — ' + d.medicoTitulo : '');
+  const cedulaLinea = d.medicoCedula ? 'Céd. Prof. ' + d.medicoCedula : '';
+  const antropo = [];
+  if (d.talla) antropo.push(d.talla + ' m');
+  if (d.peso) antropo.push(d.peso + ' kg');
+  const antropoTxt = antropo.join(' &nbsp; ');
+
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Consentimiento ${d.folio || ''}</title>
+  <style>
+    @page { size: Letter portrait; margin: 14mm; }
+    * { box-sizing: border-box; }
+    body { font-family: Georgia, 'Times New Roman', serif; color:#111; margin:0; font-size:12px; line-height:1.45; }
+    .top { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #00838F; padding-bottom:8px; margin-bottom:12px; }
+    .logo { max-width:230px; max-height:60px; display:block; }
+    .tipo { font-size:11px; font-weight:bold; letter-spacing:.03em; color:#0F1923; margin-top:6px; }
+    .antropo { text-align:right; font-size:12px; color:#111; white-space:nowrap; }
+    .linea { margin:7px 0; }
+    .fill { border-bottom:1px solid #555; padding:0 6px; }
+    .sec { text-align:center; font-weight:bold; font-size:12px; margin:14px 0 6px; letter-spacing:.03em; }
+    p { margin:7px 0; text-align:justify; }
+    .firmas { display:flex; justify-content:space-between; gap:28px; margin-top:46px; }
+    .firma { flex:1; text-align:center; }
+    .firma .nom { min-height:16px; font-size:12px; }
+    .firma .line { border-top:1px solid #333; margin-top:2px; padding-top:4px; font-size:10px; color:#333; }
+    .firma-enf { width:60%; margin:42px auto 0; text-align:center; }
+    .firma-enf .nom { min-height:16px; font-size:12px; }
+    .firma-enf .line { border-top:1px solid #333; padding-top:4px; font-size:10px; color:#333; }
+    .noprint { text-align:center; margin-top:18px; }
+    .hint { font-size:11px; color:#00838F; background:#E0F7FA; border:1px solid #B2EBF2; border-radius:6px; padding:6px 10px; margin-bottom:10px; }
+    [contenteditable] { outline:none; }
+    @media screen { [contenteditable]:hover, [contenteditable]:focus { background:#FFFDE7; } }
+    @media print { .noprint, .hint { display:none; } [contenteditable] { background:transparent !important; } }
+  </style></head><body>
+    <div class="hint">Puedes editar cualquier dato (nombre del paciente, médico, etc.) antes de imprimir. La firma se realiza a mano.</div>
+    <div class="top">
+      <div>
+        <img class="logo" src="${CEB_LOGO_DATAURI}" alt="${nombreClinica}">
+        <div class="tipo">DOCUMENTO DE CONSENTIMIENTO INFORMADO — SERVICIO DE CONSULTA EXTERNA</div>
+      </div>
+      <div class="antropo">${antropoTxt}</div>
+    </div>
+
+    <div class="linea">CHIHUAHUA, CHIH. a <span class="fill" contenteditable="true">${fechaTxt}</span> a las <span class="fill" contenteditable="true">${horaTxt}</span> Horas</div>
+    <div class="linea">El que suscribe Sr(a): <span class="fill" contenteditable="true">${d.suscribe || ''}</span> con parentesco de <span class="fill" contenteditable="true">${d.parentesco || ''}</span></div>
+    <div class="linea">responsable del paciente <span class="fill" contenteditable="true">${d.paciente || ''}</span> con fecha de nacimiento: <span class="fill" contenteditable="true">${fnacTxt}</span></div>
+
+    <div class="sec">SECCIÓN PARA CONSULTA EXTERNA</div>
+    ${parrafos}
+
+    <div class="firmas">
+      <div class="firma">
+        <div class="nom" contenteditable="true">${d.suscribe || ''}</div>
+        <div class="line">Nombre completo y firma del paciente, familiar o representante legal</div>
+      </div>
+      <div class="firma">
+        <div class="nom" contenteditable="true">${medicoLinea}${cedulaLinea ? '<br>' + cedulaLinea : ''}</div>
+        <div class="line">Nombre completo y firma del Médico de Consulta y Cédula profesional</div>
+      </div>
+    </div>
+    <div class="firma-enf">
+      <div class="nom" contenteditable="true">${d.enfermera || ''}</div>
+      <div class="line">Nombre completo y firma de la enfermera(o)</div>
+    </div>
+
+    <div class="noprint"><button onclick="window.print()" style="padding:8px 18px;font-size:14px;cursor:pointer;">🖨 Imprimir</button></div>
+    <script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script>
+  </body></html>`;
+
+  const w = window.open('', '_blank');
+  if (!w) { showToast('Permite las ventanas emergentes para imprimir', 'warn'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
+function toggleNuevoMedicoConsulta(abrir) {
+  const blk = document.getElementById('nc_med_nuevo_block');
+  if (!blk) return;
+  blk.style.display = abrir ? 'block' : 'none';
+  if (abrir) {
+    const n = document.getElementById('nc_med_nuevo_nombre');
+    if (n) n.focus();
+  } else {
+    ['nc_med_nuevo_nombre', 'nc_med_nuevo_titulo', 'nc_med_nuevo_cedula'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+  }
+}
+
+async function guardarMedicoConsultaInline() {
+  const nombre = (document.getElementById('nc_med_nuevo_nombre').value || '').trim();
+  if (!nombre) { showToast('Captura el nombre del médico', 'error'); return; }
+  const titulo = (document.getElementById('nc_med_nuevo_titulo').value || '').trim();
+  const cedula = (document.getElementById('nc_med_nuevo_cedula').value || '').trim();
+  const resp = await apiPost('altaMedicoConsulta', {
+    nombreCompleto: nombre,
+    titulo: titulo,
+    cedulaProfesional: cedula,
+    capturadoPor: currentUser.nombre
+  });
+  if (!resp.ok) { showToast('Error: ' + (resp.error || ''), 'error'); return; }
+  // Agregar la opción al selector y seleccionarla sin recargar el modal
+  const sel = document.getElementById('nc_medico');
+  const opt = document.createElement('option');
+  opt.value = resp.idMedicoConsulta;
+  opt.dataset.nombre = resp.nombreCompleto;
+  opt.dataset.titulo = resp.titulo || '';
+  opt.dataset.cedula = resp.cedulaProfesional || '';
+  opt.textContent = resp.nombreCompleto + (resp.titulo ? ' (' + resp.titulo + ')' : '');
+  sel.appendChild(opt);
+  sel.value = resp.idMedicoConsulta;
+  toggleNuevoMedicoConsulta(false);
+  loadCatalogos(); // refresca el catálogo en memoria para próximas consultas
+  showToast('Médico de consulta agregado: ' + resp.nombreCompleto);
 }
 
 // MODAL: ENTRADA INVENTARIO
