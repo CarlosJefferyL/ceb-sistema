@@ -5376,7 +5376,13 @@ async function abrirFormularioRecepcion(desdeConsulta, idPaciente) {
           <div class="full"><label>Cónyuge</label><input type="text" id="rec_conyuge" onblur="applyTitleCase(this)" placeholder="Opcional"></div>
           <div class="full"><label>Responsable / Familiar a cargo</label><input type="text" id="rec_responsable" onblur="applyTitleCase(this)" placeholder="Nombre"></div>
           <div><label>Teléfono del responsable</label><input type="text" id="rec_telefono_resp"></div>
-          <div><label>CURP</label><input type="text" id="rec_curp" maxlength="18" style="text-transform:uppercase;" placeholder="18 caracteres"></div>
+          <div class="full" style="background:#ECFEFF;border:1px solid var(--teal,#00BCD4);border-radius:6px;padding:8px 10px;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;color:var(--navy,#0F1923);">
+              <input type="checkbox" id="rec_extranjero" onchange="toggleExtranjero()" style="width:auto;margin:0;">
+              🌐 Paciente extranjero (sin CURP)
+            </label>
+          </div>
+          <div id="rec_curp_wrap"><label>CURP</label><input type="text" id="rec_curp" maxlength="18" style="text-transform:uppercase;" placeholder="18 caracteres"></div>
           <div><label>RFC</label><input type="text" id="rec_rfc" maxlength="13" style="text-transform:uppercase;" placeholder="Opcional"></div>
           <div class="full" style="background:#FEE2E2;padding:10px;border-radius:6px;border-left:4px solid var(--danger);">
             <label style="color:#991B1B;">⚠ Alergias (importante clínicamente)</label>
@@ -5434,6 +5440,10 @@ function prefillRecepcion(p) {
   setV('rec_responsable', p.Responsable);
   setV('rec_telefono_resp', p.Telefono_Responsable);
   setV('rec_curp', p.CURP);
+  // Bandera de paciente extranjero (tolera SI/Sí/si/TRUE/1/X)
+  const _esExt = /^(si|sí|true|1|x)$/i.test(String(p.Es_Extranjero || '').trim());
+  const _chkExt = document.getElementById('rec_extranjero');
+  if (_chkExt) { _chkExt.checked = _esExt; if (typeof toggleExtranjero === 'function') toggleExtranjero(); }
   setV('rec_rfc', p.RFC);
   setV('rec_alergias', p.Alergias);
   setV('rec_medico_tratante', p.Medico_Tratante);
@@ -5490,6 +5500,24 @@ function calcularEdadDesdeFecha() {
   }
 }
 
+function toggleExtranjero() {
+  const chk = document.getElementById('rec_extranjero');
+  const curp = document.getElementById('rec_curp');
+  if (!chk || !curp) return;
+  if (chk.checked) {
+    curp.value = '';
+    curp.disabled = true;
+    curp.placeholder = 'No aplica (extranjero)';
+    curp.style.background = '#f1f5f9';
+    curp.style.color = '#94a3b8';
+  } else {
+    curp.disabled = false;
+    curp.placeholder = '18 caracteres';
+    curp.style.background = '';
+    curp.style.color = '';
+  }
+}
+
 async function guardarPacienteRecepcion(idPaciente) {
   const esEdicion = !!idPaciente;
   const valEl = (id) => { const el = document.getElementById(id); return el ? String(el.value).trim() : ''; };
@@ -5513,13 +5541,17 @@ async function guardarPacienteRecepcion(idPaciente) {
       { id: 'rec_estado_civil', label: 'Estado civil', tab: 'datos' },
       { id: 'rec_responsable', label: 'Responsable / Familiar a cargo', tab: 'datos' },
       { id: 'rec_telefono_resp', label: 'Teléfono del responsable', tab: 'datos' },
-      { id: 'rec_curp', label: 'CURP', tab: 'datos' },
       { id: 'rec_alergias', label: 'Alergias', tab: 'datos' },
       { id: 'rec_medico_tratante', label: 'Médico tratante', tab: 'datos' },
       { id: 'rec_especialidad', label: 'Especialidad', tab: 'datos' }
     ];
     for (const r of requeridos) {
       if (!valEl(r.id)) { showToast('Falta capturar: ' + r.label, 'error'); cambiarTabRecepcion(r.tab); const el = document.getElementById(r.id); if (el) el.focus(); return; }
+    }
+    // CURP obligatoria salvo paciente extranjero
+    const esExtranjeroAlta = !!(document.getElementById('rec_extranjero') && document.getElementById('rec_extranjero').checked);
+    if (!esExtranjeroAlta && !valEl('rec_curp')) {
+      showToast('Falta capturar: CURP (o marca "Paciente extranjero")', 'error'); cambiarTabRecepcion('datos'); const el = document.getElementById('rec_curp'); if (el) el.focus(); return;
     }
     // Dirección: al menos domicilio (texto libre) o calle
     if (!valEl('rec_domicilio') && !valEl('rec_calle')) {
@@ -5573,7 +5605,8 @@ async function guardarPacienteRecepcion(idPaciente) {
     conyuge: toTitleCase(document.getElementById('rec_conyuge').value.trim()),
     responsable: toTitleCase(document.getElementById('rec_responsable').value.trim()),
     telefonoResponsable: document.getElementById('rec_telefono_resp').value.trim(),
-    curp: document.getElementById('rec_curp').value.trim().toUpperCase(),
+    esExtranjero: !!(document.getElementById('rec_extranjero') && document.getElementById('rec_extranjero').checked),
+    curp: (document.getElementById('rec_extranjero') && document.getElementById('rec_extranjero').checked) ? '' : document.getElementById('rec_curp').value.trim().toUpperCase(),
     rfc: document.getElementById('rec_rfc').value.trim().toUpperCase(),
     alergias: document.getElementById('rec_alergias').value.trim(),
     medicoTratante: document.getElementById('rec_medico_tratante').value,
