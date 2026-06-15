@@ -1664,11 +1664,11 @@ function altaPaciente(d) {
   if (!d.nombre || !String(d.nombre).trim()) {
     return { ok: false, error: 'Nombre completo es obligatorio' };
   }
-  // Paciente extranjero: la CURP no aplica, se omite su validación.
+  // Paciente extranjero: CURP y Código Postal mexicano no aplican, se omiten sus validaciones de formato.
   if (!d.esExtranjero && d.curp && !validarCURP(d.curp)) {
     return { ok: false, error: 'CURP inválido (debe tener 18 caracteres alfanuméricos)' };
   }
-  if (d.cp && !/^\d{5}$/.test(String(d.cp))) {
+  if (!d.esExtranjero && d.cp && !/^\d{5}$/.test(String(d.cp))) {
     return { ok: false, error: 'Código Postal debe ser de 5 dígitos' };
   }
 
@@ -1924,11 +1924,11 @@ function actualizarPaciente(d) {
   if (!d.idPaciente) return { ok: false, error: 'idPaciente requerido' };
 
   // Validaciones suaves
-  // Paciente extranjero: la CURP no aplica, se omite su validación.
+  // Paciente extranjero: CURP y Código Postal mexicano no aplican, se omiten sus validaciones de formato.
   if (!d.esExtranjero && d.curp && !validarCURP(d.curp)) {
     return { ok: false, error: 'CURP inválido (debe tener 18 caracteres alfanuméricos)' };
   }
-  if (d.cp && !/^\d{5}$/.test(String(d.cp))) {
+  if (!d.esExtranjero && d.cp && !/^\d{5}$/.test(String(d.cp))) {
     return { ok: false, error: 'Código Postal debe ser de 5 dígitos' };
   }
 

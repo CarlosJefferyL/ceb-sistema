@@ -5283,6 +5283,8 @@ async function abrirFormularioRecepcion(desdeConsulta, idPaciente) {
       💡 ${esEdicion ? 'Edita los datos del paciente.' : 'Completa los datos en 3 secciones.'} <strong>Todos los campos son obligatorios</strong> salvo los marcados como opcional. El folio de recepción se genera automáticamente.
     </div>
 
+    <div id="rec_error_banner" role="alert" style="display:none;background:#FEE2E2;border:1px solid var(--danger);border-left:4px solid var(--danger);color:#991B1B;padding:12px 14px;border-radius:8px;margin-bottom:16px;font-size:13px;line-height:1.4;"></div>
+
     <div class="rec-tabs" style="display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid var(--border);">
       <button type="button" class="rec-tab-btn active" data-tab="general" onclick="cambiarTabRecepcion('general')" style="padding:10px 18px;background:none;border:none;border-bottom:3px solid var(--teal);cursor:pointer;font-weight:600;color:var(--navy);font-family:inherit;">General</button>
       <button type="button" class="rec-tab-btn" data-tab="direccion" onclick="cambiarTabRecepcion('direccion')" style="padding:10px 18px;background:none;border:none;border-bottom:3px solid transparent;cursor:pointer;color:var(--text-muted);font-family:inherit;">Dirección</button>
@@ -5532,12 +5534,88 @@ function toggleExtranjero() {
   }
 }
 
+// ===== Ayudas visuales de error en el Alta/Edición de Paciente =====
+// Limpia bordes rojos, mensajes inline y el banner superior.
+function limpiarErroresRec() {
+  document.querySelectorAll('.rec-campo-error').forEach(el => {
+    el.classList.remove('rec-campo-error');
+    el.style.borderColor = '';
+    el.style.boxShadow = '';
+  });
+  document.querySelectorAll('.rec-err-msg').forEach(el => el.remove());
+  const banner = document.getElementById('rec_error_banner');
+  if (banner) { banner.style.display = 'none'; banner.innerHTML = ''; }
+}
+
+// Resalta un campo y coloca un mensaje debajo; se autolimpia al corregirlo.
+function marcarErrorCampo(id, mensaje) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.add('rec-campo-error');
+  el.style.borderColor = 'var(--danger)';
+  el.style.boxShadow = '0 0 0 2px rgba(220,38,38,0.18)';
+  const cont = el.closest('div');
+  if (cont && !cont.querySelector('.rec-err-msg')) {
+    const msg = document.createElement('small');
+    msg.className = 'rec-err-msg';
+    msg.style.cssText = 'display:block;color:var(--danger);margin-top:4px;font-weight:600;';
+    msg.textContent = '⚠ ' + mensaje;
+    cont.appendChild(msg);
+  }
+  const limpiar = () => {
+    el.classList.remove('rec-campo-error');
+    el.style.borderColor = ''; el.style.boxShadow = '';
+    const c = el.closest('div');
+    const m = c && c.querySelector('.rec-err-msg');
+    if (m) m.remove();
+    el.removeEventListener('input', limpiar);
+    el.removeEventListener('change', limpiar);
+  };
+  el.addEventListener('input', limpiar);
+  el.addEventListener('change', limpiar);
+}
+
+// Muestra el banner superior con la lista de motivos.
+function mostrarBannerErroresRec(errores) {
+  const banner = document.getElementById('rec_error_banner');
+  if (!banner) return;
+  const items = errores.map(e => '<li style="margin:2px 0;">' + e.label + '</li>').join('');
+  banner.innerHTML = '<strong>⚠ No se puede continuar.</strong> Faltan o son inválidos estos campos:' +
+    '<ul style="margin:6px 0 0 18px;padding:0;">' + items + '</ul>';
+  banner.style.display = '';
+}
+
+// Muestra en pantalla el motivo exacto de un error devuelto por el backend
+// (CURP, Código Postal, etc.) y resalta el campo correspondiente.
+function mostrarErrorBackendRec(mensaje) {
+  limpiarErroresRec();
+  const banner = document.getElementById('rec_error_banner');
+  if (banner) {
+    banner.innerHTML = '<strong>⚠ No se pudo guardar.</strong> ' + String(mensaje || 'Error desconocido');
+    banner.style.display = '';
+  }
+  let id = null, tab = null;
+  if (/curp/i.test(mensaje)) { id = 'rec_curp'; tab = 'datos'; }
+  else if (/postal/i.test(mensaje)) { id = 'rec_cp'; tab = 'direccion'; }
+  else if (/nombre/i.test(mensaje)) { id = 'rec_nombre'; tab = 'general'; }
+  if (id) {
+    if (tab) cambiarTabRecepcion(tab);
+    marcarErrorCampo(id, mensaje);
+    const el = document.getElementById(id);
+    if (el) { el.focus(); if (el.scrollIntoView) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+  }
+  showToast(String(mensaje || 'Error'), 'error');
+}
+
 async function guardarPacienteRecepcion(idPaciente) {
   const esEdicion = !!idPaciente;
   const valEl = (id) => { const el = document.getElementById(id); return el ? String(el.value).trim() : ''; };
 
+  limpiarErroresRec();
+  const errores = [];
+
   const nombre = valEl('rec_nombre');
-  if (!nombre) { showToast('El nombre completo es obligatorio', 'error'); cambiarTabRecepcion('general'); return; }
+  if (!nombre) errores.push({ id: 'rec_nombre', label: 'Nombre completo', tab: 'general' });
 
   // En el ALTA todos los campos son obligatorios (salvo los marcados opcional).
   if (!esEdicion) {
@@ -5560,26 +5638,38 @@ async function guardarPacienteRecepcion(idPaciente) {
       { id: 'rec_especialidad', label: 'Especialidad', tab: 'datos' }
     ];
     for (const r of requeridos) {
-      if (!valEl(r.id)) { showToast('Falta capturar: ' + r.label, 'error'); cambiarTabRecepcion(r.tab); const el = document.getElementById(r.id); if (el) el.focus(); return; }
+      if (!valEl(r.id)) errores.push(r);
     }
     // CURP obligatoria salvo paciente extranjero
     const esExtranjeroAlta = !!(document.getElementById('rec_extranjero') && document.getElementById('rec_extranjero').checked);
     if (!esExtranjeroAlta && !valEl('rec_curp')) {
-      showToast('Falta capturar: CURP (o marca "Paciente extranjero")', 'error'); cambiarTabRecepcion('datos'); const el = document.getElementById('rec_curp'); if (el) el.focus(); return;
+      errores.push({ id: 'rec_curp', label: 'CURP (o marca "Paciente extranjero")', tab: 'datos' });
     }
     // Dirección: al menos domicilio (texto libre) o calle
     if (!valEl('rec_domicilio') && !valEl('rec_calle')) {
-      showToast('Captura el domicilio o la calle', 'error'); cambiarTabRecepcion('direccion'); return;
+      errores.push({ id: 'rec_calle', label: 'Domicilio o calle', tab: 'direccion' });
     }
     // Condicional: aseguradora + póliza si el servicio es ASEGURADORA
     if (valEl('rec_servicio') === 'ASEGURADORA') {
-      if (!valEl('rec_aseguradora')) { showToast('Selecciona la aseguradora', 'error'); cambiarTabRecepcion('datos'); return; }
-      if (!valEl('rec_poliza')) { showToast('Captura el número de póliza', 'error'); cambiarTabRecepcion('datos'); return; }
+      if (!valEl('rec_aseguradora')) errores.push({ id: 'rec_aseguradora', label: 'Aseguradora (servicio ASEGURADORA)', tab: 'datos' });
+      if (!valEl('rec_poliza')) errores.push({ id: 'rec_poliza', label: 'Número de póliza (servicio ASEGURADORA)', tab: 'datos' });
     }
     // Condicional: cónyuge si está casado(a)
     if (/casado/i.test(valEl('rec_estado_civil')) && !valEl('rec_conyuge')) {
-      showToast('Captura el cónyuge', 'error'); cambiarTabRecepcion('datos'); return;
+      errores.push({ id: 'rec_conyuge', label: 'Cónyuge (estado civil casado/a)', tab: 'datos' });
     }
+  }
+
+  if (errores.length) {
+    errores.forEach(e => marcarErrorCampo(e.id, e.label));
+    mostrarBannerErroresRec(errores);
+    cambiarTabRecepcion(errores[0].tab);
+    const first = document.getElementById(errores[0].id);
+    if (first) { first.focus(); if (first.scrollIntoView) first.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+    showToast(errores.length === 1
+      ? ('Falta: ' + errores[0].label)
+      : ('Faltan ' + errores.length + ' campos por completar'), 'error');
+    return;
   }
 
   const data = {
@@ -5641,7 +5731,7 @@ async function guardarPacienteRecepcion(idPaciente) {
       await loadCatalogos();
       if (document.getElementById('pacientesLista')) { loadPacientes(); } else { loadRecepcion(); }
     } else {
-      showToast('Error: ' + respE.error, 'error');
+      mostrarErrorBackendRec(respE.error);
     }
     return;
   }
@@ -5674,7 +5764,7 @@ async function guardarPacienteRecepcion(idPaciente) {
       loadRecepcion();
     }
   } else {
-    showToast('Error: ' + resp.error, 'error');
+    mostrarErrorBackendRec(resp.error);
   }
 }
 
