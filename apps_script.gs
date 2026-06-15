@@ -1664,7 +1664,8 @@ function altaPaciente(d) {
   if (!d.nombre || !String(d.nombre).trim()) {
     return { ok: false, error: 'Nombre completo es obligatorio' };
   }
-  if (d.curp && !validarCURP(d.curp)) {
+  // Paciente extranjero: la CURP no aplica, se omite su validación.
+  if (!d.esExtranjero && d.curp && !validarCURP(d.curp)) {
     return { ok: false, error: 'CURP inválido (debe tener 18 caracteres alfanuméricos)' };
   }
   if (d.cp && !/^\d{5}$/.test(String(d.cp))) {
@@ -1683,6 +1684,7 @@ function altaPaciente(d) {
   }
   var folioRecepcion = prefijoRec + String(numRec + 1).padStart(5, '0');
 
+  ensureHeaders_(SHEETS.PACIENTES, ['Es_Extranjero']);
   appendRowByHeader(SHEETS.PACIENTES, {
     // Identificación
     'ID_Paciente': id,
@@ -1726,7 +1728,8 @@ function altaPaciente(d) {
     'Conyuge': d.conyuge || '',
     'Responsable': d.responsable || '',
     'Telefono_Responsable': d.telefonoResponsable || '',
-    'CURP': (d.curp || '').toUpperCase(),
+    'CURP': d.esExtranjero ? '' : (d.curp || '').toUpperCase(),
+    'Es_Extranjero': d.esExtranjero ? 'SI' : '',
     'RFC': (d.rfc || '').toUpperCase(),
     'Alergias': d.alergias || '',
     'Medico_Tratante': d.medicoTratante || '',
@@ -1921,7 +1924,8 @@ function actualizarPaciente(d) {
   if (!d.idPaciente) return { ok: false, error: 'idPaciente requerido' };
 
   // Validaciones suaves
-  if (d.curp && !validarCURP(d.curp)) {
+  // Paciente extranjero: la CURP no aplica, se omite su validación.
+  if (!d.esExtranjero && d.curp && !validarCURP(d.curp)) {
     return { ok: false, error: 'CURP inválido (debe tener 18 caracteres alfanuméricos)' };
   }
   if (d.cp && !/^\d{5}$/.test(String(d.cp))) {
@@ -1932,6 +1936,7 @@ function actualizarPaciente(d) {
   lock.waitLock(15000);
   try {
     var sh = getSheet(SHEETS.PACIENTES);
+    ensureHeaders_(SHEETS.PACIENTES, ['Es_Extranjero']);
     var data = sh.getDataRange().getValues();
     var headers = data[0];
 
@@ -1975,6 +1980,7 @@ function actualizarPaciente(d) {
       'responsable': 'Responsable',
       'telefonoResponsable': 'Telefono_Responsable',
       'curp': 'CURP',
+      'esExtranjero': 'Es_Extranjero',
       'rfc': 'RFC',
       'alergias': 'Alergias',
       'medicoTratante': 'Medico_Tratante',
@@ -1992,8 +1998,9 @@ function actualizarPaciente(d) {
             var colIdx = headers.indexOf(fieldMap[frontKey]);
             if (colIdx !== -1) {
               var valor = d[frontKey];
-              if (frontKey === 'curp' && valor) valor = String(valor).toUpperCase();
+              if (frontKey === 'curp') valor = d.esExtranjero ? '' : (valor ? String(valor).toUpperCase() : valor);
               if (frontKey === 'rfc' && valor) valor = String(valor).toUpperCase();
+              if (frontKey === 'esExtranjero') valor = valor ? 'SI' : '';
               sh.getRange(i + 1, colIdx + 1).setValue(valor);
             }
           }
