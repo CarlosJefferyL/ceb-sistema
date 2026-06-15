@@ -5252,6 +5252,10 @@ async function abrirFormularioRecepcion(desdeConsulta, idPaciente) {
     `<option value="${m.Nombre_Completo}">${m.Nombre_Completo} (${m.Especialidad || 's/esp'})</option>`
   ).join('');
 
+  // Tipo de cliente homologado con Cobro de Caja
+  const tiposClienteOpts = construirTiposCliente()
+    .map(t => `<option value="${cjEscAttr(t)}">${t}</option>`).join('');
+
   // Cajas → habitaciones libres por tipo (Cambio 2: ocupar al momento del alta)
   let habitacionesOpts = '<option value="">— Sin asignar (no ocupa habitación) —</option>';
   try {
@@ -5294,9 +5298,8 @@ async function abrirFormularioRecepcion(desdeConsulta, idPaciente) {
           <div><label>Contacto 2 (parentesco/relación)</label><input type="text" id="rec_contacto2" onblur="applyTitleCase(this)" placeholder="Opcional"></div>
           <div><label>Tipo de cliente</label>
             <select id="rec_tipo_cliente">
-              <option value="CLINICA ESTAR BIEN">CLINICA ESTAR BIEN</option>
-              <option value="EXTERNO">Externo</option>
-              <option value="CONVENIO">Convenio</option>
+              <option value="">— Seleccionar —</option>
+              ${tiposClienteOpts}
             </select>
           </div>
           <div><label>Médico que refirió (vendedor)</label>
@@ -5414,7 +5417,18 @@ function prefillRecepcion(p) {
   setV('rec_nombre', p.Nombre_Completo);
   setV('rec_contacto1', p.Contacto_1);
   setV('rec_contacto2', p.Contacto_2);
-  setV('rec_tipo_cliente', p.Tipo_Cliente);
+  // Compatibilidad: si el tipo de cliente guardado ya no está en la lista homologada,
+  // se agrega como opción para no alterar el valor del registro al editar.
+  (function(){
+    const sel = document.getElementById('rec_tipo_cliente');
+    const val = p.Tipo_Cliente == null ? '' : String(p.Tipo_Cliente).trim();
+    if (sel && val) {
+      const norm = s => String(s || '').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const existe = Array.from(sel.options).some(o => norm(o.value) === norm(val) || norm(o.textContent) === norm(val));
+      if (!existe) { const opt = document.createElement('option'); opt.value = val; opt.textContent = val; sel.appendChild(opt); }
+      preseleccionarOpcion('rec_tipo_cliente', val);
+    }
+  })();
   setV('rec_vendedor', p.Vendedor_Medico);
   setV('rec_domicilio', p.Domicilio);
   setV('rec_calle', p.Calle);
@@ -5969,13 +5983,8 @@ function llenarCatalogosCobro() {
   const elHab = document.getElementById('cj_habitacion');
   if (elHab) elHab.innerHTML = optsHab;
 
-  // Tipo de cliente: aseguradoras del sistema + opciones base
-  const aseg = (catalogos.aseguradoras || []);
-  const tiposCliente = ['Particular','Clínica','Urgencias'];
-  aseg.forEach(a => {
-    const n = a.Nombre || a.Nombre_Aseguradora;
-    if (n && tiposCliente.indexOf(n) === -1) tiposCliente.push(n);
-  });
+  // Tipo de cliente: lista homologada (base + aseguradoras, sin duplicados)
+  const tiposCliente = construirTiposCliente();
   const elTC = document.getElementById('cj_tipoCliente');
   if (elTC) elTC.innerHTML = '<option value="">— Seleccionar —</option>' +
     tiposCliente.map(t => `<option value="${cjEscAttr(t)}">${t}</option>`).join('');
@@ -6003,6 +6012,21 @@ function llenarCatalogosCobro() {
   const elAn = document.getElementById('cj_tipoAnestesia');
   if (elAn) elAn.innerHTML = '<option value="">— Seleccionar —</option>' +
     anestesias.map(a => `<option value="${cjEscAttr(a)}">${a}</option>`).join('');
+}
+
+// Lista homologada de "Tipo de Cliente" usada en Alta de Paciente y Cobro de Caja.
+// Base + aseguradoras del catálogo, sin duplicados (ignora mayúsculas y acentos).
+function construirTiposCliente() {
+  const base = ['Particular', 'Clínica', 'Urgencias'];
+  const norm = s => String(s || '').toLowerCase().trim()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const vistos = new Set(base.map(norm));
+  const lista = base.slice();
+  (catalogos.aseguradoras || []).forEach(a => {
+    const n = String(a.Nombre || a.Nombre_Aseguradora || '').trim();
+    if (n && !vistos.has(norm(n))) { vistos.add(norm(n)); lista.push(n); }
+  });
+  return lista;
 }
 
 function cjEscAttr(s) {
