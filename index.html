@@ -5526,9 +5526,9 @@ async function abrirFormularioRecepcion(desdeConsulta, idPaciente) {
               ${tiposClienteOpts}
             </select>
           </div>
-          <div><label>Médico que refirió (vendedor)</label>
+          <div><label>Médico que refirió (vendedor) *</label>
             <select id="rec_vendedor">
-              <option value="">— Opcional —</option>
+              <option value="">— Seleccionar —</option>
               ${medicosOpts}
             </select>
             ${puede('alta_medico')
@@ -5865,6 +5865,7 @@ async function guardarPacienteRecepcion(idPaciente) {
     const requeridos = [
       { id: 'rec_contacto1', label: 'Contacto 1', tab: 'general' },
       { id: 'rec_tipo_cliente', label: 'Tipo de cliente', tab: 'general' },
+      { id: 'rec_vendedor', label: 'Médico que refirió (vendedor)', tab: 'general' },
       { id: 'rec_telefono1', label: 'Teléfono 1', tab: 'direccion' },
       { id: 'rec_fecha_ingreso', label: 'Fecha de ingreso', tab: 'datos' },
       { id: 'rec_servicio', label: 'Servicio', tab: 'datos' },
