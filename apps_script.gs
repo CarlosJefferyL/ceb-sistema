@@ -25,7 +25,6 @@ var SHEETS = {
   CONFIG: 'CONFIG',
   MEDICAMENTOS: 'CAT_Medicamentos',
   MEDICOS: 'CAT_Medicos',
-  MEDICOS_CONSULTA: 'CAT_MedicosConsulta',
   CIRUGIAS_TIPO: 'CAT_Cirugias',
   USUARIOS: 'CAT_Usuarios',
   QUIROFANOS: 'CAT_Quirofanos',
@@ -45,7 +44,13 @@ var SHEETS = {
   CONSULTAS: 'Consultas',
   RECIBOS: 'Recibos',
   BENEFICIARIOS: 'CAT_Beneficiarios',
-  CAJA: 'Caja'
+  CAJA: 'Caja',
+  // ---- Módulo BOM (Bill of Materials quirúrgico) ----
+  PAQUETES: 'CAT_Paquetes',
+  INSUMOS: 'CAT_Insumos',
+  BOM_PLANTILLA: 'BOM_Plantilla_Items',
+  BOM_CIRUGIA: 'BOM_Cirugia',
+  BOM_ITEMS: 'BOM_Items'
 };
 
 // ============================================================
@@ -55,35 +60,49 @@ var SHEETS = {
 // El backend es la fuente de verdad: aunque alguien manipule el frontend,
 // estas validaciones se aplican siempre.
 // ============================================================
+// QX = JEFE_ENFERMERIA_QUIROFANO · PISO = JEFE_ENFERMERIA_PISO · JE = JEFE_ENFERMERIA (legado)
 var PERMISOS_ACCIONES = {
-  'programar_cirugia':    ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],
-  'nueva_cirugia':        ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],
-  'ingresar_habitacion':  ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
-  'nuevo_paciente_recep': ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
-  'nuevo_paciente_dir':   ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
-  'editar_paciente':      ['ADMIN','JEFE_ENFERMERIA','ALMACEN','DIRECTOR_MEDICO','RECEPCION'],
-  'vincular_receta':      ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
-  'registrar_consumo':    ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],
-  'cancelar_consumo':     ['ADMIN','JEFE_ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],
-  'nueva_entrada':        ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
-  'alta_medicamento':     ['ADMIN','JEFE_ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],
-  'alta_medico':          ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
-  'alta_medico_consulta': ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
-  'alta_tipo_cirugia':    ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],
-  'editar_cirugia':       ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO'],
-  'cancelar_cirugia':     ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],
-  'terminar_cirugia':     ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO'],
-  'reabrir_cirugia':      ['ADMIN','JEFE_ENFERMERIA','DIRECTOR_MEDICO'],
-  'exportar_libro':       ['ADMIN','JEFE_ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
-  'registrar_consulta':   ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
+  // ---- Flujo quirúrgico (QUIRÓFANO) ----
+  'programar_cirugia':    ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','DIRECTOR_MEDICO'],
+  'nueva_cirugia':        ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','DIRECTOR_MEDICO'],
+  'alta_tipo_cirugia':    ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','DIRECTOR_MEDICO'],
+  'editar_cirugia':       ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','ENFERMERIA','DIRECTOR_MEDICO'],
+  'cancelar_cirugia':     ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','DIRECTOR_MEDICO'],
+  'terminar_cirugia':     ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','ENFERMERIA','DIRECTOR_MEDICO'],
+  'reabrir_cirugia':      ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','DIRECTOR_MEDICO'],
+  // ---- Hospitalización (PISO) ----
+  'ingresar_habitacion':  ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
+  // ---- Compartidas (ambos jefes) ----
+  'nuevo_paciente_recep': ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','DIRECTOR_MEDICO','RECEPCION'],
+  'nuevo_paciente_dir':   ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','DIRECTOR_MEDICO','RECEPCION'],
+  'editar_paciente':      ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ALMACEN','DIRECTOR_MEDICO','RECEPCION'],
+  'vincular_receta':      ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
+  'registrar_consumo':    ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],
+  'cancelar_consumo':     ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ALMACEN','DIRECTOR_MEDICO'],
+  'nueva_entrada':        ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
+  'alta_medicamento':     ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ALMACEN','DIRECTOR_MEDICO'],
+  'alta_medico':          ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
+  'alta_medico_consulta': ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
+  'exportar_libro':       ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
+  'registrar_consulta':   ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
+  // ---- Caja ----
   'cobro_caja':           ['ADMIN','DIRECTOR_MEDICO','CAJERO'],
   'emitir_recibo':        ['ADMIN','DIRECTOR_MEDICO','CAJERO'],
   'cancelar_recibo':      ['ADMIN','DIRECTOR_MEDICO','CAJERO'],
   'alta_beneficiario':    ['ADMIN','DIRECTOR_MEDICO','CAJERO'],
-  'editar_beneficiario':  ['ADMIN','DIRECTOR_MEDICO','CAJERO']
+  'editar_beneficiario':  ['ADMIN','DIRECTOR_MEDICO','CAJERO'],
+  // ---- Módulo BOM ----
+  'proponer_bom':         ['ADMIN','ALMACEN','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA'],
+  'autorizar_bom':        ['ADMIN','DIRECTOR_MEDICO'],
+  'rechazar_bom':         ['ADMIN','DIRECTOR_MEDICO'],
+  'entregar_bom':         ['ADMIN','ALMACEN'],
+  'editar_plantilla_bom': ['ADMIN','ALMACEN','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA']
 };
 
-var ROLES_VALIDOS = ['ADMIN','JEFE_ENFERMERIA','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO','RECEPCION','CAJERO'];
+// JEFE_ENFERMERIA se conserva como rol legado (equivale a "ambos" flujos) para no
+// romper las cuentas existentes mientras se migran en CAT_Usuarios a los roles divididos
+// JEFE_ENFERMERIA_QUIROFANO (flujo quirúrgico + BOM) y JEFE_ENFERMERIA_PISO (hospitalización).
+var ROLES_VALIDOS = ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO','RECEPCION','CAJERO'];
 
 /**
  * Valida si un rol tiene permiso para ejecutar una acción.
@@ -148,6 +167,9 @@ function doGet(e) {
       case 'buscarPacientesCobro': result = buscarPacientesCobro(e.parameter.q); break;
       case 'getDatosPacienteParaCobro': result = getDatosPacienteParaCobro(e.parameter.idPaciente); break;
       case 'getIngresos':    result = getIngresos(e.parameter.desde, e.parameter.hasta); break;
+      case 'getBOM':         result = getBOM(e.parameter.folioCirugia); break;
+      case 'getBOMPendientes': result = getBOMPendientes(); break;
+      case 'getBOMPlantilla': result = getBOMPlantilla(e.parameter.clavePaquete); break;
       default:             result = { ok: false, error: 'Acción no reconocida: ' + action };
     }
     return jsonResponse(result);
@@ -171,7 +193,6 @@ function doPost(e) {
       case 'altaPaciente':       result = altaPaciente(payload.data); break;
       case 'altaMedicamento':    result = altaMedicamento(payload.data); break;
       case 'altaMedico':         result = altaMedico(payload.data); break;
-      case 'altaMedicoConsulta': result = altaMedicoConsulta(payload.data); break;
       case 'altaCirugiaTipo':    result = altaCirugiaTipo(payload.data); break;
       case 'altaQuirofano':      result = altaQuirofano(payload.data); break;
       case 'ingresarPaciente':   result = ingresarPaciente(payload.data); break;
@@ -191,6 +212,10 @@ function doPost(e) {
       case 'altaBeneficiario':   result = altaBeneficiario(payload.data); break;
       case 'editarBeneficiario': result = editarBeneficiario(payload.data); break;
       case 'guardarIngreso':     result = guardarIngreso(payload.data); break;
+      case 'proponerBOM':        result = proponerBOM(payload.data); break;
+      case 'autorizarBOM':       result = autorizarBOM(payload.data); break;
+      case 'rechazarBOM':        result = rechazarBOM(payload.data); break;
+      case 'entregarBOM':        result = entregarBOM(payload.data); break;
       default:                   result = { ok: false, error: 'Acción POST no reconocida: ' + action };
     }
     return jsonResponse(result);
@@ -361,15 +386,17 @@ function login(codigo) {
 function getCatalogos() {
   // Las cirugías se buscan bajo demanda con buscarCirugias() — son ~5,000 entradas
   // y enviarlas todas haría lento el login y consumiría datos en celular.
+  ensureBOMSheets_(); // crea las hojas del módulo BOM en el primer arranque
   return {
     ok: true,
     medicamentos: sheetToObjects(SHEETS.MEDICAMENTOS).filter(function(m){return esActivo(m.Activo);}),
     medicos:      sheetToObjects(SHEETS.MEDICOS).filter(function(m){return esActivo(m.Activo);}),
-    medicosConsulta: getMedicosConsultaList(),
     quirofanos:   sheetToObjects(SHEETS.QUIROFANOS).filter(function(q){return esActivo(q.Activo);}),
     habitaciones: sheetToObjects(SHEETS.HABITACIONES).filter(function(h){return esActivo(h.Activo);}),
     aseguradoras: sheetToObjects(SHEETS.ASEGURADORAS).filter(function(a){return esActivo(a.Activo);}),
     pacientes:    sheetToObjects(SHEETS.PACIENTES).filter(function(p){return p.Estatus!=='Suspendido';}),
+    paquetes:     sheetToObjects(SHEETS.PAQUETES).filter(function(p){return esActivo(p.Activo);}),
+    insumos:      sheetToObjects(SHEETS.INSUMOS).filter(function(i){return esActivo(i.Activo);}),
     config: {
       nombreClinica: getConfig('NombreClinica'),
       direccion: getConfig('DireccionClinica'),
@@ -489,6 +516,15 @@ function crearCirugia(d) {
     return errorSinPermiso(d.rolUsuario, 'nueva_cirugia');
   }
 
+  // ===== BOM: paquete(s) o comentario obligatorio =====
+  // La cirugía puede llevar 0, 1 o varios paquetes. Si va SIN paquete,
+  // se exige un comentario que explique por qué (regla del módulo BOM).
+  var paquetesBOM = Array.isArray(d.paquetes) ? d.paquetes.filter(function(x){ return x; }) : [];
+  var comentarioBOM = String(d.comentarioSinPaquete || '').trim();
+  if (paquetesBOM.length === 0 && !comentarioBOM) {
+    return { ok: false, error: 'La cirugía no tiene paquete de BOM. Selecciona al menos un paquete o escribe un comentario explicando por qué va sin paquete.' };
+  }
+
   // ===== Paciente: puede ser del catálogo O texto libre =====
   // Al PROGRAMAR se permite un paciente que aún no está dado de alta
   // (se captura solo el nombre). El paciente del catálogo se vincula
@@ -583,7 +619,16 @@ function crearCirugia(d) {
     try { marcarEstatusPaciente(d.idPaciente, 'Activo'); } catch (e) {}
   }
 
-  return { ok: true, folio: folio };
+  // ===== Crear el BOM de la cirugía (estado SOLICITADO; alerta a almacén) =====
+  // No bloquea la programación si algo falla en el armado del BOM.
+  var bomInfo = null;
+  try {
+    bomInfo = crearBOMParaCirugia(folio, paquetesBOM, comentarioBOM, d.capturadoPor);
+  } catch (eBom) {
+    bomInfo = { ok: false, error: String(eBom) };
+  }
+
+  return { ok: true, folio: folio, bom: bomInfo };
 }
 
 /**
@@ -1635,6 +1680,50 @@ function ensureHeaders_(sheetName, names) {
   });
 }
 
+// ============================================================
+// MÓDULO BOM — Hojas y encabezados
+// ------------------------------------------------------------
+// Ciclo de vida: SOLICITADO -> PROPUESTO -> AUTORIZADO -> ENTREGADO
+// (RECHAZADO regresa a PROPUESTO). La entrega se habilita en cuanto
+// el DIRECTOR_MEDICO autoriza. Una cirugía puede llevar 0, 1 o varios
+// paquetes; cada renglón de BOM_Items guarda su Clave_Paquete origen
+// (o 'MANUAL'). Si la cirugía va sin paquete, Comentario_Sin_Paquete
+// es obligatorio.
+// ============================================================
+var PAQUETES_HEADERS = ['Clave_Paquete','Nombre_Paquete','Especialidad','Activo'];
+var INSUMOS_HEADERS = ['Codigo','Descripcion','Unidad','Categoria','Activo'];
+var BOM_PLANTILLA_HEADERS = ['Clave_Paquete','Tipo_Item','Codigo','Descripcion','Cantidad_S','Unidad','Orden','Activo'];
+var BOM_CIRUGIA_HEADERS = ['ID_BOM','Folio_Cirugia','Paquetes','Comentario_Sin_Paquete','Estado_BOM',
+  'Solicitado_Por','Solicitado_TS','Propuesto_Por','Propuesto_TS',
+  'Autorizado_Por','Autorizado_TS','Motivo_Rechazo','Entregado_Por','Entregado_TS','Observaciones'];
+var BOM_ITEMS_HEADERS = ['ID_BOM_Item','ID_BOM','Folio_Cirugia','Clave_Paquete','Tipo_Item','Codigo',
+  'Descripcion','Cantidad_S','Cantidad_U','Cantidad_R','Unidad','Lote','Observaciones'];
+
+/**
+ * Crea una pestaña con sus encabezados si no existe; si ya existe,
+ * garantiza que no falte ninguna columna (sin borrar las que haya).
+ */
+function ensureSheetConHeaders_(name, headers) {
+  var sh = SS.getSheetByName(name);
+  if (!sh) {
+    sh = SS.insertSheet(name);
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sh.setFrozenRows(1);
+  } else {
+    ensureHeaders_(name, headers);
+  }
+  return sh;
+}
+
+/** Garantiza todas las hojas del módulo BOM (catálogos, plantilla e instancia). */
+function ensureBOMSheets_() {
+  ensureSheetConHeaders_(SHEETS.PAQUETES, PAQUETES_HEADERS);
+  ensureSheetConHeaders_(SHEETS.INSUMOS, INSUMOS_HEADERS);
+  ensureSheetConHeaders_(SHEETS.BOM_PLANTILLA, BOM_PLANTILLA_HEADERS);
+  ensureSheetConHeaders_(SHEETS.BOM_CIRUGIA, BOM_CIRUGIA_HEADERS);
+  ensureSheetConHeaders_(SHEETS.BOM_ITEMS, BOM_ITEMS_HEADERS);
+}
+
 function altaPaciente(d) {
   // Validación de permisos:
   // El alta de paciente se puede invocar desde DOS contextos distintos:
@@ -1664,11 +1753,10 @@ function altaPaciente(d) {
   if (!d.nombre || !String(d.nombre).trim()) {
     return { ok: false, error: 'Nombre completo es obligatorio' };
   }
-  // Paciente extranjero: CURP y Código Postal mexicano no aplican, se omiten sus validaciones de formato.
-  if (!d.esExtranjero && d.curp && !validarCURP(d.curp)) {
+  if (d.curp && !validarCURP(d.curp)) {
     return { ok: false, error: 'CURP inválido (debe tener 18 caracteres alfanuméricos)' };
   }
-  if (!d.esExtranjero && d.cp && !/^\d{5}$/.test(String(d.cp))) {
+  if (d.cp && !/^\d{5}$/.test(String(d.cp))) {
     return { ok: false, error: 'Código Postal debe ser de 5 dígitos' };
   }
 
@@ -1684,7 +1772,6 @@ function altaPaciente(d) {
   }
   var folioRecepcion = prefijoRec + String(numRec + 1).padStart(5, '0');
 
-  ensureHeaders_(SHEETS.PACIENTES, ['Es_Extranjero']);
   appendRowByHeader(SHEETS.PACIENTES, {
     // Identificación
     'ID_Paciente': id,
@@ -1728,8 +1815,7 @@ function altaPaciente(d) {
     'Conyuge': d.conyuge || '',
     'Responsable': d.responsable || '',
     'Telefono_Responsable': d.telefonoResponsable || '',
-    'CURP': d.esExtranjero ? '' : (d.curp || '').toUpperCase(),
-    'Es_Extranjero': d.esExtranjero ? 'SI' : '',
+    'CURP': (d.curp || '').toUpperCase(),
     'RFC': (d.rfc || '').toUpperCase(),
     'Alergias': d.alergias || '',
     'Medico_Tratante': d.medicoTratante || '',
@@ -1924,11 +2010,10 @@ function actualizarPaciente(d) {
   if (!d.idPaciente) return { ok: false, error: 'idPaciente requerido' };
 
   // Validaciones suaves
-  // Paciente extranjero: CURP y Código Postal mexicano no aplican, se omiten sus validaciones de formato.
-  if (!d.esExtranjero && d.curp && !validarCURP(d.curp)) {
+  if (d.curp && !validarCURP(d.curp)) {
     return { ok: false, error: 'CURP inválido (debe tener 18 caracteres alfanuméricos)' };
   }
-  if (!d.esExtranjero && d.cp && !/^\d{5}$/.test(String(d.cp))) {
+  if (d.cp && !/^\d{5}$/.test(String(d.cp))) {
     return { ok: false, error: 'Código Postal debe ser de 5 dígitos' };
   }
 
@@ -1936,7 +2021,6 @@ function actualizarPaciente(d) {
   lock.waitLock(15000);
   try {
     var sh = getSheet(SHEETS.PACIENTES);
-    ensureHeaders_(SHEETS.PACIENTES, ['Es_Extranjero']);
     var data = sh.getDataRange().getValues();
     var headers = data[0];
 
@@ -1980,7 +2064,6 @@ function actualizarPaciente(d) {
       'responsable': 'Responsable',
       'telefonoResponsable': 'Telefono_Responsable',
       'curp': 'CURP',
-      'esExtranjero': 'Es_Extranjero',
       'rfc': 'RFC',
       'alergias': 'Alergias',
       'medicoTratante': 'Medico_Tratante',
@@ -1998,9 +2081,8 @@ function actualizarPaciente(d) {
             var colIdx = headers.indexOf(fieldMap[frontKey]);
             if (colIdx !== -1) {
               var valor = d[frontKey];
-              if (frontKey === 'curp') valor = d.esExtranjero ? '' : (valor ? String(valor).toUpperCase() : valor);
+              if (frontKey === 'curp' && valor) valor = String(valor).toUpperCase();
               if (frontKey === 'rfc' && valor) valor = String(valor).toUpperCase();
-              if (frontKey === 'esExtranjero') valor = valor ? 'SI' : '';
               sh.getRange(i + 1, colIdx + 1).setValue(valor);
             }
           }
@@ -2141,69 +2223,6 @@ function altaMedico(d) {
   sh.appendRow([id, d.nombreCompleto, d.cedulaProfesional, d.especialidad,
                 d.cedulaEspecialidad || '', d.telefono || '', 'SI']);
   return { ok: true, idMedico: id };
-}
-
-// ============================================================
-// CATÁLOGO: MÉDICOS DE CONSULTA (propios de Clínica Estar Bien)
-// Distinto del catálogo de médicos cirujanos (CAT_Medicos).
-// Campos: nombre completo, título (Médico General, Especialista, etc.)
-// y cédula profesional. Se usa para el consentimiento de consulta.
-// ============================================================
-
-var MEDICOS_CONSULTA_HEADERS = ['ID_MedicoConsulta', 'Nombre_Completo', 'Titulo', 'Cedula_Profesional', 'Activo', 'Capturado_Por', 'Timestamp_Captura'];
-
-function ensureMedicosConsultaSheet() {
-  var sh = SS.getSheetByName(SHEETS.MEDICOS_CONSULTA);
-  if (!sh) {
-    sh = SS.insertSheet(SHEETS.MEDICOS_CONSULTA);
-    sh.getRange(1, 1, 1, MEDICOS_CONSULTA_HEADERS.length).setValues([MEDICOS_CONSULTA_HEADERS]);
-    sh.setFrozenRows(1);
-  }
-  return sh;
-}
-
-function getMedicosConsultaList() {
-  ensureMedicosConsultaSheet();
-  return sheetToObjects(SHEETS.MEDICOS_CONSULTA).filter(function(m){ return esActivo(m.Activo); });
-}
-
-function altaMedicoConsulta(d) {
-  if (!tienePermiso(d.rolUsuario, 'alta_medico_consulta')) {
-    return errorSinPermiso(d.rolUsuario, 'alta_medico_consulta');
-  }
-  if (!d.nombreCompleto || !String(d.nombreCompleto).trim()) {
-    return { ok: false, error: 'El nombre completo del médico es obligatorio' };
-  }
-  var lock = LockService.getScriptLock();
-  lock.waitLock(15000);
-  try {
-    var sh = ensureMedicosConsultaSheet();
-    var data = sh.getDataRange().getValues();
-    var num = 0;
-    for (var i = 1; i < data.length; i++) {
-      var v = String(data[i][0] || '');
-      if (v.indexOf('MCON-') === 0) {
-        var n = parseInt(v.replace('MCON-', ''), 10);
-        if (!isNaN(n)) num = Math.max(num, n);
-      }
-    }
-    var id = 'MCON-' + String(num + 1).padStart(4, '0');
-    var nombre = String(d.nombreCompleto).trim();
-    var titulo = String(d.titulo || '').trim();
-    var cedula = String(d.cedulaProfesional || '').trim();
-    appendRowByHeader(SHEETS.MEDICOS_CONSULTA, {
-      'ID_MedicoConsulta': id,
-      'Nombre_Completo': nombre,
-      'Titulo': titulo,
-      'Cedula_Profesional': cedula,
-      'Activo': 'SI',
-      'Capturado_Por': d.capturadoPor || '',
-      'Timestamp_Captura': nowTs()
-    });
-    return { ok: true, idMedicoConsulta: id, nombreCompleto: nombre, titulo: titulo, cedulaProfesional: cedula };
-  } finally {
-    lock.releaseLock();
-  }
 }
 
 /**
@@ -4378,4 +4397,270 @@ function getIngresos(desde, hasta) {
   out.forEach(function (v) { totalPeriodo += v.total; });
 
   return { ok: true, data: out, totalPeriodo: cajaRound(totalPeriodo), conteo: out.length };
+}
+
+// ============================================================
+// MÓDULO BOM — CICLO DE VIDA
+// SOLICITADO -> PROPUESTO -> AUTORIZADO -> ENTREGADO
+// RECHAZADO regresa a PROPUESTO. La entrega se habilita al AUTORIZAR (director).
+// ============================================================
+
+/** Lee las partidas de plantilla activas de un paquete. */
+function getBOMPlantilla(clavePaquete) {
+  ensureBOMSheets_();
+  var rows = sheetToObjects(SHEETS.BOM_PLANTILLA).filter(function (r) {
+    return String(r.Clave_Paquete) === String(clavePaquete) && esActivo(r.Activo);
+  });
+  return { ok: true, items: rows };
+}
+
+/**
+ * Crea el BOM de una cirugía: cabecera en BOM_Cirugia (SOLICITADO) y copia
+ * las partidas de los paquetes a BOM_Items (columna S). Se invoca desde crearCirugia.
+ */
+function crearBOMParaCirugia(folioCirugia, paquetes, comentario, usuario) {
+  ensureBOMSheets_();
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    var idBOM = 'BOM-' + folioCirugia;
+    var claves = Array.isArray(paquetes) ? paquetes.filter(function (x) { return x; }) : [];
+
+    appendRowByHeader(SHEETS.BOM_CIRUGIA, {
+      ID_BOM: idBOM,
+      Folio_Cirugia: folioCirugia,
+      Paquetes: claves.join(', '),
+      Comentario_Sin_Paquete: claves.length === 0 ? String(comentario || '') : '',
+      Estado_BOM: 'SOLICITADO',
+      Solicitado_Por: usuario || '',
+      Solicitado_TS: nowTs(),
+      Propuesto_Por: '', Propuesto_TS: '',
+      Autorizado_Por: '', Autorizado_TS: '',
+      Motivo_Rechazo: '',
+      Entregado_Por: '', Entregado_TS: '',
+      Observaciones: ''
+    });
+
+    var plantilla = sheetToObjects(SHEETS.BOM_PLANTILLA);
+    var nItem = 0, nPartidas = 0;
+    claves.forEach(function (clave) {
+      plantilla.filter(function (r) {
+        return String(r.Clave_Paquete) === String(clave) && esActivo(r.Activo);
+      }).forEach(function (r) {
+        nItem++;
+        nPartidas++;
+        appendRowByHeader(SHEETS.BOM_ITEMS, {
+          ID_BOM_Item: idBOM + '-' + String(nItem).padStart(4, '0'),
+          ID_BOM: idBOM,
+          Folio_Cirugia: folioCirugia,
+          Clave_Paquete: clave,
+          Tipo_Item: r.Tipo_Item || '',
+          Codigo: r.Codigo || '',
+          Descripcion: r.Descripcion || '',
+          Cantidad_S: r.Cantidad_S || '',
+          Cantidad_U: '',
+          Cantidad_R: '',
+          Unidad: r.Unidad || '',
+          Lote: '',
+          Observaciones: ''
+        });
+      });
+    });
+
+    return { ok: true, idBOM: idBOM, partidas: nPartidas, paquetes: claves.length };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Busca la fila (1-indexed en hoja) y el objeto del BOM por folio de cirugía. */
+function buscarBOMPorFolio_(folioCirugia) {
+  var sh = getSheet(SHEETS.BOM_CIRUGIA);
+  var data = sh.getDataRange().getValues();
+  var headers = data[0];
+  var colFolio = headers.indexOf('Folio_Cirugia');
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][colFolio]) === String(folioCirugia)) {
+      return { fila: i + 1, headers: headers, valores: data[i], sheet: sh };
+    }
+  }
+  return null;
+}
+
+/** Escribe un conjunto de campos en la fila del BOM (por nombre de columna). */
+function setBOMCampos_(ref, campos) {
+  Object.keys(campos).forEach(function (k) {
+    var c = ref.headers.indexOf(k);
+    if (c !== -1) ref.sheet.getRange(ref.fila, c + 1).setValue(campos[k]);
+  });
+}
+
+/** Devuelve cabecera + partidas del BOM de una cirugía. */
+function getBOM(folioCirugia) {
+  ensureBOMSheets_();
+  var cab = sheetToObjects(SHEETS.BOM_CIRUGIA).filter(function (b) {
+    return String(b.Folio_Cirugia) === String(folioCirugia);
+  })[0] || null;
+  var items = sheetToObjects(SHEETS.BOM_ITEMS).filter(function (it) {
+    return String(it.Folio_Cirugia) === String(folioCirugia);
+  });
+  return { ok: true, cabecera: cab, items: items };
+}
+
+/**
+ * Pendientes para la alerta a almacén / dashboard.
+ * Devuelve los BOM que no están ENTREGADO, con conteos por estado.
+ */
+function getBOMPendientes() {
+  ensureBOMSheets_();
+  var cirugias = sheetToObjects(SHEETS.CIRUGIAS);
+  var idxCir = {};
+  cirugias.forEach(function (c) { idxCir[String(c.Folio_Cirugia)] = c; });
+
+  var bom = sheetToObjects(SHEETS.BOM_CIRUGIA).filter(function (b) {
+    return String(b.Estado_BOM) !== 'ENTREGADO';
+  });
+  var conteos = { SOLICITADO: 0, PROPUESTO: 0, AUTORIZADO: 0, RECHAZADO: 0 };
+  var lista = bom.map(function (b) {
+    var est = String(b.Estado_BOM || '');
+    if (conteos.hasOwnProperty(est)) conteos[est]++;
+    var c = idxCir[String(b.Folio_Cirugia)] || {};
+    return {
+      idBOM: b.ID_BOM,
+      folioCirugia: b.Folio_Cirugia,
+      estado: est,
+      paquetes: b.Paquetes,
+      comentario: b.Comentario_Sin_Paquete,
+      paciente: c.Nombre_Paciente || '',
+      tipoCirugia: c.Tipo_Cirugia || '',
+      fechaProgramada: c.Fecha_Programada || '',
+      medico: c.Nombre_Medico || ''
+    };
+  });
+  return { ok: true, total: lista.length, conteos: conteos, pendientes: lista };
+}
+
+/** Aplica las cantidades U/lote/observaciones enviadas por partida (opcional). */
+function aplicarItemsBOM_(folioCirugia, items, campoCantidad) {
+  if (!Array.isArray(items) || !items.length) return;
+  var sh = getSheet(SHEETS.BOM_ITEMS);
+  var data = sh.getDataRange().getValues();
+  var headers = data[0];
+  var cId = headers.indexOf('ID_BOM_Item');
+  var cU = headers.indexOf(campoCantidad);
+  var cLote = headers.indexOf('Lote');
+  var cObs = headers.indexOf('Observaciones');
+  var mapa = {};
+  items.forEach(function (it) { mapa[String(it.idItem)] = it; });
+  for (var i = 1; i < data.length; i++) {
+    var it = mapa[String(data[i][cId])];
+    if (!it) continue;
+    if (cU !== -1 && it.cantidad !== undefined && it.cantidad !== null && it.cantidad !== '')
+      sh.getRange(i + 1, cU + 1).setValue(it.cantidad);
+    if (cLote !== -1 && it.lote !== undefined) sh.getRange(i + 1, cLote + 1).setValue(it.lote);
+    if (cObs !== -1 && it.observaciones !== undefined) sh.getRange(i + 1, cObs + 1).setValue(it.observaciones);
+  }
+}
+
+/** SOLICITADO/RECHAZADO -> PROPUESTO (almacén propone/ajusta). */
+function proponerBOM(d) {
+  if (!tienePermiso(d.rolUsuario, 'proponer_bom')) return errorSinPermiso(d.rolUsuario, 'proponer_bom');
+  ensureBOMSheets_();
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    var ref = buscarBOMPorFolio_(d.folioCirugia);
+    if (!ref) return { ok: false, error: 'No existe BOM para la cirugía ' + d.folioCirugia + '.' };
+    var estado = String(ref.valores[ref.headers.indexOf('Estado_BOM')]);
+    if (estado !== 'SOLICITADO' && estado !== 'RECHAZADO') {
+      return { ok: false, error: 'Solo se puede proponer un BOM en estado SOLICITADO o RECHAZADO (actual: ' + estado + ').' };
+    }
+    if (d.items) aplicarItemsBOM_(d.folioCirugia, d.items, 'Cantidad_S');
+    setBOMCampos_(ref, {
+      Estado_BOM: 'PROPUESTO',
+      Propuesto_Por: d.realizadoPor || d.rolUsuario || '',
+      Propuesto_TS: nowTs(),
+      Motivo_Rechazo: ''
+    });
+    return { ok: true, estado: 'PROPUESTO' };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** PROPUESTO -> AUTORIZADO (solo DIRECTOR_MEDICO/ADMIN). Habilita entrega. */
+function autorizarBOM(d) {
+  if (!tienePermiso(d.rolUsuario, 'autorizar_bom')) return errorSinPermiso(d.rolUsuario, 'autorizar_bom');
+  ensureBOMSheets_();
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    var ref = buscarBOMPorFolio_(d.folioCirugia);
+    if (!ref) return { ok: false, error: 'No existe BOM para la cirugía ' + d.folioCirugia + '.' };
+    var estado = String(ref.valores[ref.headers.indexOf('Estado_BOM')]);
+    if (estado !== 'PROPUESTO') {
+      return { ok: false, error: 'Solo se puede autorizar un BOM en estado PROPUESTO (actual: ' + estado + ').' };
+    }
+    setBOMCampos_(ref, {
+      Estado_BOM: 'AUTORIZADO',
+      Autorizado_Por: d.realizadoPor || d.rolUsuario || '',
+      Autorizado_TS: nowTs(),
+      Motivo_Rechazo: ''
+    });
+    return { ok: true, estado: 'AUTORIZADO' };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** PROPUESTO -> RECHAZADO con motivo (luego puede volver a PROPUESTO). */
+function rechazarBOM(d) {
+  if (!tienePermiso(d.rolUsuario, 'rechazar_bom')) return errorSinPermiso(d.rolUsuario, 'rechazar_bom');
+  ensureBOMSheets_();
+  var motivo = String(d.motivo || '').trim();
+  if (!motivo) return { ok: false, error: 'Indica el motivo del rechazo.' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    var ref = buscarBOMPorFolio_(d.folioCirugia);
+    if (!ref) return { ok: false, error: 'No existe BOM para la cirugía ' + d.folioCirugia + '.' };
+    var estado = String(ref.valores[ref.headers.indexOf('Estado_BOM')]);
+    if (estado !== 'PROPUESTO') {
+      return { ok: false, error: 'Solo se puede rechazar un BOM en estado PROPUESTO (actual: ' + estado + ').' };
+    }
+    setBOMCampos_(ref, {
+      Estado_BOM: 'RECHAZADO',
+      Motivo_Rechazo: motivo,
+      Autorizado_Por: d.realizadoPor || d.rolUsuario || '',
+      Autorizado_TS: nowTs()
+    });
+    return { ok: true, estado: 'RECHAZADO' };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** AUTORIZADO -> ENTREGADO (almacén). Acepta cantidades U por partida (opcional). */
+function entregarBOM(d) {
+  if (!tienePermiso(d.rolUsuario, 'entregar_bom')) return errorSinPermiso(d.rolUsuario, 'entregar_bom');
+  ensureBOMSheets_();
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    var ref = buscarBOMPorFolio_(d.folioCirugia);
+    if (!ref) return { ok: false, error: 'No existe BOM para la cirugía ' + d.folioCirugia + '.' };
+    var estado = String(ref.valores[ref.headers.indexOf('Estado_BOM')]);
+    if (estado !== 'AUTORIZADO') {
+      return { ok: false, error: 'Solo se puede entregar un BOM AUTORIZADO por el director (actual: ' + estado + ').' };
+    }
+    if (d.items) aplicarItemsBOM_(d.folioCirugia, d.items, 'Cantidad_U');
+    setBOMCampos_(ref, {
+      Estado_BOM: 'ENTREGADO',
+      Entregado_Por: d.realizadoPor || d.rolUsuario || '',
+      Entregado_TS: nowTs()
+    });
+    return { ok: true, estado: 'ENTREGADO' };
+  } finally {
+    lock.releaseLock();
+  }
 }
