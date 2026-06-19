@@ -679,6 +679,40 @@ textarea { resize: vertical; min-height: 70px; }
   text-transform:uppercase; letter-spacing:.03em; }
 .caja-res-val { display:block; font-family:Georgia,serif; font-size:20px; font-weight:700; }
 
+/* ============================================================
+   FEEDBACK VISUAL GLOBAL DE CLICK EN BOTONES
+   Señal inmediata al hacer click + bloqueo breve para evitar
+   doble click / envíos duplicados. (Lógica en setupClickFeedbackGlobal)
+   ============================================================ */
+@keyframes cebClickPulse {
+  0%   { box-shadow: 0 0 0 0 rgba(43,168,156,0.55); }
+  70%  { box-shadow: 0 0 0 7px rgba(43,168,156,0); }
+  100% { box-shadow: 0 0 0 0 rgba(43,168,156,0); }
+}
+@keyframes cebClickSpin { to { transform: rotate(360deg); } }
+.ceb-click-busy {
+  pointer-events: none !important;   /* impide un segundo click durante el cooldown */
+  cursor: wait !important;
+  opacity: 0.7;
+  position: relative !important;
+  animation: cebClickPulse 0.55s ease-out;
+}
+/* Spinner solo en botones de acción (.btn): hay espacio y son los que
+   suelen disparar llamadas a la red. Los botones chicos/iconos solo
+   reciben el pulso + atenuado. */
+.btn.ceb-click-busy::after {
+  content: "";
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 12px; height: 12px;
+  margin: -7px 0 0 -7px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  opacity: 0.9;
+  animation: cebClickSpin 0.55s linear infinite;
+}
+
 </style>
 </head>
 <body>
@@ -4478,6 +4512,61 @@ async function guardarMedicoConsultaInline() {
   showToast('Médico de consulta agregado: ' + resp.nombreCompleto);
 }
 
+// ============================================================
+// ALTA RÁPIDA DE MÉDICO desde el formulario de Recepción
+// (campo "Médico que refirió / vendedor").
+// Permiso: alta_medico (incluye RECEPCION). No recarga el modal,
+// por lo que NO se pierde lo ya capturado del paciente.
+// ============================================================
+function toggleNuevoMedicoVendedor(abrir) {
+  const blk = document.getElementById('rec_med_nuevo_block');
+  if (!blk) return;
+  blk.style.display = abrir ? 'block' : 'none';
+  if (abrir) {
+    const n = document.getElementById('rec_med_nuevo_nombre');
+    if (n) n.focus();
+  } else {
+    ['rec_med_nuevo_nombre', 'rec_med_nuevo_cedula', 'rec_med_nuevo_esp', 'rec_med_nuevo_cedesp', 'rec_med_nuevo_tel'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+  }
+}
+
+async function guardarMedicoVendedorInline() {
+  const nombre = (document.getElementById('rec_med_nuevo_nombre').value || '').trim();
+  if (!nombre) { showToast('Captura el nombre del médico', 'error'); return; }
+  const nombreFmt = toTitleCase(nombre);
+  const cedula = (document.getElementById('rec_med_nuevo_cedula').value || '').trim();
+  const especialidad = toTitleCase((document.getElementById('rec_med_nuevo_esp').value || '').trim());
+  const cedesp = (document.getElementById('rec_med_nuevo_cedesp').value || '').trim();
+  const tel = (document.getElementById('rec_med_nuevo_tel').value || '').trim();
+
+  const resp = await apiPost('altaMedico', {
+    nombreCompleto: nombreFmt,
+    cedulaProfesional: cedula,
+    especialidad: especialidad,
+    cedulaEspecialidad: cedesp,
+    telefono: tel
+  });
+  if (!resp.ok) { showToast('Error: ' + (resp.error || ''), 'error'); return; }
+
+  // Agregar la opción al selector de vendedor y dejarla seleccionada,
+  // sin recargar el modal. El value es el Nombre_Completo, igual que el
+  // resto de las opciones que arma medicosOpts.
+  const sel = document.getElementById('rec_vendedor');
+  if (sel) {
+    const opt = document.createElement('option');
+    opt.value = nombreFmt;
+    opt.textContent = nombreFmt + ' (' + (especialidad || 's/esp') + ')';
+    sel.appendChild(opt);
+    sel.value = nombreFmt;
+  }
+  toggleNuevoMedicoVendedor(false);
+  loadCatalogos(); // refresca el catálogo en memoria para próximos formularios
+  showToast('Médico agregado: ' + nombreFmt + (resp.idMedico ? ' (' + resp.idMedico + ')' : ''));
+}
+
 // MODAL: ENTRADA INVENTARIO
 function openModalEntrada() {
   const medOpts = catalogos.medicamentos.map(m => `<option value="${m.ID_Medicamento}">${m.Nombre_Comercial}</option>`).join('');
@@ -4988,7 +5077,7 @@ async function openModalIngresar(idHabitacionPreseleccionada) {
   const habs = (cacheHabitaciones && cacheHabitaciones.habitaciones) || [];
   const habsDisponibles = habs.filter(h => !h.ocupada);
   const habsOpts = habsDisponibles.map(h => {
-    const tipoLbl = h.tipo === 'PRIVADA' ? 'Privada' : h.tipo === 'SALA_GENERAL' ? 'Sala Gral.' : h.tipo === 'URGENCIAS' ? 'Urgencias' : h.tipo === 'TERAPIA_INTENSIVA' ? 'T. Intensiva' : h.tipo;
+    const tipoLbl = h.tipo === 'PRIVADA' ? 'Privada' : h.tipo === 'SALA_GENERAL' ? 'Sala Gral.' : 'Urgencias';
     const sel = h.idHabitacion === idHabitacionPreseleccionada ? 'selected' : '';
     return `<option value="${h.idHabitacion}" data-tipo="${h.tipo}" ${sel}>${tipoLbl} ${h.numero}</option>`;
   }).join('');
@@ -5280,8 +5369,8 @@ function openModalMover(idHosp, nombrePaciente, idHabActual) {
     return;
   }
   const habsOpts = habsDisponibles.map(h => {
-    const tipoLbl = h.tipo === 'PRIVADA' ? 'Privada' : h.tipo === 'SALA_GENERAL' ? 'Sala Gral.' : h.tipo === 'URGENCIAS' ? 'Urgencias' : h.tipo === 'TERAPIA_INTENSIVA' ? 'T. Intensiva' : h.tipo;
-    return `<option value="${h.idHabitacion}" data-tipo="${h.tipo}">${tipoLbl} ${h.numero}</option>`;
+    const tipoLbl = h.tipo === 'PRIVADA' ? 'Privada' : h.tipo === 'SALA_GENERAL' ? 'Sala Gral.' : 'Urgencias';
+    return `<option value="${h.idHabitacion}">${tipoLbl} ${h.numero}</option>`;
   }).join('');
   openModal('Mover paciente', `
     <form onsubmit="event.preventDefault();confirmarMover('${idHosp}')">
@@ -5471,12 +5560,33 @@ async function abrirFormularioRecepcion(desdeConsulta, idPaciente) {
               ${tiposClienteOpts}
             </select>
           </div>
-          <div><label>Médico que refirió (vendedor)</label>
+          <div><label>Médico que refirió (vendedor) *</label>
             <select id="rec_vendedor">
-              <option value="">— Opcional —</option>
+              <option value="">— Seleccionar —</option>
               ${medicosOpts}
             </select>
+            ${puede('alta_medico')
+              ? '<button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="toggleNuevoMedicoVendedor(true)">+ Dar de alta médico nuevo</button>'
+              : ''}
           </div>
+
+          ${puede('alta_medico') ? `
+          <!-- ALTA RÁPIDA DE MÉDICO (oculto por defecto). No recarga el modal: conserva lo capturado. -->
+          <div class="full" id="rec_med_nuevo_block" style="display:none;border:1px dashed var(--teal);border-radius:8px;padding:12px;margin-top:4px;">
+            <div style="font-size:12px;color:var(--navy);font-weight:600;margin-bottom:8px;">Nuevo médico (se agrega al catálogo y queda seleccionado como vendedor)</div>
+            <div class="form-grid">
+              <div class="full"><label>Nombre completo *</label><input type="text" id="rec_med_nuevo_nombre" onblur="applyTitleCase(this)" placeholder="Dr(a). Nombre Apellido"></div>
+              <div><label>Cédula profesional</label><input type="text" id="rec_med_nuevo_cedula" placeholder="Opcional"></div>
+              <div><label>Especialidad</label><input type="text" id="rec_med_nuevo_esp" onblur="applyTitleCase(this)" placeholder="Ej: Ginecología"></div>
+              <div><label>Cédula de especialidad</label><input type="text" id="rec_med_nuevo_cedesp" placeholder="Opcional"></div>
+              <div><label>Teléfono</label><input type="text" id="rec_med_nuevo_tel" placeholder="Opcional"></div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:10px;">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="toggleNuevoMedicoVendedor(false)">Cancelar</button>
+              <button type="button" class="btn btn-accent btn-sm" onclick="guardarMedicoVendedorInline()">Guardar médico</button>
+            </div>
+          </div>
+          ` : ''}
         </div>
       </div>
 
@@ -5789,6 +5899,7 @@ async function guardarPacienteRecepcion(idPaciente) {
     const requeridos = [
       { id: 'rec_contacto1', label: 'Contacto 1', tab: 'general' },
       { id: 'rec_tipo_cliente', label: 'Tipo de cliente', tab: 'general' },
+      { id: 'rec_vendedor', label: 'Médico que refirió (vendedor)', tab: 'general' },
       { id: 'rec_telefono1', label: 'Teléfono 1', tab: 'direccion' },
       { id: 'rec_fecha_ingreso', label: 'Fecha de ingreso', tab: 'datos' },
       { id: 'rec_servicio', label: 'Servicio', tab: 'datos' },
@@ -7601,7 +7712,35 @@ async function desactivarBeneficiario(id, activar) {
   }
 }
 
-
+// ============================================================
+// FEEDBACK VISUAL GLOBAL DE CLICK EN BOTONES
+// Aplica a CUALQUIER <button> o elemento .btn del archivo, incluidos
+// los que se crean dinámicamente dentro de modales (delegación en document).
+//
+// • Da una señal visual inmediata al hacer click (pulso + atenuado, y
+//   spinner en los botones de acción) para confirmar que el click se registró.
+// • Bloquea un segundo click sobre el MISMO botón durante un breve cooldown,
+//   evitando envíos/acciones duplicadas.
+//
+// No interfiere con la acción del botón: este listener corre en fase de
+// BURBUJA, es decir DESPUÉS del onclick original. Nunca llama preventDefault
+// ni stopPropagation, así que ninguna funcionalidad existente se ve afectada.
+// ============================================================
+(function setupClickFeedbackGlobal() {
+  var BUSY = 'ceb-click-busy';
+  var COOLDOWN_MS = 850; // ⏱ duración del efecto/bloqueo. Ajusta aquí si lo quieres más corto o más largo.
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    var btn = (t && t.closest) ? t.closest('button, .btn') : null;
+    if (!btn) return;
+    if (btn.disabled) return;                  // si ya está deshabilitado por la app, no hacemos nada
+    if (btn.classList.contains(BUSY)) return;  // ya está en cooldown
+    btn.classList.add(BUSY);
+    setTimeout(function () {
+      if (btn && btn.classList) btn.classList.remove(BUSY);
+    }, COOLDOWN_MS);
+  }, false);
+})();
 </script>
 </body>
 </html>
