@@ -95,6 +95,7 @@ var PERMISOS_ACCIONES = {
   'proponer_bom':         ['ADMIN','ALMACEN','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA'],
   'autorizar_bom':        ['ADMIN','DIRECTOR_MEDICO'],
   'rechazar_bom':         ['ADMIN','DIRECTOR_MEDICO'],
+  'asignar_bom':          ['ADMIN','DIRECTOR_MEDICO'],
   'entregar_bom':         ['ADMIN','ALMACEN'],
   'editar_plantilla_bom': ['ADMIN','ALMACEN','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA']
 };
@@ -213,6 +214,7 @@ function doPost(e) {
       case 'editarBeneficiario': result = editarBeneficiario(payload.data); break;
       case 'guardarIngreso':     result = guardarIngreso(payload.data); break;
       case 'proponerBOM':        result = proponerBOM(payload.data); break;
+      case 'asignarBOMPaquetes':  result = asignarBOMPaquetes(payload.data); break;
       case 'autorizarBOM':       result = autorizarBOM(payload.data); break;
       case 'rechazarBOM':        result = rechazarBOM(payload.data); break;
       case 'entregarBOM':        result = entregarBOM(payload.data); break;
@@ -516,14 +518,12 @@ function crearCirugia(d) {
     return errorSinPermiso(d.rolUsuario, 'nueva_cirugia');
   }
 
-  // ===== BOM: paquete(s) o comentario obligatorio =====
-  // La cirugía puede llevar 0, 1 o varios paquetes. Si va SIN paquete,
-  // se exige un comentario que explique por qué (regla del módulo BOM).
+  // ===== BOM: el paquete es OPCIONAL al programar =====
+  // La cirugía se programa con días de anticipación y puede ir sin paquete.
+  // La falta de paquete NO frena la programación: el BOM nace SOLICITADO y
+  // es el Director Médico quien asigna después el tipo de BOM (asignarBOMPaquetes).
   var paquetesBOM = Array.isArray(d.paquetes) ? d.paquetes.filter(function(x){ return x; }) : [];
   var comentarioBOM = String(d.comentarioSinPaquete || '').trim();
-  if (paquetesBOM.length === 0 && !comentarioBOM) {
-    return { ok: false, error: 'La cirugía no tiene paquete de BOM. Selecciona al menos un paquete o escribe un comentario explicando por qué va sin paquete.' };
-  }
 
   // ===== Paciente: puede ser del catálogo O texto libre =====
   // Al PROGRAMAR se permite un paciente que aún no está dado de alta
@@ -4662,5 +4662,77 @@ function entregarBOM(d) {
     return { ok: true, estado: 'ENTREGADO' };
   } finally {
     lock.releaseLock();
+  }
+}
+
+/**
+ * SOLICITADO/RECHAZADO -> (sigue SOLICITADO/RECHAZADO) con el/los paquete(s) asignados.
+ * Es responsabilidad del Director Médico definir el tipo de BOM que corresponde a la
+ * cirugía cuando se programó sin paquete. Regenera las partidas desde la plantilla.
+ */
+function asignarBOMPaquetes(d) {
+  if (!tienePermiso(d.rolUsuario, 'asignar_bom')) return errorSinPermiso(d.rolUsuario, 'asignar_bom');
+  ensureBOMSheets_();
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    var ref = buscarBOMPorFolio_(d.folioCirugia);
+    if (!ref) return { ok: false, error: 'No existe BOM para la cirugía ' + d.folioCirugia + '.' };
+    var estado = String(ref.valores[ref.headers.indexOf('Estado_BOM')]);
+    if (estado !== 'SOLICITADO' && estado !== 'RECHAZADO') {
+      return { ok: false, error: 'Solo se puede asignar el paquete mientras el BOM está SOLICITADO o RECHAZADO (actual: ' + estado + ').' };
+    }
+    var claves = Array.isArray(d.paquetes) ? d.paquetes.filter(function (x) { return x; }) : [];
+    if (!claves.length) return { ok: false, error: 'Selecciona al menos un paquete de BOM para asignar.' };
+
+    var idBOM = String(ref.valores[ref.headers.indexOf('ID_BOM')]);
+    // Limpiar las partidas previas de este BOM y regenerarlas desde la plantilla.
+    eliminarItemsBOM_(idBOM);
+    var plantilla = sheetToObjects(SHEETS.BOM_PLANTILLA);
+    var nItem = 0;
+    claves.forEach(function (clave) {
+      plantilla.filter(function (r) {
+        return String(r.Clave_Paquete) === String(clave) && esActivo(r.Activo);
+      }).forEach(function (r) {
+        nItem++;
+        appendRowByHeader(SHEETS.BOM_ITEMS, {
+          ID_BOM_Item: idBOM + '-' + String(nItem).padStart(4, '0'),
+          ID_BOM: idBOM,
+          Folio_Cirugia: d.folioCirugia,
+          Clave_Paquete: clave,
+          Tipo_Item: r.Tipo_Item || '',
+          Codigo: r.Codigo || '',
+          Descripcion: r.Descripcion || '',
+          Cantidad_S: r.Cantidad_S || '',
+          Cantidad_U: '',
+          Cantidad_R: '',
+          Unidad: r.Unidad || '',
+          Lote: '',
+          Observaciones: ''
+        });
+      });
+    });
+
+    setBOMCampos_(ref, {
+      Paquetes: claves.join(', '),
+      Comentario_Sin_Paquete: '',
+      Observaciones: 'BOM asignado por ' + (d.realizadoPor || d.rolUsuario || '') + ' (' + nowTs() + ')'
+    });
+    return { ok: true, idBOM: idBOM, partidas: nItem, paquetes: claves.length, estado: estado };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Elimina todas las partidas (filas) de BOM_Items que pertenezcan a un ID_BOM. */
+function eliminarItemsBOM_(idBOM) {
+  var sh = getSheet(SHEETS.BOM_ITEMS);
+  var data = sh.getDataRange().getValues();
+  if (data.length < 2) return;
+  var cId = data[0].indexOf('ID_BOM');
+  if (cId === -1) return;
+  // De abajo hacia arriba para no romper los índices al borrar.
+  for (var i = data.length - 1; i >= 1; i--) {
+    if (String(data[i][cId]) === String(idBOM)) sh.deleteRow(i + 1);
   }
 }

@@ -1662,6 +1662,7 @@ const PERMISOS = {
     'proponer_bom':         ['ADMIN','ALMACEN','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA'],
     'autorizar_bom':        ['ADMIN','DIRECTOR_MEDICO'],
     'rechazar_bom':         ['ADMIN','DIRECTOR_MEDICO'],
+    'asignar_bom':          ['ADMIN','DIRECTOR_MEDICO'],
     'entregar_bom':         ['ADMIN','ALMACEN'],
     'editar_plantilla_bom': ['ADMIN','ALMACEN','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA']
   }
@@ -1827,6 +1828,8 @@ function renderBOM() {
     const badge = `<span style="background:${color};color:#0F1923;border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700;">${bomEsc(b.estado)}</span>`;
     const paq = b.paquetes ? bomEsc(b.paquetes) : (b.comentario ? '<em style="color:var(--text-muted);">' + bomEsc(b.comentario) + '</em>' : '—');
     let acc = `<button class="btn btn-secondary btn-sm" onclick="bomVerDetalle('${bomEsc(b.folioCirugia)}')">Ver</button> `;
+    if ((b.estado === 'SOLICITADO' || b.estado === 'RECHAZADO') && puede('asignar_bom'))
+      acc += `<button class="btn btn-secondary btn-sm" onclick="bomAsignarPaquetes('${bomEsc(b.folioCirugia)}')">Asignar paquete</button> `;
     if ((b.estado === 'SOLICITADO' || b.estado === 'RECHAZADO') && puede('proponer_bom'))
       acc += `<button class="btn btn-primary btn-sm" onclick="bomAccion('proponerBOM','${bomEsc(b.folioCirugia)}')">Proponer</button> `;
     if (b.estado === 'PROPUESTO' && puede('autorizar_bom'))
@@ -1856,6 +1859,44 @@ async function bomRechazar(folioCirugia) {
   const resp = await apiPost('rechazarBOM', { folioCirugia: folioCirugia, motivo: motivo.trim(), realizadoPor: currentUser.nombre });
   if (resp && resp.ok) { showToast('BOM ' + folioCirugia + ' rechazado'); loadBOM(); }
   else { showToast((resp && resp.error) || 'Error', 'error'); }
+}
+
+async function bomAsignarPaquetes(folioCirugia) {
+  // Carga el detalle actual para preseleccionar lo que ya tuviera asignado.
+  const det = await apiGet('getBOM', { folioCirugia: folioCirugia });
+  const yaPaq = (det && det.ok && det.cabecera && det.cabecera.Paquetes)
+    ? String(det.cabecera.Paquetes).split(',').map(s => s.trim()).filter(Boolean) : [];
+  const opts = (catalogos.paquetes || []).map(p => {
+    const sel = yaPaq.indexOf(p.Clave_Paquete) !== -1 ? ' selected' : '';
+    const esp = p.Especialidad ? ' — ' + bomEsc(p.Especialidad) : '';
+    return `<option value="${bomEsc(p.Clave_Paquete)}"${sel}>${bomEsc(p.Nombre_Paquete || p.Clave_Paquete)}${esp}</option>`;
+  }).join('');
+  openModal('Asignar paquete de BOM — cirugía ' + bomEsc(folioCirugia), `
+    <div style="padding:4px 0 10px;font-size:13px;color:var(--text-muted);">
+      Define el o los paquetes de BOM que corresponden a esta cirugía. Al guardar se (re)generan las partidas desde la plantilla.
+    </div>
+    <label>Paquete(s) de BOM *</label>
+    <select id="bom_asig_paquetes" multiple size="8" style="width:100%;">${opts}</select>
+    <small style="display:block;color:var(--text-muted);font-size:11px;margin-top:6px;">Ctrl/Cmd para seleccionar varios.</small>
+    <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-accent" onclick="bomGuardarAsignacion('${bomEsc(folioCirugia)}')">Guardar asignación</button>
+    </div>
+  `);
+}
+
+async function bomGuardarAsignacion(folioCirugia) {
+  const sel = document.getElementById('bom_asig_paquetes');
+  const paquetes = sel ? Array.from(sel.selectedOptions).map(o => o.value) : [];
+  if (!paquetes.length) { showToast('Selecciona al menos un paquete de BOM.', 'error'); return; }
+  const resp = await apiPost('asignarBOMPaquetes', { folioCirugia: folioCirugia, paquetes: paquetes, realizadoPor: currentUser.nombre });
+  if (resp && resp.ok) {
+    showToast('BOM asignado a ' + folioCirugia + ' (' + (resp.partidas || 0) + ' partidas)');
+    closeModal();
+    loadBOM();
+  } else {
+    showToast((resp && resp.error) || 'No se pudo asignar el BOM', 'error');
+  }
 }
 
 async function bomVerDetalle(folioCirugia) {
@@ -2291,12 +2332,12 @@ function openModalProgramar() {
         <!-- BOM: paquete(s) de la cirugía -->
         <div class="full" style="border:1px solid var(--border);border-radius:8px;padding:14px;background:#FAFBFC;">
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
-            <label style="margin:0;">Paquete(s) de BOM</label>
-            <small style="color:var(--text-muted);font-size:11px;">Selecciona 0, 1 o varios (Ctrl/Cmd para múltiples). Al programar se genera el BOM y se avisa a almacén.</small>
+            <label style="margin:0;">Paquete(s) de BOM <span style="color:var(--text-muted);font-weight:400;">(opcional)</span></label>
+            <small style="color:var(--text-muted);font-size:11px;">Si lo conoces, selecciónalo (Ctrl/Cmd para varios). Puede ir vacío: el Director Médico lo asigna después.</small>
           </div>
           <select id="cx_paquetes" multiple size="5" style="width:100%;" onchange="onPaquetesChange()">${paquetesOpts}</select>
           <div id="cx_paquete_comentario_box" style="margin-top:10px;">
-            <label style="font-size:12px;">Comentario (obligatorio si no eliges paquete)</label>
+            <label style="font-size:12px;">Comentario (opcional)</label>
             <input type="text" id="cx_paquete_comentario" placeholder="Ej: material se define en quirófano / cirugía sin paquete estándar" autocomplete="off">
           </div>
         </div>
@@ -2671,13 +2712,11 @@ async function crearCirugia() {
     return;
   }
 
-  // BOM: paquete(s) o comentario obligatorio
+  // BOM: el paquete es OPCIONAL al programar.
+  // La cirugía se programa con anticipación y puede ir sin paquete; no se frena.
+  // El Director Médico asigna después el tipo de BOM que corresponde.
   const paquetesSel = Array.from((document.getElementById('cx_paquetes') || {}).selectedOptions || []).map(o => o.value);
   const comentarioPaquete = (document.getElementById('cx_paquete_comentario')?.value || '').trim();
-  if (paquetesSel.length === 0 && !comentarioPaquete) {
-    showToast('Sin paquete de BOM: escribe un comentario explicando por qué la cirugía va sin paquete.', 'error');
-    return;
-  }
 
   // Buscar datos del paciente seleccionado
   const paciente = catalogos.pacientes.find(p => p.ID_Paciente === idPaciente);
