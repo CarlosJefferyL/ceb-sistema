@@ -43,6 +43,10 @@ var SHEETS = {
   INV_MOV: 'Inventario_Mov',
   INV_SALDO: 'Inventario_Saldo',
   ARTICULOS: 'CAT_Articulos',
+  // ---- Módulo Compras ----
+  PROVEEDORES: 'CAT_Proveedores',
+  ORDENES_COMPRA: 'Ordenes_Compra',
+  OC_ITEMS: 'OC_Items',
   CONSULTAS: 'Consultas',
   RECIBOS: 'Recibos',
   BENEFICIARIOS: 'CAT_Beneficiarios',
@@ -92,6 +96,14 @@ var PERMISOS_ACCIONES = {
   'entrada_articulo':     ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
   'salida_articulo':      ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],
   'ajuste_articulo':      ['ADMIN','ALMACEN','DIRECTOR_MEDICO'],
+  // ---- Compras ----
+  'alta_proveedor':       ['ADMIN','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
+  'editar_proveedor':     ['ADMIN','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
+  'crear_oc':             ['ADMIN','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
+  'editar_oc':            ['ADMIN','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
+  'enviar_oc':            ['ADMIN','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
+  'cancelar_oc':          ['ADMIN','DIRECTOR_MEDICO'],
+  'recibir_oc':           ['ADMIN','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
   'alta_medico':          ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
   'alta_medico_consulta': ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
   'exportar_libro':       ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
@@ -160,6 +172,9 @@ function doGet(e) {
       case 'getInventario':result = getInventario(); break;
       case 'getInventarioGeneral': result = getInventarioGeneral(e.parameter.categoria); break;
       case 'getArticulos': result = getArticulos(e.parameter.categoria); break;
+      case 'getProveedores': result = getProveedores(); break;
+      case 'getOrdenesCompra': result = getOrdenesCompra(e.parameter.estado, e.parameter.desde, e.parameter.hasta); break;
+      case 'getOrdenCompra': result = getOrdenCompra(e.parameter.folioOC); break;
       case 'getLotes':     result = getLotes(e.parameter.estado, e.parameter.idMedicamento); break;
       case 'getConsumosPorLote': result = getConsumosPorLote(e.parameter.idLote); break;
       case 'getDashboard': result = getDashboard(e.parameter.horizonte); break;
@@ -207,6 +222,11 @@ function doPost(e) {
       case 'registrarEntradaArticulo': result = registrarEntradaArticulo(payload.data); break;
       case 'registrarMovimientoArticulo': result = registrarMovimientoArticulo(payload.data); break;
       case 'migrarArticulos':    result = migrarArticulos(payload.data); break;
+      case 'altaProveedor':      result = altaProveedor(payload.data); break;
+      case 'editarProveedor':    result = editarProveedor(payload.data); break;
+      case 'crearOrdenCompra':   result = crearOrdenCompra(payload.data); break;
+      case 'cambiarEstadoOC':    result = cambiarEstadoOC(payload.data); break;
+      case 'recibirOrdenCompra': result = recibirOrdenCompra(payload.data); break;
       case 'actualizarCirugia':  result = actualizarCirugia(payload.data); break;
       case 'altaPaciente':       result = altaPaciente(payload.data); break;
       case 'altaMedicamento':    result = altaMedicamento(payload.data); break;
@@ -409,10 +429,12 @@ function getCatalogos() {
   ensureBOMSheets_(); // crea las hojas del módulo BOM en el primer arranque
   ensureSheetConHeaders_(SHEETS.MEDICOS_CONSULTA, MEDICOS_CONSULTA_HEADERS); // médicos de consulta externa
   ensureArticulosSheet_(); // catálogo único de inventario general
+  ensureComprasSheets_();  // proveedores y órdenes de compra
   return {
     ok: true,
     medicamentos: sheetToObjects(SHEETS.MEDICAMENTOS).filter(function(m){return esActivo(m.Activo);}),
     articulos:    sheetToObjects(SHEETS.ARTICULOS).filter(function(a){return esActivo(a.Activo);}),
+    proveedores:  sheetToObjects(SHEETS.PROVEEDORES).filter(function(p){return esActivo(p.Activo);}),
     medicos:      sheetToObjects(SHEETS.MEDICOS).filter(function(m){return esActivo(m.Activo);}),
     medicosConsulta: sheetToObjects(SHEETS.MEDICOS_CONSULTA).filter(function(m){return esActivo(m.Activo);}),
     quirofanos:   sheetToObjects(SHEETS.QUIROFANOS).filter(function(q){return esActivo(q.Activo);}),
@@ -1820,6 +1842,87 @@ function altaArticulo(d) {
 }
 
 /**
+ * Valida que una entrada cumpla los requisitos de su categoría
+ * (lote+caducidad para meds/controlados; receta para controlados).
+ * Devuelve {ok:false,error} si falta algo, o null si todo bien.
+ */
+function validarRequisitosEntrada_(art, d) {
+  var cat = normCategoria_(art.Categoria);
+  if (categoriaRequiereLote_(cat)) {
+    if (!d.loteFabricante && !d.lote) {
+      return { ok: false, error: 'El lote de fabricante es obligatorio para ' + (art.Nombre || cat) };
+    }
+    if (!d.fechaCaducidad) {
+      return { ok: false, error: 'La fecha de caducidad es obligatoria para ' + (art.Nombre || cat) };
+    }
+  }
+  if (categoriaRequiereReceta_(cat) && (!d.folioReceta || !String(d.folioReceta).trim())) {
+    return { ok: false, error: 'El folio de receta es obligatorio para el medicamento controlado ' + (art.Nombre || '') };
+  }
+  return null;
+}
+
+/**
+ * Escribe físicamente una entrada de stock (caja en Lotes si la categoría
+ * lo requiere + movimiento ENTRADA en Inventario_Mov). ASUME que el
+ * llamador ya tiene el LockService y ya validó los requisitos.
+ * @return {{idLote:string}}
+ */
+function entradaArticuloEscribir_(art, cantidad, d) {
+  var cat = normCategoria_(art.Categoria);
+  var requiereLote = categoriaRequiereLote_(cat);
+  var unidad = d.unidad || art.Unidad || '';
+  var nombre = art.Nombre || d.nombreArticulo || '';
+  var fechaEntrada = d.fecha || todayStr();
+  var idLote = '';
+
+  if (requiereLote) {
+    idLote = 'LOTE-' + new Date().getTime() + '-' + Math.floor(num_(d._seq));
+    appendRowByHeader(SHEETS.LOTES, {
+      'ID_Lote': idLote,
+      'ID_Medicamento': art.ID_Articulo,
+      'Nombre_Medicamento': nombre,
+      'Folio_Receta': d.folioReceta ? String(d.folioReceta).trim() : '',
+      'Lote_Fabricante': d.loteFabricante || d.lote || '',
+      'Fecha_Caducidad': d.fechaCaducidad || '',
+      'Cantidad_Inicial': cantidad,
+      'Unidad': unidad,
+      'Cantidad_Consumida': 0,
+      'Saldo': cantidad,
+      'Estado': 'ABIERTA',
+      'Proveedor': d.proveedor || '',
+      'Referencia': d.referencia || '',
+      'Fecha_Entrada': fechaEntrada,
+      'Capturado_Por': d.capturadoPor || '',
+      'Timestamp_Captura': nowTs()
+    });
+  }
+
+  getSheet(SHEETS.INV_MOV).appendRow([
+    'MOV-' + new Date().getTime() + '-' + Math.floor(num_(d._seq)),
+    fechaEntrada,
+    'ENTRADA',
+    art.ID_Articulo,
+    nombre,
+    cantidad,
+    unidad,
+    d.referencia || '',
+    d.loteFabricante || d.lote || '',
+    d.fechaCaducidad || '',
+    d.proveedor || '',
+    d.capturadoPor,
+    nowTs(),
+    d.observaciones || '',
+    idLote
+  ]);
+
+  return { idLote: idLote };
+}
+
+/** Convierte a número (0 si no aplica). Para sufijos de ID únicos en lote. */
+function num_(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+
+/**
  * Registra una ENTRADA de stock de cualquier artículo.
  *  - Categorías con lote (MEDICAMENTO / MEDICAMENTO_CONTROLADO): exige
  *    lote de fabricante + fecha de caducidad y crea la caja en Lotes.
@@ -1837,72 +1940,18 @@ function registrarEntradaArticulo(d) {
 
   var art = getArticuloRaw_(d.idArticulo);
   if (!art) return { ok: false, error: 'Artículo no encontrado: ' + d.idArticulo };
-  var cat = normCategoria_(art.Categoria);
-  var requiereLote = categoriaRequiereLote_(cat);
-  var unidad = d.unidad || art.Unidad || '';
-  var nombre = art.Nombre || d.nombreArticulo || '';
+  var requiereLote = categoriaRequiereLote_(art.Categoria);
 
-  if (requiereLote) {
-    if (!d.loteFabricante && !d.lote) {
-      return { ok: false, error: 'El lote de fabricante es obligatorio para ' + cat };
-    }
-    if (!d.fechaCaducidad) {
-      return { ok: false, error: 'La fecha de caducidad es obligatoria para ' + cat };
-    }
-  }
-  if (categoriaRequiereReceta_(cat) && (!d.folioReceta || !String(d.folioReceta).trim())) {
-    return { ok: false, error: 'El folio de receta que respalda la caja es obligatorio para medicamentos controlados' };
-  }
+  var verr = validarRequisitosEntrada_(art, d);
+  if (verr) return verr;
 
   var lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    var fechaEntrada = d.fecha || todayStr();
-    var idLote = '';
-
-    if (requiereLote) {
-      idLote = 'LOTE-' + new Date().getTime();
-      appendRowByHeader(SHEETS.LOTES, {
-        'ID_Lote': idLote,
-        'ID_Medicamento': d.idArticulo,
-        'Nombre_Medicamento': nombre,
-        'Folio_Receta': d.folioReceta ? String(d.folioReceta).trim() : '',
-        'Lote_Fabricante': d.loteFabricante || d.lote || '',
-        'Fecha_Caducidad': d.fechaCaducidad || '',
-        'Cantidad_Inicial': cantidad,
-        'Unidad': unidad,
-        'Cantidad_Consumida': 0,
-        'Saldo': cantidad,
-        'Estado': 'ABIERTA',
-        'Proveedor': d.proveedor || '',
-        'Referencia': d.referencia || '',
-        'Fecha_Entrada': fechaEntrada,
-        'Capturado_Por': d.capturadoPor || '',
-        'Timestamp_Captura': nowTs()
-      });
-    }
-
-    getSheet(SHEETS.INV_MOV).appendRow([
-      'MOV-' + new Date().getTime(),
-      fechaEntrada,
-      'ENTRADA',
-      d.idArticulo,
-      nombre,
-      cantidad,
-      unidad,
-      d.referencia || '',
-      d.loteFabricante || d.lote || '',
-      d.fechaCaducidad || '',
-      d.proveedor || '',
-      d.capturadoPor,
-      nowTs(),
-      d.observaciones || '',
-      idLote
-    ]);
-
+    var res = entradaArticuloEscribir_(art, cantidad, d);
     return {
       ok: true,
-      idLote: idLote,
+      idLote: res.idLote,
       requiereLote: requiereLote,
       saldoNuevo: calcularSaldo(d.idArticulo),
       saldoLote: requiereLote ? cantidad : null
@@ -1958,6 +2007,430 @@ function registrarMovimientoArticulo(d) {
       ''
     ]);
     return { ok: true, saldoNuevo: calcularSaldo(d.idArticulo) };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ============================================================
+// MÓDULO COMPRAS — PROVEEDORES Y ÓRDENES DE COMPRA
+// ------------------------------------------------------------
+// Ciclo de la OC: BORRADOR → ENVIADA → RECIBIDA_PARCIAL → RECIBIDA
+// (CANCELADA en cualquier punto previo a recibir). Al recibir partidas
+// se generan automáticamente las entradas a inventario reutilizando
+// entradaArticuloEscribir_, respetando lote/caducidad/receta por categoría.
+// ============================================================
+var PROVEEDORES_HEADERS = ['ID_Proveedor','Nombre','RFC','Direccion','Ciudad','Telefono','Email',
+  'Condiciones_Pago','Activo','Notas','Capturado_Por','Timestamp_Captura'];
+var OC_HEADERS = ['Folio_OC','Fecha','ID_Proveedor','Nombre_Proveedor','Condiciones','Via_Embarque',
+  'Fecha_Entrega','Estado','Subtotal','IVA','Total','Moneda','Observaciones',
+  'Creado_Por','Timestamp_Creacion','Recibido_Por','Timestamp_Recepcion'];
+var OC_ITEMS_HEADERS = ['ID_OC_Item','Folio_OC','ID_Articulo','Codigo','Descripcion','Unidad',
+  'Cantidad','Precio_Unitario','Descuento','Importe','Cantidad_Recibida','Estado_Item'];
+
+var OC_IVA_TASA = 0.16;
+
+/** Garantiza las hojas del módulo de compras. */
+function ensureComprasSheets_() {
+  ensureSheetConHeaders_(SHEETS.PROVEEDORES, PROVEEDORES_HEADERS);
+  ensureSheetConHeaders_(SHEETS.ORDENES_COMPRA, OC_HEADERS);
+  ensureSheetConHeaders_(SHEETS.OC_ITEMS, OC_ITEMS_HEADERS);
+}
+
+function ocRound_(n) { return Math.round((num_(n) + Number.EPSILON) * 100) / 100; }
+
+// ---------- PROVEEDORES ----------
+
+function getProveedores() {
+  ensureComprasSheets_();
+  var data = sheetToObjects(SHEETS.PROVEEDORES)
+    .filter(function(p){ return esActivo(p.Activo); })
+    .map(function(p){
+      return {
+        idProveedor: p.ID_Proveedor,
+        nombre: p.Nombre,
+        rfc: p.RFC,
+        direccion: p.Direccion,
+        ciudad: p.Ciudad,
+        telefono: p.Telefono,
+        email: p.Email,
+        condicionesPago: p.Condiciones_Pago,
+        notas: p.Notas
+      };
+    });
+  data.sort(function(a, b){ return String(a.nombre||'').localeCompare(String(b.nombre||'')); });
+  return { ok: true, data: data };
+}
+
+function altaProveedor(d) {
+  if (!tienePermiso(d.rolUsuario, 'alta_proveedor')) {
+    return errorSinPermiso(d.rolUsuario, 'alta_proveedor');
+  }
+  if (!d.nombre || !String(d.nombre).trim()) return { ok: false, error: 'El nombre del proveedor es obligatorio' };
+  ensureComprasSheets_();
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    var rows = sheetToObjects(SHEETS.PROVEEDORES);
+    var num = 0;
+    rows.forEach(function(p){
+      var m = String(p.ID_Proveedor || '').match(/^PROV-?(\d+)$/);
+      if (m) num = Math.max(num, parseInt(m[1], 10) || 0);
+    });
+    var id = 'PROV-' + String(num + 1).padStart(3, '0');
+    appendRowByHeader(SHEETS.PROVEEDORES, {
+      'ID_Proveedor': id,
+      'Nombre': String(d.nombre).trim(),
+      'RFC': d.rfc || '',
+      'Direccion': d.direccion || '',
+      'Ciudad': d.ciudad || '',
+      'Telefono': d.telefono || '',
+      'Email': d.email || '',
+      'Condiciones_Pago': d.condicionesPago || '',
+      'Activo': 'SI',
+      'Notas': d.notas || '',
+      'Capturado_Por': d.capturadoPor || '',
+      'Timestamp_Captura': nowTs()
+    });
+    return { ok: true, idProveedor: id };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function editarProveedor(d) {
+  if (!tienePermiso(d.rolUsuario, 'editar_proveedor')) {
+    return errorSinPermiso(d.rolUsuario, 'editar_proveedor');
+  }
+  if (!d.idProveedor) return { ok: false, error: 'Proveedor requerido' };
+  var sh = getSheet(SHEETS.PROVEEDORES);
+  var data = sh.getDataRange().getValues();
+  var H = data[0];
+  var col = {};
+  H.forEach(function(h, i){ col[h] = i; });
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][col['ID_Proveedor']]) === String(d.idProveedor)) {
+      var campos = { 'Nombre': d.nombre, 'RFC': d.rfc, 'Direccion': d.direccion, 'Ciudad': d.ciudad,
+        'Telefono': d.telefono, 'Email': d.email, 'Condiciones_Pago': d.condicionesPago, 'Notas': d.notas };
+      if (d.activo != null) campos['Activo'] = d.activo;
+      Object.keys(campos).forEach(function(k){
+        if (campos[k] != null && col[k] != null) sh.getRange(i + 1, col[k] + 1).setValue(campos[k]);
+      });
+      return { ok: true };
+    }
+  }
+  return { ok: false, error: 'Proveedor no encontrado' };
+}
+
+// ---------- ÓRDENES DE COMPRA ----------
+
+/** Siguiente folio de OC. Usa el contador CONFIG UltimoFolioOC (prefijo PrefijoOC, default 'OC'). */
+function nextFolioOC_() {
+  var prefijo = getConfig('PrefijoOC');
+  if (prefijo == null || prefijo === '') prefijo = 'OC';
+  var ultimo = parseInt(getConfig('UltimoFolioOC'), 10);
+  if (isNaN(ultimo)) {
+    // Sembrar desde las OC existentes si el contador no está configurado
+    ultimo = 0;
+    sheetToObjects(SHEETS.ORDENES_COMPRA).forEach(function(o){
+      var m = String(o.Folio_OC || '').match(/(\d+)\s*$/);
+      if (m) ultimo = Math.max(ultimo, parseInt(m[1], 10) || 0);
+    });
+  }
+  var nuevo = ultimo + 1;
+  setConfig('UltimoFolioOC', nuevo);
+  return prefijo + nuevo;
+}
+
+/** Calcula importe de una partida: cantidad*precio - descuento. */
+function ocImportePartida_(it) {
+  var bruto = num_(it.cantidad) * num_(it.precioUnitario);
+  return ocRound_(bruto - num_(it.descuento));
+}
+
+/**
+ * Lista de órdenes de compra (encabezados). Filtros opcionales por
+ * estado y rango de fechas.
+ */
+function getOrdenesCompra(estado, desde, hasta) {
+  ensureComprasSheets_();
+  var rows = sheetToObjects(SHEETS.ORDENES_COMPRA);
+  var data = rows.map(function(o){
+    return {
+      folioOC: o.Folio_OC,
+      fecha: dateOnly(o.Fecha),
+      idProveedor: o.ID_Proveedor,
+      nombreProveedor: o.Nombre_Proveedor,
+      condiciones: o.Condiciones,
+      fechaEntrega: dateOnly(o.Fecha_Entrega),
+      estado: o.Estado,
+      subtotal: num_(o.Subtotal),
+      iva: num_(o.IVA),
+      total: num_(o.Total),
+      creadoPor: o.Creado_Por,
+      timestampCreacion: o.Timestamp_Creacion
+    };
+  });
+  if (estado && estado !== 'TODAS') data = data.filter(function(o){ return o.estado === estado; });
+  if (desde) data = data.filter(function(o){ return String(o.fecha) >= desde; });
+  if (hasta) data = data.filter(function(o){ return String(o.fecha) <= hasta; });
+  data.sort(function(a, b){ return String(b.folioOC||'').localeCompare(String(a.folioOC||'')); });
+  return { ok: true, data: data };
+}
+
+/** Detalle de una OC: encabezado + partidas. */
+function getOrdenCompra(folioOC) {
+  if (!folioOC) return { ok: false, error: 'Folio requerido' };
+  ensureComprasSheets_();
+  var oc = sheetToObjects(SHEETS.ORDENES_COMPRA).filter(function(o){ return String(o.Folio_OC) === String(folioOC); })[0];
+  if (!oc) return { ok: false, error: 'OC no encontrada: ' + folioOC };
+  var items = sheetToObjects(SHEETS.OC_ITEMS)
+    .filter(function(it){ return String(it.Folio_OC) === String(folioOC); })
+    .map(function(it){
+      return {
+        idOCItem: it.ID_OC_Item,
+        idArticulo: it.ID_Articulo,
+        codigo: it.Codigo,
+        descripcion: it.Descripcion,
+        unidad: it.Unidad,
+        cantidad: num_(it.Cantidad),
+        precioUnitario: num_(it.Precio_Unitario),
+        descuento: num_(it.Descuento),
+        importe: num_(it.Importe),
+        cantidadRecibida: num_(it.Cantidad_Recibida),
+        estadoItem: it.Estado_Item
+      };
+    });
+  return { ok: true, data: {
+    folioOC: oc.Folio_OC,
+    fecha: dateOnly(oc.Fecha),
+    idProveedor: oc.ID_Proveedor,
+    nombreProveedor: oc.Nombre_Proveedor,
+    condiciones: oc.Condiciones,
+    viaEmbarque: oc.Via_Embarque,
+    fechaEntrega: dateOnly(oc.Fecha_Entrega),
+    estado: oc.Estado,
+    subtotal: num_(oc.Subtotal),
+    iva: num_(oc.IVA),
+    total: num_(oc.Total),
+    moneda: oc.Moneda || 'MXN',
+    observaciones: oc.Observaciones,
+    creadoPor: oc.Creado_Por,
+    recibidoPor: oc.Recibido_Por,
+    items: items
+  } };
+}
+
+/**
+ * Crea una orden de compra (encabezado + partidas) en estado BORRADOR.
+ * Requeridos: idProveedor (o nombreProveedor), items[].
+ * Cada item: idArticulo, codigo, descripcion, unidad, cantidad, precioUnitario, descuento.
+ * Los totales (subtotal, IVA, total) se calculan en el servidor.
+ */
+function crearOrdenCompra(d) {
+  if (!tienePermiso(d.rolUsuario, 'crear_oc')) {
+    return errorSinPermiso(d.rolUsuario, 'crear_oc');
+  }
+  var items = d.items || [];
+  if (!items.length) return { ok: false, error: 'La orden debe tener al menos una partida' };
+  if (!d.idProveedor && !d.nombreProveedor) return { ok: false, error: 'El proveedor es obligatorio' };
+
+  ensureComprasSheets_();
+  var prov = null;
+  if (d.idProveedor) {
+    prov = sheetToObjects(SHEETS.PROVEEDORES).filter(function(p){ return String(p.ID_Proveedor) === String(d.idProveedor); })[0];
+  }
+  var nombreProv = d.nombreProveedor || (prov ? prov.Nombre : '');
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    var folioOC = d.folioOC && String(d.folioOC).trim() ? String(d.folioOC).trim() : nextFolioOC_();
+    var subtotal = 0;
+    items.forEach(function(it){ subtotal += ocImportePartida_(it); });
+    subtotal = ocRound_(subtotal);
+    var aplicaIVA = (d.aplicaIVA === false) ? false : true;
+    var iva = aplicaIVA ? ocRound_(subtotal * OC_IVA_TASA) : 0;
+    var total = ocRound_(subtotal + iva);
+
+    appendRowByHeader(SHEETS.ORDENES_COMPRA, {
+      'Folio_OC': folioOC,
+      'Fecha': d.fecha || todayStr(),
+      'ID_Proveedor': d.idProveedor || '',
+      'Nombre_Proveedor': nombreProv,
+      'Condiciones': d.condiciones || (prov ? prov.Condiciones_Pago : '') || '',
+      'Via_Embarque': d.viaEmbarque || '',
+      'Fecha_Entrega': d.fechaEntrega || '',
+      'Estado': 'BORRADOR',
+      'Subtotal': subtotal,
+      'IVA': iva,
+      'Total': total,
+      'Moneda': d.moneda || 'MXN',
+      'Observaciones': d.observaciones || '',
+      'Creado_Por': d.capturadoPor || '',
+      'Timestamp_Creacion': nowTs(),
+      'Recibido_Por': '',
+      'Timestamp_Recepcion': ''
+    });
+
+    items.forEach(function(it, idx){
+      appendRowByHeader(SHEETS.OC_ITEMS, {
+        'ID_OC_Item': folioOC + '-' + String(idx + 1).padStart(3, '0'),
+        'Folio_OC': folioOC,
+        'ID_Articulo': it.idArticulo || '',
+        'Codigo': it.codigo || '',
+        'Descripcion': it.descripcion || '',
+        'Unidad': it.unidad || '',
+        'Cantidad': num_(it.cantidad),
+        'Precio_Unitario': num_(it.precioUnitario),
+        'Descuento': num_(it.descuento),
+        'Importe': ocImportePartida_(it),
+        'Cantidad_Recibida': 0,
+        'Estado_Item': 'PENDIENTE'
+      });
+    });
+
+    return { ok: true, folioOC: folioOC, subtotal: subtotal, iva: iva, total: total };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Helper interno: fija campos del encabezado de una OC por folio. */
+function setOCCampos_(folioOC, campos) {
+  var sh = getSheet(SHEETS.ORDENES_COMPRA);
+  var data = sh.getDataRange().getValues();
+  var H = data[0];
+  var col = {};
+  H.forEach(function(h, i){ col[h] = i; });
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][col['Folio_OC']]) === String(folioOC)) {
+      Object.keys(campos).forEach(function(k){
+        if (col[k] != null) sh.getRange(i + 1, col[k] + 1).setValue(campos[k]);
+      });
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Cambia el estado de una OC (enviar / cancelar). */
+function cambiarEstadoOC(d) {
+  var destino = String(d.estado || '').toUpperCase();
+  var accion = destino === 'CANCELADA' ? 'cancelar_oc' : 'enviar_oc';
+  if (!tienePermiso(d.rolUsuario, accion)) return errorSinPermiso(d.rolUsuario, accion);
+  if (!d.folioOC) return { ok: false, error: 'Folio requerido' };
+  var oc = getOrdenCompra(d.folioOC);
+  if (!oc.ok) return oc;
+  var actual = oc.data.estado;
+  if (actual === 'RECIBIDA' || actual === 'CANCELADA') {
+    return { ok: false, error: 'La OC ya está ' + actual + ' y no se puede cambiar' };
+  }
+  if (!setOCCampos_(d.folioOC, { 'Estado': destino })) return { ok: false, error: 'OC no encontrada' };
+  return { ok: true, estado: destino };
+}
+
+/**
+ * Recibe partidas de una OC y genera las entradas a inventario.
+ * d.items: [{ idOCItem, cantidadRecibida, loteFabricante, fechaCaducidad, folioReceta }]
+ * Valida lote/caducidad/receta por categoría antes de escribir nada.
+ * Recalcula el estado de la OC (RECIBIDA_PARCIAL / RECIBIDA).
+ */
+function recibirOrdenCompra(d) {
+  if (!tienePermiso(d.rolUsuario, 'recibir_oc')) {
+    return errorSinPermiso(d.rolUsuario, 'recibir_oc');
+  }
+  if (!d.folioOC) return { ok: false, error: 'Folio requerido' };
+  var recibos = (d.items || []).filter(function(r){ return num_(r.cantidadRecibida) > 0; });
+  if (!recibos.length) return { ok: false, error: 'No hay cantidades a recibir' };
+
+  var ocSh = getSheet(SHEETS.ORDENES_COMPRA);
+  var oc = sheetToObjects(SHEETS.ORDENES_COMPRA).filter(function(o){ return String(o.Folio_OC) === String(d.folioOC); })[0];
+  if (!oc) return { ok: false, error: 'OC no encontrada: ' + d.folioOC };
+  if (oc.Estado === 'CANCELADA' || oc.Estado === 'RECIBIDA') {
+    return { ok: false, error: 'La OC está ' + oc.Estado + ' y no admite recepciones' };
+  }
+
+  var itemsOC = sheetToObjects(SHEETS.OC_ITEMS).filter(function(it){ return String(it.Folio_OC) === String(d.folioOC); });
+  var itemPorId = {};
+  itemsOC.forEach(function(it){ itemPorId[String(it.ID_OC_Item)] = it; });
+
+  // 1) Validación previa (sin escribir): artículo existe y cumple requisitos de categoría
+  var preparados = [];
+  for (var i = 0; i < recibos.length; i++) {
+    var r = recibos[i];
+    var itOC = itemPorId[String(r.idOCItem)];
+    if (!itOC) return { ok: false, error: 'Partida no encontrada en la OC: ' + r.idOCItem };
+    if (!itOC.ID_Articulo) return { ok: false, error: 'La partida "' + (itOC.Descripcion||r.idOCItem) + '" no está ligada a un artículo del catálogo; edítala antes de recibir' };
+    var art = getArticuloRaw_(itOC.ID_Articulo);
+    if (!art) return { ok: false, error: 'Artículo no encontrado: ' + itOC.ID_Articulo };
+    var pedido = num_(itOC.Cantidad);
+    var yaRecibido = num_(itOC.Cantidad_Recibida);
+    var cant = num_(r.cantidadRecibida);
+    if (yaRecibido + cant > pedido + 0.0001) {
+      return { ok: false, error: 'La partida "' + (art.Nombre||'') + '" excede lo pedido (pedido ' + pedido + ', ya recibido ' + yaRecibido + ', intentas ' + cant + ')' };
+    }
+    var entradaData = {
+      idArticulo: itOC.ID_Articulo,
+      cantidad: cant,
+      unidad: itOC.Unidad,
+      loteFabricante: r.loteFabricante || '',
+      fechaCaducidad: r.fechaCaducidad || '',
+      folioReceta: r.folioReceta || '',
+      proveedor: oc.Nombre_Proveedor || '',
+      referencia: 'OC ' + d.folioOC,
+      observaciones: r.observaciones || '',
+      capturadoPor: d.capturadoPor || '',
+      fecha: d.fecha || todayStr()
+    };
+    var verr = validarRequisitosEntrada_(art, entradaData);
+    if (verr) return verr;
+    preparados.push({ art: art, cant: cant, entradaData: entradaData, itOC: itOC });
+  }
+
+  // 2) Escritura bajo lock (entradas + actualización de partidas)
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var entradas = 0;
+    preparados.forEach(function(p, idx){
+      p.entradaData._seq = idx; // sufijo único para IDs de lote/movimiento en lote
+      entradaArticuloEscribir_(p.art, p.cant, p.entradaData);
+      entradas++;
+    });
+
+    // Actualizar Cantidad_Recibida / Estado_Item por partida
+    var itSh = getSheet(SHEETS.OC_ITEMS);
+    var itData = itSh.getDataRange().getValues();
+    var IH = itData[0];
+    var icol = {};
+    IH.forEach(function(h, i){ icol[h] = i; });
+    var recibidoPorId = {};
+    preparados.forEach(function(p){ recibidoPorId[String(p.itOC.ID_OC_Item)] = p.cant; });
+
+    var todoCompleto = true;
+    for (var i = 1; i < itData.length; i++) {
+      if (String(itData[i][icol['Folio_OC']]) !== String(d.folioOC)) continue;
+      var idIt = String(itData[i][icol['ID_OC_Item']]);
+      var pedido = num_(itData[i][icol['Cantidad']]);
+      var prev = num_(itData[i][icol['Cantidad_Recibida']]);
+      var add = num_(recibidoPorId[idIt]);
+      var nuevo = prev + add;
+      if (add > 0) {
+        itSh.getRange(i + 1, icol['Cantidad_Recibida'] + 1).setValue(nuevo);
+        itSh.getRange(i + 1, icol['Estado_Item'] + 1).setValue(nuevo >= pedido - 0.0001 ? 'RECIBIDO' : 'PARCIAL');
+      }
+      if (nuevo < pedido - 0.0001) todoCompleto = false;
+    }
+
+    var nuevoEstado = todoCompleto ? 'RECIBIDA' : 'RECIBIDA_PARCIAL';
+    setOCCampos_(d.folioOC, {
+      'Estado': nuevoEstado,
+      'Recibido_Por': d.capturadoPor || '',
+      'Timestamp_Recepcion': nowTs()
+    });
+
+    return { ok: true, folioOC: d.folioOC, estado: nuevoEstado, entradas: entradas };
   } finally {
     lock.releaseLock();
   }
