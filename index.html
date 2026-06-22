@@ -764,6 +764,9 @@ textarea { resize: vertical; min-height: 70px; }
     <div class="nav-item" data-page="inventario"><span class="icon">▦</span>Saldos (controlados)</div>
     <div class="nav-item" data-page="entradas"><span class="icon">↓</span>Entradas</div>
     <div class="nav-item" data-page="cajas"><span class="icon">📦</span>Cajas / Lotes</div>
+    <div class="nav-section-title">Compras</div>
+    <div class="nav-item" data-page="compras"><span class="icon">🧾</span>Órdenes de compra</div>
+    <div class="nav-item" data-page="proveedores"><span class="icon">🏭</span>Proveedores</div>
     <div class="nav-section-title">Bitácora</div>
     <div class="nav-item" data-page="libro"><span class="icon">📕</span>Libro COFEPRIS</div>
     <div class="nav-section-title">Catálogos</div>
@@ -1140,6 +1143,44 @@ textarea { resize: vertical; min-height: 70px; }
         </div>
       </div>
       <div class="card"><div id="cajasTable">Cargando...</div></div>
+    </div>
+
+    <!-- ÓRDENES DE COMPRA -->
+    <div id="page-compras" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Órdenes de compra</h1>
+          <div class="subtitle">Pedidos a proveedores — al recibir, el stock entra a inventario</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <select id="ocFiltroEstado" onchange="renderCompras()" style="font-size:13px;">
+            <option value="">Todos los estados</option>
+            <option value="BORRADOR">Borrador</option>
+            <option value="ENVIADA">Enviadas</option>
+            <option value="RECIBIDA_PARCIAL">Recibidas parcial</option>
+            <option value="RECIBIDA">Recibidas</option>
+            <option value="CANCELADA">Canceladas</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="loadCompras()">↻ Actualizar</button>
+          <button class="btn btn-primary btn-sm" data-accion="crear_oc" onclick="openModalNuevaOC()">+ Nueva orden</button>
+        </div>
+      </div>
+      <div class="card"><div id="comprasTable">Cargando...</div></div>
+    </div>
+
+    <!-- PROVEEDORES -->
+    <div id="page-proveedores" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Proveedores</h1>
+          <div class="subtitle">Catálogo de proveedores</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn btn-secondary btn-sm" onclick="loadProveedores()">↻ Actualizar</button>
+          <button class="btn btn-accent btn-sm" data-accion="alta_proveedor" onclick="openModalProveedor()">+ Nuevo proveedor</button>
+        </div>
+      </div>
+      <div class="card"><div id="proveedoresTable">Cargando...</div></div>
     </div>
 
     <!-- BOM QUIRÚRGICO -->
@@ -1653,6 +1694,8 @@ const PERMISOS = {
     articulos:    ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
     inventario:   ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
     cajas:        ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
+    compras:      ['ADMIN','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
+    proveedores:  ['ADMIN','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
     entradas:     ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ALMACEN'],
     libro:        ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
     catalogos:    ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
@@ -1678,6 +1721,12 @@ const PERMISOS = {
     'entrada_articulo':     ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
     'salida_articulo':      ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],
     'ajuste_articulo':      ['ADMIN','ALMACEN','DIRECTOR_MEDICO'],
+    'alta_proveedor':       ['ADMIN','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
+    'editar_proveedor':     ['ADMIN','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
+    'crear_oc':             ['ADMIN','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
+    'enviar_oc':            ['ADMIN','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
+    'cancelar_oc':          ['ADMIN','DIRECTOR_MEDICO'],
+    'recibir_oc':           ['ADMIN','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
     'alta_medico':          ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
     'alta_medico_consulta': ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
     'alta_tipo_cirugia':    ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','DIRECTOR_MEDICO'],
@@ -1822,6 +1871,8 @@ function loadPage(page) {
     case 'consultas': loadConsultas(); break;
     case 'urgencias': loadUrgencias(); break;
     case 'articulos': loadArticulos(); break;
+    case 'compras': loadCompras(); break;
+    case 'proveedores': loadProveedores(); break;
     case 'inventario': loadInventario(); break;
     case 'cajas': loadLotes(); break;
     case 'libro': loadLibro(); break;
@@ -3717,6 +3768,351 @@ async function migrarArticulos() {
   showToast('Migrando catálogo…');
   const resp = await apiPost('migrarArticulos', {});
   if (resp.ok) { showToast(`✓ Migración lista: ${resp.creados} creados, ${resp.omitidos} ya existían`); loadArticulos(); }
+  else { showToast('Error: ' + resp.error, 'error'); }
+}
+
+// ============================================================
+// COMPRAS — PROVEEDORES
+// ============================================================
+async function loadProveedores() {
+  const cont = document.getElementById('proveedoresTable');
+  if (cont) cont.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  const resp = await apiGet('getProveedores');
+  cache.proveedores = (resp && resp.ok) ? (resp.data || []) : [];
+  renderProveedores();
+}
+
+function renderProveedores() {
+  const cont = document.getElementById('proveedoresTable');
+  if (!cont) return;
+  const list = cache.proveedores || [];
+  if (!list.length) { cont.innerHTML = '<div class="empty-state"><div class="icon">🏭</div>Sin proveedores. Da de alta el primero.</div>'; return; }
+  const puedeEd = puede('editar_proveedor');
+  const rows = list.map(p => `
+    <tr>
+      <td><strong>${artEsc(p.nombre)}</strong></td>
+      <td>${artEsc(p.rfc||'—')}</td>
+      <td>${artEsc(p.ciudad||'—')}</td>
+      <td>${artEsc(p.telefono||'—')}${p.email?`<br><small style="color:var(--text-muted);">${artEsc(p.email)}</small>`:''}</td>
+      <td>${artEsc(p.condicionesPago||'—')}</td>
+      <td>${puedeEd?`<button class="btn btn-secondary btn-sm" onclick="openModalProveedor('${artEsc(p.idProveedor)}')">Editar</button>`:'—'}</td>
+    </tr>`).join('');
+  cont.innerHTML = `<table><thead><tr><th>Proveedor</th><th>RFC</th><th>Ciudad</th><th>Contacto</th><th>Condiciones</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function openModalProveedor(idProveedor) {
+  const p = idProveedor ? (cache.proveedores || []).find(x => x.idProveedor === idProveedor) : null;
+  const v = (campo) => p ? artEsc(p[campo] || '') : '';
+  openModal((p ? 'Editar' : 'Nuevo') + ' proveedor', `
+    <form onsubmit="event.preventDefault();submitProveedor(${p?`'${artEsc(idProveedor)}'`:'null'})">
+      <div class="form-grid">
+        <div class="full"><label>Nombre / razón social *</label><input type="text" id="pv_nombre" value="${v('nombre')}" required></div>
+        <div><label>RFC</label><input type="text" id="pv_rfc" value="${v('rfc')}"></div>
+        <div><label>Teléfono</label><input type="text" id="pv_tel" value="${v('telefono')}"></div>
+        <div class="full"><label>Dirección</label><input type="text" id="pv_dir" value="${v('direccion')}"></div>
+        <div><label>Ciudad</label><input type="text" id="pv_ciudad" value="${v('ciudad')}"></div>
+        <div><label>Email</label><input type="text" id="pv_email" value="${v('email')}"></div>
+        <div class="full"><label>Condiciones de pago</label><input type="text" id="pv_cond" value="${v('condicionesPago')}" placeholder="Ej: CRÉDITO 30 DÍAS"></div>
+        <div class="full"><label>Notas</label><input type="text" id="pv_notas" value="${v('notas')}"></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-accent">${p?'Guardar':'Dar de alta'}</button>
+      </div>
+    </form>
+  `);
+}
+
+async function submitProveedor(idProveedor) {
+  const nombre = document.getElementById('pv_nombre').value.trim();
+  if (!nombre) { showToast('El nombre es obligatorio', 'error'); return; }
+  const data = {
+    nombre: nombre,
+    rfc: document.getElementById('pv_rfc').value.trim(),
+    direccion: document.getElementById('pv_dir').value.trim(),
+    ciudad: document.getElementById('pv_ciudad').value.trim(),
+    telefono: document.getElementById('pv_tel').value.trim(),
+    email: document.getElementById('pv_email').value.trim(),
+    condicionesPago: document.getElementById('pv_cond').value.trim(),
+    notas: document.getElementById('pv_notas').value.trim(),
+    capturadoPor: currentUser.nombre
+  };
+  let resp;
+  if (idProveedor) { data.idProveedor = idProveedor; resp = await apiPost('editarProveedor', data); }
+  else { resp = await apiPost('altaProveedor', data); }
+  if (resp.ok) {
+    showToast('✓ Proveedor guardado');
+    closeModal();
+    await loadCatalogos();
+    loadProveedores();
+  } else { showToast('Error: ' + resp.error, 'error'); }
+}
+
+// ============================================================
+// COMPRAS — ÓRDENES DE COMPRA
+// ============================================================
+const OC_ESTADO_COLOR = { BORRADOR:'#8A8F98', ENVIADA:'#00BCD4', RECIBIDA_PARCIAL:'#FFB300', RECIBIDA:'#00C896', CANCELADA:'#EF5350' };
+const OC_ESTADO_LABEL = { BORRADOR:'Borrador', ENVIADA:'Enviada', RECIBIDA_PARCIAL:'Parcial', RECIBIDA:'Recibida', CANCELADA:'Cancelada' };
+let ocLineas = [];
+
+function fmtMoney(n){ return '$' + (Number(n)||0).toLocaleString('es-MX', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+function ocNormCat(c){ c=String(c||'').toUpperCase(); if(c.indexOf('CONTROL')>=0)return 'MEDICAMENTO_CONTROLADO'; if(c.indexOf('MEDICAMENT')>=0)return 'MEDICAMENTO'; if(c.indexOf('INSUMO')>=0)return 'INSUMO'; return 'OTROS'; }
+function ocCategoriaArticulo(idArticulo){ const a=(catalogos.articulos||[]).find(x=>x.ID_Articulo===idArticulo); return a?ocNormCat(a.Categoria):'OTROS'; }
+
+async function loadCompras() {
+  const cont = document.getElementById('comprasTable');
+  if (cont) cont.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  const resp = await apiGet('getOrdenesCompra');
+  cache.ordenes = (resp && resp.ok) ? (resp.data || []) : [];
+  renderCompras();
+}
+
+function renderCompras() {
+  const cont = document.getElementById('comprasTable');
+  if (!cont) return;
+  const filtro = (document.getElementById('ocFiltroEstado') || {}).value || '';
+  let list = (cache.ordenes || []).slice();
+  if (filtro) list = list.filter(o => o.estado === filtro);
+  if (!list.length) { cont.innerHTML = '<div class="empty-state"><div class="icon">🧾</div>Sin órdenes de compra para este filtro.</div>'; return; }
+  const puedeEnviar = puede('enviar_oc'), puedeRecibir = puede('recibir_oc'), puedeCancelar = puede('cancelar_oc');
+  const rows = list.map(o => {
+    const col = OC_ESTADO_COLOR[o.estado] || '#8A8F98';
+    const badge = `<span style="background:${col};color:#fff;border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700;">${OC_ESTADO_LABEL[o.estado]||o.estado}</span>`;
+    let acc = `<button class="btn btn-secondary btn-sm" onclick="verOC('${artEsc(o.folioOC)}')">Ver</button> `;
+    if (o.estado === 'BORRADOR' && puedeEnviar) acc += `<button class="btn btn-primary btn-sm" onclick="ocCambiarEstado('${artEsc(o.folioOC)}','ENVIADA')">Enviar</button> `;
+    if ((o.estado === 'ENVIADA' || o.estado === 'RECIBIDA_PARCIAL') && puedeRecibir) acc += `<button class="btn btn-accent btn-sm" onclick="openModalRecibirOC('${artEsc(o.folioOC)}')">Recibir</button> `;
+    if ((o.estado === 'BORRADOR' || o.estado === 'ENVIADA') && puedeCancelar) acc += `<button class="btn btn-secondary btn-sm" onclick="ocCambiarEstado('${artEsc(o.folioOC)}','CANCELADA')">Cancelar</button> `;
+    return `
+    <tr>
+      <td><strong>${artEsc(o.folioOC)}</strong></td>
+      <td>${formatDateShort(o.fecha)}</td>
+      <td>${artEsc(o.nombreProveedor||'—')}</td>
+      <td>${badge}</td>
+      <td style="text-align:right;"><strong>${fmtMoney(o.total)}</strong></td>
+      <td style="white-space:nowrap;">${acc}</td>
+    </tr>`;
+  }).join('');
+  cont.innerHTML = `<table><thead><tr><th>Folio</th><th>Fecha</th><th>Proveedor</th><th>Estado</th><th style="text-align:right;">Total</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+// ----- Crear OC -----
+function openModalNuevaOC() {
+  if (!(catalogos.articulos || []).length) { showToast('Primero da de alta artículos (o corre la migración)', 'error'); return; }
+  ocLineas = [ocNuevaLinea()];
+  const provOpts = (catalogos.proveedores || []).map(p => `<option value="${artEsc(p.ID_Proveedor)}">${artEsc(p.Nombre)}</option>`).join('');
+  openModal('Nueva orden de compra', `
+    <form onsubmit="event.preventDefault();submitOC()">
+      <div class="form-grid">
+        <div><label>Fecha</label><input type="date" id="oc_fecha" value="${todayISO()}" required></div>
+        <div>
+          <label>Proveedor *</label>
+          <select id="oc_prov" onchange="ocProvChange()"><option value="">— Seleccionar —</option>${provOpts}</select>
+        </div>
+        <div class="full" id="oc_provLibreWrap" style="display:none;"><label>Nombre del proveedor (libre)</label><input type="text" id="oc_provLibre" placeholder="Si no está en el catálogo"></div>
+        <div><label>Condiciones de pago</label><input type="text" id="oc_cond" placeholder="Ej: CRÉDITO 30 DÍAS"></div>
+        <div><label>Vía de embarque</label><input type="text" id="oc_via"></div>
+        <div><label>Fecha de entrega</label><input type="date" id="oc_entrega"></div>
+        <div style="display:flex;align-items:end;"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="oc_iva" checked onchange="ocRecalcTotales()" style="width:auto;"> Aplicar IVA 16%</label></div>
+      </div>
+      <div class="card-title" style="margin-top:14px;">Partidas</div>
+      <div style="overflow-x:auto;"><table id="ocLineasTable" style="font-size:13px;"><thead><tr>
+        <th style="min-width:180px;">Artículo</th><th>Cant.</th><th>Precio</th><th>Descto.</th><th style="text-align:right;">Importe</th><th></th>
+      </tr></thead><tbody id="ocLineasBody"></tbody></table></div>
+      <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="ocAgregarPartida()">+ Agregar partida</button>
+      <div style="margin-top:14px;display:flex;justify-content:flex-end;">
+        <table style="font-size:14px;min-width:240px;">
+          <tr><td>Subtotal</td><td style="text-align:right;" id="oc_subtotal">$0.00</td></tr>
+          <tr><td>IVA</td><td style="text-align:right;" id="oc_ivav">$0.00</td></tr>
+          <tr><td><strong>Total</strong></td><td style="text-align:right;"><strong id="oc_totalv">$0.00</strong></td></tr>
+        </table>
+      </div>
+      <div class="full"><label>Observaciones</label><input type="text" id="oc_obs"></div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Crear orden (borrador)</button>
+      </div>
+    </form>
+  `);
+  ocRenderLineas();
+}
+
+function ocNuevaLinea(){ return { idArticulo:'', codigo:'', descripcion:'', unidad:'', cantidad:1, precioUnitario:0, descuento:0 }; }
+function ocProvChange(){
+  const sel = document.getElementById('oc_prov').value;
+  const p = (catalogos.proveedores || []).find(x => x.ID_Proveedor === sel);
+  if (p && p.Condiciones_Pago) document.getElementById('oc_cond').value = p.Condiciones_Pago;
+}
+function ocImporteLinea(l){ return Math.max(0, (Number(l.cantidad)||0)*(Number(l.precioUnitario)||0) - (Number(l.descuento)||0)); }
+
+function ocRenderLineas() {
+  const body = document.getElementById('ocLineasBody');
+  if (!body) return;
+  const artOpts = (catalogos.articulos || []).map(a => `<option value="${artEsc(a.ID_Articulo)}">${artEsc(a.Codigo||a.ID_Articulo)} · ${artEsc(a.Nombre)}</option>`).join('');
+  body.innerHTML = ocLineas.map((l, i) => `
+    <tr>
+      <td>
+        <select onchange="ocSetArticulo(${i}, this.value)"><option value="">— Artículo —</option>${artOpts.replace(`value="${artEsc(l.idArticulo)}"`, `value="${artEsc(l.idArticulo)}" selected`)}</select>
+      </td>
+      <td><input type="number" step="any" min="0" value="${l.cantidad}" style="width:70px;" oninput="ocSet(${i},'cantidad',this.value)"></td>
+      <td><input type="number" step="any" min="0" value="${l.precioUnitario}" style="width:90px;" oninput="ocSet(${i},'precioUnitario',this.value)"></td>
+      <td><input type="number" step="any" min="0" value="${l.descuento}" style="width:80px;" oninput="ocSet(${i},'descuento',this.value)"></td>
+      <td style="text-align:right;" id="oc_imp_${i}">${fmtMoney(ocImporteLinea(l))}</td>
+      <td>${ocLineas.length>1?`<button type="button" class="btn btn-secondary btn-sm" onclick="ocQuitarPartida(${i})">×</button>`:''}</td>
+    </tr>`).join('');
+  ocRecalcTotales();
+}
+
+function ocSetArticulo(i, idArticulo) {
+  const a = (catalogos.articulos || []).find(x => x.ID_Articulo === idArticulo);
+  ocLineas[i].idArticulo = idArticulo;
+  if (a) { ocLineas[i].codigo = a.Codigo || a.ID_Articulo; ocLineas[i].descripcion = a.Nombre || ''; ocLineas[i].unidad = a.Unidad || ''; }
+  ocRenderLineas();
+}
+function ocSet(i, campo, valor) {
+  ocLineas[i][campo] = parseFloat(valor);
+  if (isNaN(ocLineas[i][campo])) ocLineas[i][campo] = 0;
+  const cell = document.getElementById('oc_imp_' + i);
+  if (cell) cell.textContent = fmtMoney(ocImporteLinea(ocLineas[i]));
+  ocRecalcTotales();
+}
+function ocAgregarPartida(){ ocLineas.push(ocNuevaLinea()); ocRenderLineas(); }
+function ocQuitarPartida(i){ ocLineas.splice(i,1); ocRenderLineas(); }
+function ocRecalcTotales() {
+  const subtotal = ocLineas.reduce((s,l)=>s+ocImporteLinea(l), 0);
+  const aplicaIVA = (document.getElementById('oc_iva')||{}).checked;
+  const iva = aplicaIVA ? subtotal*0.16 : 0;
+  const sub = document.getElementById('oc_subtotal'), iv = document.getElementById('oc_ivav'), tot = document.getElementById('oc_totalv');
+  if (sub) sub.textContent = fmtMoney(subtotal);
+  if (iv) iv.textContent = fmtMoney(iva);
+  if (tot) tot.textContent = fmtMoney(subtotal + iva);
+}
+
+async function submitOC() {
+  const idProv = document.getElementById('oc_prov').value;
+  const provLibre = (document.getElementById('oc_provLibre')||{}).value || '';
+  if (!idProv && !provLibre.trim()) { showToast('Selecciona o escribe un proveedor', 'error'); return; }
+  const items = ocLineas.filter(l => l.idArticulo && (Number(l.cantidad)||0) > 0);
+  if (!items.length) { showToast('Agrega al menos una partida con artículo y cantidad', 'error'); return; }
+  const data = {
+    fecha: document.getElementById('oc_fecha').value,
+    idProveedor: idProv,
+    nombreProveedor: provLibre.trim(),
+    condiciones: document.getElementById('oc_cond').value,
+    viaEmbarque: document.getElementById('oc_via').value,
+    fechaEntrega: document.getElementById('oc_entrega').value,
+    aplicaIVA: (document.getElementById('oc_iva')||{}).checked,
+    observaciones: document.getElementById('oc_obs').value,
+    items: items,
+    capturadoPor: currentUser.nombre
+  };
+  const resp = await apiPost('crearOrdenCompra', data);
+  if (resp.ok) { showToast('✓ Orden creada: ' + resp.folioOC + ' · Total ' + fmtMoney(resp.total)); closeModal(); loadCompras(); }
+  else { showToast('Error: ' + resp.error, 'error'); }
+}
+
+// ----- Ver / cambiar estado -----
+async function verOC(folioOC) {
+  openModal('Orden de compra ' + folioOC, '<div id="ocDetalle"><div class="loading"><div class="spinner"></div> Cargando…</div></div>');
+  const resp = await apiGet('getOrdenCompra', { folioOC });
+  const cont = document.getElementById('ocDetalle');
+  if (!cont) return;
+  if (!resp || !resp.ok) { cont.innerHTML = '<div class="empty-state">No se pudo cargar</div>'; return; }
+  const o = resp.data;
+  const col = OC_ESTADO_COLOR[o.estado] || '#8A8F98';
+  const itemRows = o.items.map(it => `
+    <tr>
+      <td>${artEsc(it.codigo||'—')}</td>
+      <td>${artEsc(it.descripcion||'—')}</td>
+      <td style="text-align:right;">${it.cantidad} ${artEsc(it.unidad||'')}</td>
+      <td style="text-align:right;">${fmtMoney(it.precioUnitario)}</td>
+      <td style="text-align:right;">${fmtMoney(it.descuento)}</td>
+      <td style="text-align:right;">${fmtMoney(it.importe)}</td>
+      <td style="text-align:right;">${it.cantidadRecibida||0}</td>
+    </tr>`).join('');
+  cont.innerHTML = `
+    <div style="background:var(--teal-light);padding:12px 14px;border-radius:8px;margin-bottom:14px;font-size:13px;color:var(--navy);">
+      <strong>${artEsc(o.nombreProveedor||'')}</strong> ·
+      <span style="background:${col};color:#fff;border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700;">${OC_ESTADO_LABEL[o.estado]||o.estado}</span><br>
+      Fecha ${formatDateShort(o.fecha)} · Condiciones: ${artEsc(o.condiciones||'—')} · Entrega: ${o.fechaEntrega?formatDateShort(o.fechaEntrega):'—'}
+      ${o.observaciones?`<br>Obs: ${artEsc(o.observaciones)}`:''}
+    </div>
+    <div style="overflow-x:auto;"><table style="font-size:13px;"><thead><tr><th>Código</th><th>Descripción</th><th style="text-align:right;">Cant.</th><th style="text-align:right;">Precio</th><th style="text-align:right;">Descto.</th><th style="text-align:right;">Importe</th><th style="text-align:right;">Recibido</th></tr></thead><tbody>${itemRows}</tbody></table></div>
+    <div style="margin-top:12px;display:flex;justify-content:flex-end;"><table style="font-size:14px;min-width:240px;">
+      <tr><td>Subtotal</td><td style="text-align:right;">${fmtMoney(o.subtotal)}</td></tr>
+      <tr><td>IVA</td><td style="text-align:right;">${fmtMoney(o.iva)}</td></tr>
+      <tr><td><strong>Total</strong></td><td style="text-align:right;"><strong>${fmtMoney(o.total)}</strong></td></tr>
+    </table></div>
+    <div class="form-actions"><button type="button" class="btn btn-secondary" onclick="closeModal()">Cerrar</button></div>`;
+}
+
+async function ocCambiarEstado(folioOC, estado) {
+  const verbo = estado === 'CANCELADA' ? 'cancelar' : 'enviar';
+  if (!confirm('¿Seguro que deseas ' + verbo + ' la orden ' + folioOC + '?')) return;
+  const resp = await apiPost('cambiarEstadoOC', { folioOC, estado });
+  if (resp.ok) { showToast('✓ Orden ' + (estado==='CANCELADA'?'cancelada':'enviada')); loadCompras(); }
+  else { showToast('Error: ' + resp.error, 'error'); }
+}
+
+// ----- Recibir OC (genera entradas a inventario) -----
+async function openModalRecibirOC(folioOC) {
+  openModal('Recibir orden ' + folioOC, '<div id="ocRecibir"><div class="loading"><div class="spinner"></div> Cargando…</div></div>');
+  const resp = await apiGet('getOrdenCompra', { folioOC });
+  const cont = document.getElementById('ocRecibir');
+  if (!cont) return;
+  if (!resp || !resp.ok) { cont.innerHTML = '<div class="empty-state">No se pudo cargar</div>'; return; }
+  const o = resp.data;
+  const pendientes = o.items.filter(it => (Number(it.cantidad)||0) - (Number(it.cantidadRecibida)||0) > 0.0001);
+  if (!pendientes.length) { cont.innerHTML = '<div class="empty-state"><div class="icon">✓</div>Todas las partidas ya fueron recibidas.</div>'; return; }
+  const rows = pendientes.map(it => {
+    const porRecibir = (Number(it.cantidad)||0) - (Number(it.cantidadRecibida)||0);
+    const cat = ocCategoriaArticulo(it.idArticulo);
+    const reqLote = artRequiereLote(cat);
+    const reqReceta = (cat === 'MEDICAMENTO_CONTROLADO');
+    return `
+    <div class="card" style="margin-bottom:10px;" data-iditem="${artEsc(it.idOCItem)}" data-reqlote="${reqLote?1:0}" data-reqreceta="${reqReceta?1:0}">
+      <div style="font-weight:600;color:var(--navy);">${artEsc(it.codigo||'')} · ${artEsc(it.descripcion||'')}</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Por recibir: ${porRecibir} ${artEsc(it.unidad||'')}${reqReceta?' · 🔒 controlado':(reqLote?' · 💊 requiere lote':'')}</div>
+      <div class="form-grid">
+        <div><label>Cantidad a recibir</label><input type="number" step="any" min="0" max="${porRecibir}" value="${porRecibir}" class="rc_cant"></div>
+        ${reqLote?`<div><label>Lote fabricante *</label><input type="text" class="rc_lote"></div>
+        <div><label>Caducidad *</label><input type="date" class="rc_cad"></div>`:''}
+        ${reqReceta?`<div><label>Folio receta *</label><input type="text" class="rc_receta"></div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+  cont.innerHTML = `
+    <div style="background:var(--teal-light);padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:12px;color:var(--navy);">
+      Proveedor <strong>${artEsc(o.nombreProveedor||'')}</strong>. Al confirmar, las cantidades entran a inventario. Medicamentos y controlados exigen lote y caducidad (receta si es controlado).
+    </div>
+    <form onsubmit="event.preventDefault();submitRecibirOC('${artEsc(folioOC)}')">
+      ${rows}
+      <div class="form-grid"><div><label>Fecha de recepción</label><input type="date" id="rc_fecha" value="${todayISO()}"></div></div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-accent">Confirmar recepción</button>
+      </div>
+    </form>`;
+}
+
+async function submitRecibirOC(folioOC) {
+  const bloques = document.querySelectorAll('#ocRecibir [data-iditem]');
+  const items = [];
+  for (const b of bloques) {
+    const cant = parseFloat((b.querySelector('.rc_cant')||{}).value);
+    if (!cant || cant <= 0) continue;
+    const reqLote = b.dataset.reqlote === '1';
+    const reqReceta = b.dataset.reqreceta === '1';
+    const lote = (b.querySelector('.rc_lote')||{}).value || '';
+    const cad = (b.querySelector('.rc_cad')||{}).value || '';
+    const receta = (b.querySelector('.rc_receta')||{}).value || '';
+    if (reqLote && (!lote.trim() || !cad)) { showToast('Falta lote o caducidad en una partida', 'error'); return; }
+    if (reqReceta && !receta.trim()) { showToast('Falta folio de receta en una partida controlada', 'error'); return; }
+    items.push({ idOCItem: b.dataset.iditem, cantidadRecibida: cant, loteFabricante: lote.trim(), fechaCaducidad: cad, folioReceta: receta.trim() });
+  }
+  if (!items.length) { showToast('Captura al menos una cantidad a recibir', 'error'); return; }
+  const data = { folioOC, items, fecha: document.getElementById('rc_fecha').value, capturadoPor: currentUser.nombre };
+  const resp = await apiPost('recibirOrdenCompra', data);
+  if (resp.ok) { showToast('✓ Recepción registrada (' + resp.entradas + ' entradas). Estado: ' + resp.estado); closeModal(); loadCompras(); }
   else { showToast('Error: ' + resp.error, 'error'); }
 }
 
