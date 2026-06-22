@@ -86,7 +86,7 @@ Almacén Gral / CEyE ──(BOM entregado)──► QUIRÓFANO
 3. **F3 · Remisión / cuenta del paciente** — *en curso:*
    - ✅ **F3a (backend)**: `Remision_Items`, `registrarRemision` unificado (descuenta almacén/lote, Libro solo controlados, traza en Consumos, línea a precio venta = último costo×2), `getRemisionPaciente`, `getDatosPacienteParaCobro` expone `materialesRemision`.
    - ✅ **F3b (frontend)**: pantalla "Nueva remisión" (buscar paciente → carrito → registrar).
-   - ⬜ **F3c**: que el frontend de **cobro** prellene/actualice `Materiales_Medicamentos` desde `materialesRemision`; entrada directa de remisión desde tarjeta de piso y desde cirugía.
+   - ✅ **F3c**: el **cobro** prellena "Materiales y medicamento" desde `materialesRemision` (cuenta nueva y existente); botón **🧾 Remisión** en el detalle del cuarto (piso). *Falta opcional: entrada directa de remisión desde la cirugía (quirófano) — hoy se hace por "Nueva remisión" buscando al paciente.*
 4. **F4 · Conciliación de BOM al cerrar cirugía** — usado real (descuenta + cobra), no usado (devolución/entrada al almacén), extras NO-BOM (líneas nuevas desde CEyE).
 5. **F5 · Cierre de cuenta → cobro** — al alta, cerrar y ligar al módulo de cobro existente.
 6. **F6 (después)** · Módulo de **precios de venta** (ajuste de márgenes/excepciones).
