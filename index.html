@@ -858,7 +858,7 @@ textarea { resize: vertical; min-height: 70px; }
             <button class="btn-pill" onclick="irMananaProg()">Mañana</button>
             <div style="margin-left:auto;display:flex;gap:8px;">
               <button class="btn btn-secondary btn-sm" onclick="loadProgramacionDia()">↻ Actualizar</button>
-              <button class="btn btn-secondary btn-sm" onclick="imprimirTablero()">🖨 Imprimir tablero</button>
+              <button class="btn btn-secondary btn-sm" onclick="generarReporteProgramacion()">🖨 Reporte PDF</button>
             </div>
           </div>
         </div>
@@ -941,6 +941,7 @@ textarea { resize: vertical; min-height: 70px; }
           <div class="subtitle">Tablero de ocupación y gestión de hospitalizaciones</div>
         </div>
         <div style="display:flex;gap:8px;">
+          <button class="btn btn-secondary btn-sm" onclick="openModalReporteOcupacion()">🖨 Reporte PDF</button>
           <button class="btn btn-secondary btn-sm" onclick="loadHabitaciones()">↻ Actualizar</button>
           <button class="btn btn-primary" data-accion="ingresar_habitacion" onclick="openModalIngresar()">+ Ingresar paciente</button>
         </div>
@@ -2321,6 +2322,119 @@ async function verDetalleProgramacion(folio) {
 
 function imprimirTablero() {
   window.print();
+}
+
+// ============================================================
+// REPORTES PDF (impresión a una sola hoja)
+// ============================================================
+function _repEsc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// Abre una ventana con un documento imprimible (1 hoja Carta) y dispara
+// el diálogo de impresión; el usuario elige "Guardar como PDF".
+function abrirVentanaImpresion(titulo, subtitulo, cuerpoHTML) {
+  const clinica = (catalogos.config && catalogos.config.nombreClinica) || 'Clínica Estar Bien';
+  const usuario = currentUser ? currentUser.nombre : '';
+  const w = window.open('', '_blank');
+  if (!w) { showToast('Permite las ventanas emergentes para generar el PDF', 'error'); return; }
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>${_repEsc(titulo)}</title>
+  <style>
+    @page { size: Letter portrait; margin: 12mm; }
+    *{box-sizing:border-box;}
+    body{font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;margin:0;font-size:11px;}
+    .rh{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #0F1923;padding-bottom:6px;margin-bottom:8px;}
+    .rh h1{font-size:17px;margin:0;color:#0F1923;}
+    .rh .sub{font-size:11px;color:#555;margin-top:2px;}
+    .rh .meta{text-align:right;font-size:9px;color:#666;line-height:1.4;}
+    h2{font-size:12px;margin:9px 0 3px;color:#0F1923;border-bottom:1px solid #bbb;padding-bottom:2px;}
+    table{width:100%;border-collapse:collapse;margin-bottom:4px;}
+    th,td{border:1px solid #cfcfcf;padding:2px 5px;text-align:left;vertical-align:top;}
+    th{background:#0F1923;color:#fff;font-size:9px;text-transform:uppercase;letter-spacing:.02em;}
+    td{font-size:10px;}
+    tr.libre td{color:#999;font-style:italic;}
+    .resumen{font-size:11px;margin-bottom:8px;}
+    .resumen b{color:#0F1923;}
+    .pill{display:inline-block;background:#eef;border:1px solid #99c;border-radius:8px;padding:0 6px;font-size:9px;font-weight:normal;}
+    .noprint{margin-top:14px;text-align:center;}
+    @media print{.noprint{display:none;}}
+  </style></head><body>
+    <div class="rh">
+      <div><h1>${_repEsc(clinica)}</h1><div class="sub">${_repEsc(subtitulo)}</div></div>
+      <div class="meta"><b>${_repEsc(titulo)}</b><br>Generado: ${new Date().toLocaleString('es-MX')}<br>Por: ${_repEsc(usuario)}</div>
+    </div>
+    ${cuerpoHTML}
+    <div class="noprint"><button onclick="window.print()" style="padding:8px 16px;font-size:13px;cursor:pointer;">🖨 Imprimir / Guardar como PDF</button></div>
+    <script>window.onload=function(){setTimeout(function(){window.print();},350);};<\/script>
+  </body></html>`;
+  w.document.write(html);
+  w.document.close();
+}
+
+// ---- Reporte 1: ocupación de habitaciones ----
+function openModalReporteOcupacion() {
+  openModal('Reporte de ocupación', `
+    <form onsubmit="event.preventDefault();generarReporteOcupacion()">
+      <p style="color:var(--text-muted);font-size:13px;line-height:1.5;">Genera un PDF de una hoja con la ocupación de la clínica. Si eliges una fecha pasada, se reconstruye quién estaba internado ese día.</p>
+      <div class="form-grid">
+        <div><label>Fecha del reporte</label><input type="date" id="rep_fecha" value="${todayISO()}" required></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Generar PDF</button>
+      </div>
+    </form>
+  `);
+}
+
+async function generarReporteOcupacion() {
+  const fecha = document.getElementById('rep_fecha').value;
+  if (!fecha) { showToast('Selecciona una fecha', 'error'); return; }
+  showToast('Generando reporte…');
+  const resp = await apiGet('getOcupacionEnFecha', { fecha });
+  if (!resp || !resp.ok) { showToast('No se pudo generar el reporte', 'error'); return; }
+  closeModal();
+  let cuerpo = `<div class="resumen">Ocupación total: <b>${resp.totalOcupadas} / ${resp.totalHabitaciones}</b>`;
+  cuerpo += resp.grupos.map(g => ` · ${_repEsc(g.label.replace('Habitaciones ',''))}: <b>${g.ocupadas}/${g.total}</b>`).join('');
+  cuerpo += `</div>`;
+  resp.grupos.forEach(g => {
+    if (!g.habitaciones.length) return;
+    cuerpo += `<h2>${_repEsc(g.label)} — ${g.ocupadas}/${g.total} ocupadas</h2>`;
+    cuerpo += `<table><thead><tr><th style="width:9%;">Hab.</th><th style="width:24%;">Paciente</th><th style="width:6%;">Edad</th><th>Procedimiento / Dx</th><th style="width:22%;">Médico</th><th style="width:11%;">Ingreso</th><th style="width:6%;">Días</th></tr></thead><tbody>`;
+    g.habitaciones.forEach(h => {
+      if (h.ocupada) {
+        cuerpo += `<tr><td><b>${_repEsc(h.numero)}</b></td><td>${_repEsc(h.paciente)}</td><td>${_repEsc(h.edad)}</td><td>${_repEsc(h.procedimiento)}</td><td>${_repEsc(h.doctor)}</td><td>${h.fechaIngreso?formatDateShort(h.fechaIngreso):''}</td><td>${_repEsc(h.dias)}</td></tr>`;
+      } else {
+        cuerpo += `<tr class="libre"><td><b>${_repEsc(h.numero)}</b></td><td colspan="6">Disponible</td></tr>`;
+      }
+    });
+    cuerpo += `</tbody></table>`;
+  });
+  const sub = resp.esHoy ? `Estado actual · ${formatDateShort(resp.fecha)}` : `Ocupación al ${formatDateShort(resp.fecha)} (reconstruido)`;
+  abrirVentanaImpresion('Reporte de ocupación de habitaciones', sub, cuerpo);
+}
+
+// ---- Reporte 2: programación quirúrgica del día ----
+async function generarReporteProgramacion() {
+  const fecha = progFechaActual || todayISO();
+  showToast('Generando reporte…');
+  const resp = await apiGet('getProgramacionDia', { fecha });
+  if (!resp || !resp.ok) { showToast('No se pudo generar el reporte', 'error'); return; }
+  const quirofanos = resp.porQuirofano ? Object.keys(resp.porQuirofano).map(k => resp.porQuirofano[k]) : [];
+  quirofanos.sort((a, b) => (parseInt(a.numero, 10) || 0) - (parseInt(b.numero, 10) || 0));
+  let totalCx = 0;
+  let cuerpo = '';
+  quirofanos.forEach(q => {
+    const lista = q.cirugias || [];
+    totalCx += lista.length;
+    cuerpo += `<h2>Quirófano ${_repEsc(q.numero)} ${q.caracteristicas ? `<span class="pill">${_repEsc(q.caracteristicas)}</span>` : ''} — ${lista.length} cirugía${lista.length === 1 ? '' : 's'}</h2>`;
+    if (!lista.length) { cuerpo += `<div style="font-size:10px;color:#999;margin-bottom:4px;">Sin cirugías programadas</div>`; return; }
+    cuerpo += `<table><thead><tr><th style="width:11%;">Horario</th><th style="width:22%;">Paciente</th><th>Cirugía</th><th style="width:18%;">Cirujano</th><th style="width:18%;">Anestesiólogo</th><th style="width:14%;">Material</th></tr></thead><tbody>`;
+    lista.forEach(c => {
+      cuerpo += `<tr><td>${_repEsc(c.horaInicio)}${c.horaFin ? ' → ' + _repEsc(c.horaFin) : ''}</td><td>${_repEsc(c.paciente)}${c.edad ? ` (${_repEsc(c.edad)})` : ''}</td><td>${_repEsc(c.tipoCirugia)}</td><td>${_repEsc(c.medico)}</td><td>${_repEsc(c.anestesiologo)}</td><td>${_repEsc(c.materialEspecial)}</td></tr>`;
+    });
+    cuerpo += `</tbody></table>`;
+  });
+  cuerpo = `<div class="resumen"><b>${totalCx}</b> cirugía${totalCx === 1 ? '' : 's'} programada${totalCx === 1 ? '' : 's'} para el día</div>` + cuerpo;
+  abrirVentanaImpresion('Programación quirúrgica', `Cirugías del ${formatDateShort(fecha)}`, cuerpo);
 }
 
 // MODAL: PROGRAMAR CIRUGÍA (con todos los campos del Excel actual)

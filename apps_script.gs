@@ -184,6 +184,7 @@ function doGet(e) {
       case 'getProgramacionMes': result = getProgramacionMes(e.parameter.anio, e.parameter.mes); break;
       case 'validarConflictoHorario': result = validarConflictoHorario(e.parameter.idQuirofano, e.parameter.fecha, e.parameter.horaInicio, e.parameter.tqxHoras, e.parameter.folioExcluir); break;
       case 'getTableroHabitaciones': result = getTableroHabitaciones(); break;
+      case 'getOcupacionEnFecha': result = getOcupacionEnFecha(e.parameter.fecha); break;
       case 'getCirugiasParaHospitalizar': result = getCirugiasParaHospitalizar(); break;
       case 'getHistorialHabitacion': result = getHistorialHabitacion(e.parameter.idHabitacion); break;
       case 'getPacientes': result = getPacientes(e.parameter.busqueda); break;
@@ -3445,6 +3446,87 @@ function getTableroHabitaciones() {
     habitaciones: resultado,
     porTipo: porTipo,
     ocupacion: calcularOcupacion()
+  };
+}
+
+/**
+ * Ocupación de habitaciones para una FECHA (reporte).
+ *  - Si la fecha es hoy o futura → estado actual (hospitalizaciones ACTIVA).
+ *  - Si es una fecha pasada → reconstruye quién estaba internado ese día
+ *    (Ingreso ≤ fecha y sin egreso o egreso ≥ fecha). El cuarto es el
+ *    registrado en la hospitalización (aproximado si hubo cambios de cama).
+ */
+function getOcupacionEnFecha(fecha) {
+  var hoy = todayStr();
+  var D = (fecha && String(fecha).trim()) ? String(fecha).substring(0, 10) : hoy;
+  var esHoy = (D >= hoy);
+
+  var habs = sheetToObjects(SHEETS.HABITACIONES).filter(function(h){ return esActivo(h.Activo); });
+  var hospAll = sheetToObjects(SHEETS.HOSPITALIZACIONES);
+  var pacIndex = {};
+  sheetToObjects(SHEETS.PACIENTES).forEach(function(p){ pacIndex[String(p.ID_Paciente)] = p; });
+
+  // Hospitalización que ocupaba cada habitación en la fecha D
+  var ocupadas = {};
+  hospAll.forEach(function(h){
+    var ingreso = dateOnly(h.Fecha_Ingreso);
+    if (!ingreso || ingreso > D) return;
+    var ocupa;
+    if (esHoy) {
+      ocupa = (h.Estado === 'ACTIVA');
+    } else {
+      var egreso = dateOnly(h.Fecha_Egreso);
+      ocupa = egreso ? (egreso >= D) : true; // sin egreso = seguía internado
+    }
+    if (!ocupa || !h.ID_Habitacion) return;
+    var prev = ocupadas[h.ID_Habitacion];
+    if (!prev || dateOnly(prev.Fecha_Ingreso) <= ingreso) ocupadas[h.ID_Habitacion] = h;
+  });
+
+  function diasEntre(ing, hasta) {
+    if (!ing) return 0;
+    var a = new Date(ing + 'T00:00:00'), b = new Date(hasta + 'T00:00:00');
+    return Math.max(0, Math.floor((b - a) / 86400000));
+  }
+
+  var GRUPOS = [
+    { tipo: 'PRIVADA', label: 'Habitaciones Privadas' },
+    { tipo: 'SALA_GENERAL', label: 'Sala General' },
+    { tipo: 'URGENCIAS', label: 'Urgencias' },
+    { tipo: 'TERAPIA_INTENSIVA', label: 'Terapia Intensiva' }
+  ];
+
+  var totalOcup = 0;
+  var grupos = GRUPOS.map(function(g){
+    var ocupCount = 0;
+    var rooms = habs.filter(function(h){ return h.Tipo === g.tipo; })
+      .sort(function(a, b){ return parseInt(a.Numero, 10) - parseInt(b.Numero, 10); })
+      .map(function(h){
+        var ocup = ocupadas[h.ID_Habitacion];
+        if (ocup) ocupCount++;
+        var pac = (ocup && pacIndex[String(ocup.ID_Paciente)]) ? pacIndex[String(ocup.ID_Paciente)] : {};
+        return {
+          numero: h.Numero,
+          ocupada: !!ocup,
+          paciente: ocup ? (pac.Nombre_Completo || ocup.Nombre_Paciente || '') : '',
+          edad: ocup ? ((pac.Edad !== undefined && pac.Edad !== '') ? pac.Edad : ocup.Edad_Paciente) : '',
+          procedimiento: ocup ? (pac.Procedimiento_Inicial || ocup.Diagnostico || '') : '',
+          doctor: ocup ? (pac.Medico_Tratante || ocup.Nombre_Doctor || '') : '',
+          fechaIngreso: ocup ? dateOnly(ocup.Fecha_Ingreso) : '',
+          dias: ocup ? diasEntre(dateOnly(ocup.Fecha_Ingreso), D) : ''
+        };
+      });
+    totalOcup += ocupCount;
+    return { tipo: g.tipo, label: g.label, total: rooms.length, ocupadas: ocupCount, habitaciones: rooms };
+  });
+
+  return {
+    ok: true,
+    fecha: D,
+    esHoy: esHoy,
+    totalOcupadas: totalOcup,
+    totalHabitaciones: habs.length,
+    grupos: grupos
   };
 }
 
