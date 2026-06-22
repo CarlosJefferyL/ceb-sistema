@@ -1020,7 +1020,10 @@ textarea { resize: vertical; min-height: 70px; }
           <h1>Consumos</h1>
           <div class="subtitle">Registro de uso real en cirugía</div>
         </div>
-        <button class="btn btn-accent" data-accion="registrar_consumo" onclick="openModalConsumo()">+ Registrar consumo</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary" data-accion="registrar_consumo" onclick="openModalNuevaRemision()">🧾 Nueva remisión</button>
+          <button class="btn btn-accent" data-accion="registrar_consumo" onclick="openModalConsumo()">+ Consumo (cirugía)</button>
+        </div>
       </div>
       <div class="toolbar">
         <div class="toolbar-row">
@@ -4406,6 +4409,148 @@ async function submitRecibirOC(folioOC) {
   const data = { folioOC, items, fecha: document.getElementById('rc_fecha').value, capturadoPor: currentUser.nombre };
   const resp = await apiPost('recibirOrdenCompra', data);
   if (resp.ok) { showToast('✓ Recepción registrada (' + resp.entradas + ' entradas). Estado: ' + resp.estado); closeModal(); loadCompras(); }
+  else { showToast('Error: ' + resp.error, 'error'); }
+}
+
+// ============================================================
+// REMISIÓN — consumo del paciente con cargo a su cuenta
+// ============================================================
+let remisionCart = [];
+let remisionCtx = { idPaciente: '', nombrePaciente: '', origen: 'QUIROFANO', folioCirugia: '' };
+let remisionLotesArt = [];
+let remisionBuscarTimer = null;
+
+// Precio de venta cliente = compra más reciente × 2 (mismo criterio que el backend)
+function precioVentaCli(idArticulo) {
+  const ps = (catalogos.precios || []).filter(p => String(p.ID_Articulo) === String(idArticulo) && (Number(p.Precio) || 0) > 0);
+  if (!ps.length) return 0;
+  ps.sort((a, b) => String(b.Fecha_Actualizacion || '').localeCompare(String(a.Fecha_Actualizacion || '')));
+  return Math.round((Number(ps[0].Precio) || 0) * 2 * 100) / 100;
+}
+
+function openModalNuevaRemision() {
+  openModal('Nueva remisión · elegir paciente', `
+    <div class="form-grid"><div class="full">
+      <label>Buscar paciente (nombre, CURP o folio)</label>
+      <input type="search" id="rm_buscar" oninput="remisionBuscarPaciente()" placeholder="Mín. 2 letras" autocomplete="off">
+      <div id="rm_resultados" style="display:none;max-height:240px;overflow:auto;border:1px solid var(--border);border-radius:8px;margin-top:6px;"></div>
+    </div></div>
+    <div class="form-actions"><button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button></div>
+  `);
+}
+
+function remisionBuscarPaciente() {
+  const q = (document.getElementById('rm_buscar').value || '').trim();
+  const cont = document.getElementById('rm_resultados');
+  if (q.length < 2) { cont.style.display = 'none'; return; }
+  clearTimeout(remisionBuscarTimer);
+  remisionBuscarTimer = setTimeout(async () => {
+    const resp = await apiGet('buscarPacientesCobro', { q });
+    const lista = (resp && resp.ok) ? (resp.resultados || []) : [];
+    cont.innerHTML = lista.length
+      ? lista.map(p => `<div onclick="remisionElegirPaciente('${escJs(p.idPaciente)}','${escJs(p.nombrePaciente)}')" style="padding:9px 11px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px;"><b>${artEsc(p.nombrePaciente)}</b><br><small style="color:var(--text-muted);">${artEsc(p.idPaciente)}${p.curp ? ' · ' + artEsc(p.curp) : ''}${p.edad ? ' · ' + p.edad + ' años' : ''}</small></div>`).join('')
+      : '<div style="padding:10px;color:var(--text-muted);font-size:13px;">Sin resultados. Verifica que el paciente esté dado de alta.</div>';
+    cont.style.display = 'block';
+  }, 280);
+}
+
+function remisionElegirPaciente(idPaciente, nombre) { openModalRemision(idPaciente, nombre, 'QUIROFANO', ''); }
+
+function openModalRemision(idPaciente, nombre, origen, folioCirugia) {
+  remisionCart = [];
+  remisionCtx = { idPaciente: idPaciente, nombrePaciente: nombre, origen: origen || 'QUIROFANO', folioCirugia: folioCirugia || '' };
+  const arts = (cache.articulos || []);
+  if (!arts.length) { showToast('Primero abre Artículos / Almacén para cargar el catálogo', 'error'); return; }
+  const opts = arts.map(a => `<option value="${artEsc(a.idArticulo)}">${artEsc(a.codigo)} · ${artEsc(a.nombre)}</option>`).join('');
+  const medOpts = (catalogos.medicos || []).map(m => `<option value="${m.ID_Medico}">${artEsc(m.Nombre_Completo)}</option>`).join('');
+  openModal('Remisión · ' + artEsc(nombre), `
+    <div style="background:var(--teal-light);padding:8px 12px;border-radius:8px;margin-bottom:10px;font-size:12px;color:var(--navy);">Paciente: <b>${artEsc(nombre)}</b> · cada consumo descuenta del almacén/lote y se carga a su cuenta a precio de venta.</div>
+    <div class="form-grid">
+      <div><label>Origen</label><select id="rm_origen"><option value="QUIROFANO" ${origen !== 'PISO' ? 'selected' : ''}>Quirófano</option><option value="PISO" ${origen === 'PISO' ? 'selected' : ''}>Piso</option></select></div>
+      <div><label>Médico (para controlados)</label><select id="rm_medico"><option value="">— Opcional —</option>${medOpts}</select></div>
+      <div class="full"><label>Artículo</label><select id="rm_art" onchange="remisionArtChange()"><option value="">— Seleccionar —</option>${opts}</select></div>
+      <div><label>Almacén</label><select id="rm_ubic" onchange="remisionRefreshLotes()">${ubicacionOpts('ALM_GENERAL')}</select></div>
+      <div id="rm_loteWrap" style="display:none;"><label>Caja / lote</label><select id="rm_lote"></select></div>
+      <div><label>Cantidad</label><input type="number" id="rm_cant" step="any" min="0" placeholder="Ej: 1"></div>
+      <div style="display:flex;align-items:end;"><button type="button" class="btn btn-secondary btn-sm" onclick="remisionAgregar()">+ Agregar</button></div>
+    </div>
+    <div id="rm_cartBox" style="margin-top:10px;"></div>
+    <div class="form-actions">
+      <button type="button" class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+      <button type="button" class="btn btn-primary" onclick="submitRemision()">Registrar remisión</button>
+    </div>
+  `);
+  remisionRenderCart();
+}
+
+async function remisionArtChange() {
+  const id = document.getElementById('rm_art').value;
+  const art = (cache.articulos || []).find(a => a.idArticulo === id);
+  const reqLote = art ? artRequiereLote(art.categoria) : false;
+  document.getElementById('rm_loteWrap').style.display = reqLote ? '' : 'none';
+  remisionLotesArt = [];
+  if (reqLote && id) {
+    const resp = await apiGet('getLotes', { estado: 'TODAS', idMedicamento: id });
+    remisionLotesArt = (resp && resp.ok) ? (resp.data || []).filter(l => l.saldo > 0) : [];
+    remisionRefreshLotes();
+  }
+}
+
+function remisionRefreshLotes() {
+  const id = document.getElementById('rm_art').value;
+  const art = (cache.articulos || []).find(a => a.idArticulo === id);
+  if (!art || !artRequiereLote(art.categoria)) return;
+  const ubic = document.getElementById('rm_ubic').value;
+  const sel = document.getElementById('rm_lote');
+  const enU = remisionLotesArt.filter(l => (l.ubicacion || 'ALM_GENERAL') === ubic);
+  sel.innerHTML = enU.length
+    ? enU.map(l => `<option value="${artEsc(l.idLote)}">Lote ${artEsc(l.loteFabricante || 's/n')} · saldo ${l.saldo}${l.fechaCaducidad ? ' · cad ' + formatDateShort(l.fechaCaducidad) : ''}</option>`).join('')
+    : '<option value="">(sin cajas en este almacén)</option>';
+}
+
+function remisionAgregar() {
+  const id = document.getElementById('rm_art').value;
+  const art = (cache.articulos || []).find(a => a.idArticulo === id);
+  if (!art) { showToast('Selecciona un artículo', 'error'); return; }
+  const cant = parseFloat(document.getElementById('rm_cant').value);
+  if (!cant || cant <= 0) { showToast('Captura la cantidad', 'error'); return; }
+  const ubic = document.getElementById('rm_ubic').value;
+  const reqLote = artRequiereLote(art.categoria);
+  let idLote = '';
+  if (reqLote) {
+    idLote = (document.getElementById('rm_lote') || {}).value;
+    if (!idLote) { showToast('Selecciona la caja/lote', 'error'); return; }
+  }
+  const pv = precioVentaCli(id);
+  remisionCart.push({ idArticulo: id, descripcion: art.nombre, categoria: art.categoria, cantidad: cant, unidad: art.unidad, ubicacion: ubic, idLote: idLote, precioVenta: pv, importe: Math.round(pv * cant * 100) / 100 });
+  document.getElementById('rm_cant').value = '';
+  remisionRenderCart();
+}
+
+function remisionQuitar(i) { remisionCart.splice(i, 1); remisionRenderCart(); }
+
+function remisionRenderCart() {
+  const box = document.getElementById('rm_cartBox'); if (!box) return;
+  if (!remisionCart.length) { box.innerHTML = '<div class="empty-state" style="padding:14px;"><div class="icon">🧾</div>Agrega artículos a la remisión</div>'; return; }
+  const rows = remisionCart.map((l, i) => `<tr><td>${artEsc(l.descripcion)}</td><td>${l.cantidad} ${artEsc(l.unidad || '')}</td><td>${artEsc(l.ubicacion)}</td><td style="text-align:right;">${fmtMoney(l.precioVenta)}</td><td style="text-align:right;">${fmtMoney(l.importe)}</td><td><button class="btn btn-secondary btn-sm" onclick="remisionQuitar(${i})">×</button></td></tr>`).join('');
+  const total = remisionCart.reduce((s, l) => s + l.importe, 0);
+  box.innerHTML = `<table><thead><tr><th>Artículo</th><th>Cant.</th><th>Almacén</th><th style="text-align:right;">P. venta</th><th style="text-align:right;">Importe</th><th></th></tr></thead><tbody>${rows}</tbody></table><div style="text-align:right;margin-top:6px;font-size:15px;"><b>Total: ${fmtMoney(total)}</b></div>`;
+}
+
+async function submitRemision() {
+  if (!remisionCart.length) { showToast('Agrega al menos un artículo', 'error'); return; }
+  const medSel = document.getElementById('rm_medico');
+  const data = {
+    idPaciente: remisionCtx.idPaciente, nombrePaciente: remisionCtx.nombrePaciente,
+    origen: (document.getElementById('rm_origen') || {}).value || remisionCtx.origen,
+    folioCirugia: remisionCtx.folioCirugia,
+    idMedico: medSel ? medSel.value : '',
+    nombreMedico: (medSel && medSel.selectedIndex > 0) ? medSel.options[medSel.selectedIndex].text : '',
+    items: remisionCart.map(l => ({ idArticulo: l.idArticulo, cantidad: l.cantidad, ubicacion: l.ubicacion, idLote: l.idLote, unidad: l.unidad })),
+    capturadoPor: currentUser.nombre
+  };
+  const resp = await apiPost('registrarRemision', data);
+  if (resp.ok) { showToast(`✓ Remisión registrada (${resp.lineas} línea${resp.lineas === 1 ? '' : 's'}). Cuenta materiales: ${fmtMoney(resp.totalCuentaMateriales)}`); closeModal(); }
   else { showToast('Error: ' + resp.error, 'error'); }
 }
 
