@@ -98,6 +98,7 @@ var PERMISOS_ACCIONES = {
   'entrada_articulo':     ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
   'salida_articulo':      ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],
   'ajuste_articulo':      ['ADMIN','ALMACEN','DIRECTOR_MEDICO'],
+  'traspaso_articulo':    ['ADMIN','ALMACEN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO'],
   // ---- Compras ----
   'alta_proveedor':       ['ADMIN','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
   'editar_proveedor':     ['ADMIN','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
@@ -226,6 +227,7 @@ function doPost(e) {
       case 'altaArticulo':       result = altaArticulo(payload.data); break;
       case 'registrarEntradaArticulo': result = registrarEntradaArticulo(payload.data); break;
       case 'registrarMovimientoArticulo': result = registrarMovimientoArticulo(payload.data); break;
+      case 'registrarTraspaso':  result = registrarTraspaso(payload.data); break;
       case 'migrarArticulos':    result = migrarArticulos(payload.data); break;
       case 'altaProveedor':      result = altaProveedor(payload.data); break;
       case 'editarProveedor':    result = editarProveedor(payload.data); break;
@@ -2090,6 +2092,111 @@ function registrarMovimientoArticulo(d) {
       ''
     ], ubicacion);
     return { ok: true, saldoNuevo: calcularSaldo(d.idArticulo, ubicacion), saldoGlobal: calcularSaldo(d.idArticulo) };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Reasigna la ubicación de una caja/lote (traspaso). Asume lock del llamador.
+ * Devuelve {ok, saldo, loteFabricante, ubicacionActual} o {ok:false,error}.
+ */
+function setLoteUbicacion_(idLote, nuevaUbicacion) {
+  var sh = getSheet(SHEETS.LOTES);
+  var data = sh.getDataRange().getValues();
+  var H = data[0];
+  var cId = H.indexOf('ID_Lote');
+  var cUbi = H.indexOf('Ubicacion');
+  var cSaldo = H.indexOf('Saldo');
+  var cInicial = H.indexOf('Cantidad_Inicial');
+  var cConsumida = H.indexOf('Cantidad_Consumida');
+  var cLoteFab = H.indexOf('Lote_Fabricante');
+  var cEstado = H.indexOf('Estado');
+  if (cUbi === -1) { sh.getRange(1, H.length + 1).setValue('Ubicacion'); cUbi = H.length; }
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][cId] === idLote) {
+      var inicial = parseFloat(data[i][cInicial]) || 0;
+      var consumida = parseFloat(data[i][cConsumida]) || 0;
+      var saldo = (cSaldo !== -1 && data[i][cSaldo] !== '') ? parseFloat(data[i][cSaldo]) : (inicial - consumida);
+      var actual = data[i][cUbi] || UBICACION_DEFAULT;
+      sh.getRange(i + 1, cUbi + 1).setValue(nuevaUbicacion);
+      return { ok: true, saldo: saldo, loteFabricante: data[i][cLoteFab], ubicacionActual: actual, estado: data[i][cEstado] };
+    }
+  }
+  return { ok: false, error: 'Caja/lote no encontrada: ' + idLote };
+}
+
+/**
+ * Traspaso de stock entre almacenes: SALIDA en origen + ENTRADA en destino.
+ *  - Artículos con lote: se traslada la CAJA completa (su saldo) y se reasigna
+ *    su Ubicacion. Requiere idLote.
+ *  - Sin lote (insumos/otros): por cantidad, validando saldo en origen.
+ * Requeridos: idArticulo, ubicacionOrigen, ubicacionDestino.
+ */
+function registrarTraspaso(d) {
+  if (!tienePermiso(d.rolUsuario, 'traspaso_articulo')) {
+    return errorSinPermiso(d.rolUsuario, 'traspaso_articulo');
+  }
+  if (!d.idArticulo) return { ok: false, error: 'Artículo requerido' };
+  if (!d.ubicacionOrigen || !d.ubicacionDestino) return { ok: false, error: 'Almacén de origen y destino requeridos' };
+  if (d.ubicacionOrigen === d.ubicacionDestino) return { ok: false, error: 'El origen y el destino deben ser distintos' };
+
+  var art = getArticuloRaw_(d.idArticulo);
+  if (!art) return { ok: false, error: 'Artículo no encontrado: ' + d.idArticulo };
+  var requiereLote = categoriaRequiereLote_(art.Categoria);
+  var nombre = art.Nombre || '';
+  var unidad = art.Unidad || '';
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    var cantidad, loteFab = '';
+    if (requiereLote) {
+      if (!d.idLote) return { ok: false, error: 'Selecciona la caja/lote a trasladar' };
+      var lt = setLoteUbicacion_(d.idLote, d.ubicacionDestino);
+      if (!lt.ok) return lt;
+      if (lt.ubicacionActual !== d.ubicacionOrigen) {
+        // Revertir la reasignación si el origen no coincide
+        setLoteUbicacion_(d.idLote, lt.ubicacionActual);
+        return { ok: false, error: 'La caja seleccionada no está en ' + d.ubicacionOrigen + ' (está en ' + lt.ubicacionActual + ')' };
+      }
+      if (!(lt.saldo > 0)) {
+        setLoteUbicacion_(d.idLote, lt.ubicacionActual);
+        return { ok: false, error: 'La caja seleccionada no tiene saldo para trasladar' };
+      }
+      cantidad = lt.saldo;
+      loteFab = lt.loteFabricante || '';
+    } else {
+      cantidad = parseFloat(d.cantidad);
+      if (!cantidad || cantidad <= 0) return { ok: false, error: 'La cantidad debe ser mayor a 0' };
+      var saldoOrigen = calcularSaldo(d.idArticulo, d.ubicacionOrigen);
+      if (cantidad > saldoOrigen) {
+        return { ok: false, error: 'Saldo insuficiente en ' + d.ubicacionOrigen + ' (disponible: ' + saldoOrigen + ' ' + unidad + ')' };
+      }
+    }
+
+    var fecha = d.fecha || todayStr();
+    var ref = 'Traspaso ' + d.ubicacionOrigen + ' → ' + d.ubicacionDestino;
+    var obs = d.motivo || '';
+    var base = new Date().getTime();
+
+    // SALIDA en origen
+    appendInvMov_([
+      'MOV-' + base, fecha, 'SALIDA', d.idArticulo, nombre, cantidad, unidad,
+      ref, loteFab, '', '', d.capturadoPor, nowTs(), obs, d.idLote || ''
+    ], d.ubicacionOrigen);
+    // ENTRADA en destino
+    appendInvMov_([
+      'MOV-' + (base + 1), fecha, 'ENTRADA', d.idArticulo, nombre, cantidad, unidad,
+      ref, loteFab, '', '', d.capturadoPor, nowTs(), obs, d.idLote || ''
+    ], d.ubicacionDestino);
+
+    return {
+      ok: true,
+      cantidad: cantidad,
+      saldoOrigen: calcularSaldo(d.idArticulo, d.ubicacionOrigen),
+      saldoDestino: calcularSaldo(d.idArticulo, d.ubicacionDestino)
+    };
   } finally {
     lock.releaseLock();
   }

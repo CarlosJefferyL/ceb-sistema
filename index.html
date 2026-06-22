@@ -1090,6 +1090,7 @@ textarea { resize: vertical; min-height: 70px; }
           <input type="text" id="artBuscar" oninput="renderArticulos()" placeholder="Buscar…" style="font-size:13px;">
           <button class="btn btn-secondary btn-sm" onclick="loadArticulos()">↻ Actualizar</button>
           <button class="btn btn-primary btn-sm" data-accion="entrada_articulo" onclick="openModalEntradaArticulo()">↓ Entrada</button>
+          <button class="btn btn-secondary btn-sm" data-accion="traspaso_articulo" onclick="openModalTraspaso()">⇄ Traspaso</button>
           <button class="btn btn-accent btn-sm" data-accion="alta_articulo" onclick="openModalArticulo()">+ Nuevo artículo</button>
           <button class="btn btn-secondary btn-sm admin-only" onclick="migrarArticulos()" title="Migración única: vuelca medicamentos e insumos al catálogo único">⟳ Migrar catálogo</button>
         </div>
@@ -1723,6 +1724,7 @@ const PERMISOS = {
     'entrada_articulo':     ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
     'salida_articulo':      ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],
     'ajuste_articulo':      ['ADMIN','ALMACEN','DIRECTOR_MEDICO'],
+    'traspaso_articulo':    ['ADMIN','ALMACEN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO'],
     'alta_proveedor':       ['ADMIN','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
     'editar_proveedor':     ['ADMIN','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
     'crear_oc':             ['ADMIN','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
@@ -3935,6 +3937,89 @@ async function submitMovimientoArticulo(idArticulo, tipo) {
   };
   const resp = await apiPost('registrarMovimientoArticulo', data);
   if (resp.ok) { showToast('✓ Movimiento registrado. Saldo: ' + resp.saldoNuevo); closeModal(); loadArticulos(); }
+  else { showToast('Error: ' + resp.error, 'error'); }
+}
+
+// MODAL: TRASPASO ENTRE ALMACENES
+let traspasoLotes = [];
+
+function openModalTraspaso(idArticulo) {
+  const arts = (cache.articulos || []);
+  if (!arts.length) { showToast('Primero carga el catálogo de artículos', 'error'); return; }
+  if (!(catalogos.ubicaciones || []).length) { showToast('No hay almacenes configurados', 'error'); return; }
+  const opts = arts.map(a => `<option value="${artEsc(a.idArticulo)}" ${a.idArticulo === idArticulo ? 'selected' : ''}>${artEsc(a.codigo)} · ${artEsc(a.nombre)}</option>`).join('');
+  const destinoDefault = (catalogos.ubicaciones.find(u => u.idUbicacion !== 'ALM_GENERAL') || {}).idUbicacion || '';
+  openModal('Traspaso entre almacenes', `
+    <form onsubmit="event.preventDefault();submitTraspaso()">
+      <div class="form-grid">
+        <div class="full"><label>Artículo *</label><select id="tr_art" required onchange="traspasoArticuloChange()"><option value="">— Seleccionar —</option>${opts}</select></div>
+        <div><label>Almacén origen *</label><select id="tr_origen" required onchange="traspasoRefreshLotes()">${ubicacionOpts('ALM_GENERAL')}</select></div>
+        <div><label>Almacén destino *</label><select id="tr_destino" required>${ubicacionOpts(destinoDefault)}</select></div>
+        <div class="full" id="tr_loteWrap" style="display:none;"><label>Caja / lote a trasladar *</label><select id="tr_lote"></select><small style="color:var(--text-muted);font-size:11px;">Se traslada la caja completa con su saldo.</small></div>
+        <div id="tr_cantWrap" style="display:none;"><label>Cantidad *</label><input type="number" id="tr_cantidad" step="any" min="0" placeholder="Ej: 5"></div>
+        <div class="full"><label>Motivo</label><input type="text" id="tr_motivo" placeholder="Ej: surtir carro rojo, regreso a almacén"></div>
+      </div>
+      <div id="tr_aviso" style="display:none;font-size:12px;color:var(--text-muted);margin-top:4px;"></div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Registrar traspaso</button>
+      </div>
+    </form>
+  `);
+  if (idArticulo) traspasoArticuloChange();
+}
+
+async function traspasoArticuloChange() {
+  const id = document.getElementById('tr_art').value;
+  const art = (cache.articulos || []).find(a => a.idArticulo === id);
+  const reqLote = art ? artRequiereLote(art.categoria) : false;
+  document.getElementById('tr_loteWrap').style.display = reqLote ? '' : 'none';
+  document.getElementById('tr_cantWrap').style.display = reqLote ? 'none' : '';
+  traspasoLotes = [];
+  if (reqLote && id) {
+    const resp = await apiGet('getLotes', { estado: 'TODAS', idMedicamento: id });
+    traspasoLotes = (resp && resp.ok) ? (resp.data || []).filter(l => l.saldo > 0) : [];
+    traspasoRefreshLotes();
+  }
+}
+
+function traspasoRefreshLotes() {
+  const id = document.getElementById('tr_art').value;
+  const art = (cache.articulos || []).find(a => a.idArticulo === id);
+  if (!art || !artRequiereLote(art.categoria)) return;
+  const origen = document.getElementById('tr_origen').value;
+  const sel = document.getElementById('tr_lote');
+  const aviso = document.getElementById('tr_aviso');
+  const enOrigen = traspasoLotes.filter(l => (l.ubicacion || 'ALM_GENERAL') === origen);
+  if (!enOrigen.length) {
+    sel.innerHTML = '<option value="">(sin cajas en este almacén)</option>';
+    aviso.style.display = ''; aviso.innerHTML = '⚠ No hay cajas de este artículo en el almacén origen seleccionado.';
+  } else {
+    sel.innerHTML = enOrigen.map(l => `<option value="${artEsc(l.idLote)}">Lote ${artEsc(l.loteFabricante || 's/n')} · saldo ${l.saldo} ${artEsc(l.unidad || '')}${l.fechaCaducidad ? ' · cad ' + formatDateShort(l.fechaCaducidad) : ''}</option>`).join('');
+    aviso.style.display = 'none';
+  }
+}
+
+async function submitTraspaso() {
+  const id = document.getElementById('tr_art').value;
+  const art = (cache.articulos || []).find(a => a.idArticulo === id);
+  if (!art) { showToast('Selecciona un artículo', 'error'); return; }
+  const origen = document.getElementById('tr_origen').value;
+  const destino = document.getElementById('tr_destino').value;
+  if (origen === destino) { showToast('El origen y el destino deben ser distintos', 'error'); return; }
+  const reqLote = artRequiereLote(art.categoria);
+  const data = { idArticulo: id, ubicacionOrigen: origen, ubicacionDestino: destino, motivo: document.getElementById('tr_motivo').value, capturadoPor: currentUser.nombre };
+  if (reqLote) {
+    const idLote = (document.getElementById('tr_lote') || {}).value;
+    if (!idLote) { showToast('Selecciona la caja/lote a trasladar', 'error'); return; }
+    data.idLote = idLote;
+  } else {
+    const cant = parseFloat((document.getElementById('tr_cantidad') || {}).value);
+    if (!cant || cant <= 0) { showToast('Captura la cantidad a trasladar', 'error'); return; }
+    data.cantidad = cant;
+  }
+  const resp = await apiPost('registrarTraspaso', data);
+  if (resp.ok) { showToast(`✓ Traspaso de ${resp.cantidad} ${art.unidad || ''}. Origen: ${resp.saldoOrigen} · Destino: ${resp.saldoDestino}`); closeModal(); loadArticulos(); }
   else { showToast('Error: ' + resp.error, 'error'); }
 }
 
