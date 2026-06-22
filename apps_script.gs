@@ -42,6 +42,7 @@ var SHEETS = {
   LIBRO: 'LibroCOFEPRIS',
   INV_MOV: 'Inventario_Mov',
   INV_SALDO: 'Inventario_Saldo',
+  ARTICULOS: 'CAT_Articulos',
   CONSULTAS: 'Consultas',
   RECIBOS: 'Recibos',
   BENEFICIARIOS: 'CAT_Beneficiarios',
@@ -85,6 +86,12 @@ var PERMISOS_ACCIONES = {
   'cancelar_consumo':     ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ALMACEN','DIRECTOR_MEDICO'],
   'nueva_entrada':        ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
   'alta_medicamento':     ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ALMACEN','DIRECTOR_MEDICO'],
+  // ---- Inventario general (todos los artículos: medicamentos, controlados, insumos, otros) ----
+  'alta_articulo':        ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ALMACEN','DIRECTOR_MEDICO'],
+  'editar_articulo':      ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ALMACEN','DIRECTOR_MEDICO'],
+  'entrada_articulo':     ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
+  'salida_articulo':      ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],
+  'ajuste_articulo':      ['ADMIN','ALMACEN','DIRECTOR_MEDICO'],
   'alta_medico':          ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
   'alta_medico_consulta': ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
   'exportar_libro':       ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
@@ -151,6 +158,8 @@ function doGet(e) {
       case 'getConsumosPorCirugia': result = getConsumosPorCirugia(e.parameter.folioCirugia); break;
       case 'getLibro':     result = getLibro(e.parameter.desde, e.parameter.hasta); break;
       case 'getInventario':result = getInventario(); break;
+      case 'getInventarioGeneral': result = getInventarioGeneral(e.parameter.categoria); break;
+      case 'getArticulos': result = getArticulos(e.parameter.categoria); break;
       case 'getLotes':     result = getLotes(e.parameter.estado, e.parameter.idMedicamento); break;
       case 'getConsumosPorLote': result = getConsumosPorLote(e.parameter.idLote); break;
       case 'getDashboard': result = getDashboard(e.parameter.horizonte); break;
@@ -194,6 +203,10 @@ function doPost(e) {
       case 'registrarConsumo':   result = registrarConsumo(payload.data); break;
       case 'cancelarConsumo':    result = cancelarConsumo(payload.data); break;
       case 'registrarEntrada':   result = registrarEntrada(payload.data); break;
+      case 'altaArticulo':       result = altaArticulo(payload.data); break;
+      case 'registrarEntradaArticulo': result = registrarEntradaArticulo(payload.data); break;
+      case 'registrarMovimientoArticulo': result = registrarMovimientoArticulo(payload.data); break;
+      case 'migrarArticulos':    result = migrarArticulos(payload.data); break;
       case 'actualizarCirugia':  result = actualizarCirugia(payload.data); break;
       case 'altaPaciente':       result = altaPaciente(payload.data); break;
       case 'altaMedicamento':    result = altaMedicamento(payload.data); break;
@@ -395,9 +408,11 @@ function getCatalogos() {
   // y enviarlas todas haría lento el login y consumiría datos en celular.
   ensureBOMSheets_(); // crea las hojas del módulo BOM en el primer arranque
   ensureSheetConHeaders_(SHEETS.MEDICOS_CONSULTA, MEDICOS_CONSULTA_HEADERS); // médicos de consulta externa
+  ensureArticulosSheet_(); // catálogo único de inventario general
   return {
     ok: true,
     medicamentos: sheetToObjects(SHEETS.MEDICAMENTOS).filter(function(m){return esActivo(m.Activo);}),
+    articulos:    sheetToObjects(SHEETS.ARTICULOS).filter(function(a){return esActivo(a.Activo);}),
     medicos:      sheetToObjects(SHEETS.MEDICOS).filter(function(m){return esActivo(m.Activo);}),
     medicosConsulta: sheetToObjects(SHEETS.MEDICOS_CONSULTA).filter(function(m){return esActivo(m.Activo);}),
     quirofanos:   sheetToObjects(SHEETS.QUIROFANOS).filter(function(q){return esActivo(q.Activo);}),
@@ -1566,6 +1581,386 @@ function getLibro(desde, hasta) {
   if (desde) rows = rows.filter(function(r){ return r.Fecha >= desde; });
   if (hasta) rows = rows.filter(function(r){ return r.Fecha <= hasta; });
   return { ok: true, data: rows };
+}
+
+// ============================================================
+// INVENTARIO GENERAL — CATÁLOGO ÚNICO DE ARTÍCULOS
+// ------------------------------------------------------------
+// Unifica medicamentos, medicamentos controlados, insumos y "otros"
+// en una sola hoja CAT_Articulos. El control por lote/caducidad
+// aplica SOLO a las categorías MEDICAMENTO y MEDICAMENTO_CONTROLADO;
+// INSUMO y OTROS llevan saldo simple (entradas/salidas/ajustes en
+// Inventario_Mov). El folio de receta (COFEPRIS) se exige únicamente
+// a la categoría MEDICAMENTO_CONTROLADO.
+//
+// Diseño sin ruptura: Inventario_Mov y Lotes ya se llavean por
+// ID_Medicamento; tras la migración ese ID = ID_Articulo, así que los
+// saldos y lotes existentes siguen funcionando sin tocar esas hojas.
+// ============================================================
+var ARTICULOS_HEADERS = ['ID_Articulo','Codigo','Nombre','Categoria','Sustancia_Activa',
+  'Presentacion','Concentracion','Fraccion_LGS','Unidad','Stock_Minimo','Requiere_Lote','Activo','Notas'];
+
+var CATEGORIAS_ARTICULO = ['INSUMO','MEDICAMENTO','MEDICAMENTO_CONTROLADO','OTROS'];
+
+/** Normaliza una categoría capturada a una de CATEGORIAS_ARTICULO (default OTROS). */
+function normCategoria_(cat) {
+  var s = String(cat == null ? '' : cat).trim().toUpperCase()
+    .replace(/Í/g,'I').replace(/Á/g,'A').replace(/É/g,'E').replace(/Ó/g,'O').replace(/Ú/g,'U');
+  if (s.indexOf('CONTROL') !== -1) return 'MEDICAMENTO_CONTROLADO';
+  if (s.indexOf('MEDICAMENT') !== -1) return 'MEDICAMENTO';
+  if (s.indexOf('INSUMO') !== -1) return 'INSUMO';
+  if (CATEGORIAS_ARTICULO.indexOf(s) !== -1) return s;
+  return 'OTROS';
+}
+
+/** Una categoría exige control por lote + fecha de caducidad. */
+function categoriaRequiereLote_(cat) {
+  var c = normCategoria_(cat);
+  return c === 'MEDICAMENTO' || c === 'MEDICAMENTO_CONTROLADO';
+}
+
+/** Una categoría exige folio de receta de respaldo (COFEPRIS). */
+function categoriaRequiereReceta_(cat) {
+  return normCategoria_(cat) === 'MEDICAMENTO_CONTROLADO';
+}
+
+/** Garantiza la hoja CAT_Articulos con sus encabezados. */
+function ensureArticulosSheet_() {
+  ensureSheetConHeaders_(SHEETS.ARTICULOS, ARTICULOS_HEADERS);
+}
+
+/**
+ * Migración idempotente: vuelca CAT_Medicamentos (controlados) y
+ * CAT_Insumos al catálogo único CAT_Articulos, conservando los IDs
+ * para no romper Inventario_Mov / Lotes / BOM. Correr UNA vez desde
+ * el editor de Apps Script (o expuesta como acción admin).
+ * Devuelve un resumen de cuántos artículos creó/omitió.
+ */
+function migrarCatalogoArticulos_() {
+  ensureArticulosSheet_();
+  var existentes = {};
+  sheetToObjects(SHEETS.ARTICULOS).forEach(function(a){
+    if (a.ID_Articulo) existentes[String(a.ID_Articulo)] = true;
+  });
+
+  var creados = 0, omitidos = 0;
+
+  // 1. Medicamentos (el catálogo actual son controlados: tienen Fraccion_LGS)
+  sheetToObjects(SHEETS.MEDICAMENTOS).forEach(function(m){
+    var id = m.ID_Medicamento;
+    if (!id) return;
+    if (existentes[String(id)]) { omitidos++; return; }
+    var cat = m.Fraccion_LGS ? 'MEDICAMENTO_CONTROLADO' : 'MEDICAMENTO';
+    appendRowByHeader(SHEETS.ARTICULOS, {
+      'ID_Articulo': id,
+      'Codigo': m.Codigo || id,
+      'Nombre': m.Nombre_Comercial || '',
+      'Categoria': cat,
+      'Sustancia_Activa': m.Sustancia_Activa || '',
+      'Presentacion': m.Presentacion || '',
+      'Concentracion': m.Concentracion || '',
+      'Fraccion_LGS': m.Fraccion_LGS || '',
+      'Unidad': m.Unidad || '',
+      'Stock_Minimo': m.Stock_Minimo || 0,
+      'Requiere_Lote': 'SI',
+      'Activo': m.Activo || 'SI',
+      'Notas': m.Notas || ''
+    });
+    existentes[String(id)] = true;
+    creados++;
+  });
+
+  // 2. Insumos (catálogo del BOM, llaveados por Codigo)
+  sheetToObjects(SHEETS.INSUMOS).forEach(function(i){
+    var id = i.Codigo;
+    if (!id) return;
+    if (existentes[String(id)]) { omitidos++; return; }
+    var cat = normCategoria_(i.Categoria || 'INSUMO');
+    appendRowByHeader(SHEETS.ARTICULOS, {
+      'ID_Articulo': id,
+      'Codigo': id,
+      'Nombre': i.Descripcion || '',
+      'Categoria': cat,
+      'Sustancia_Activa': '',
+      'Presentacion': '',
+      'Concentracion': '',
+      'Fraccion_LGS': '',
+      'Unidad': i.Unidad || '',
+      'Stock_Minimo': 0,
+      'Requiere_Lote': categoriaRequiereLote_(cat) ? 'SI' : 'NO',
+      'Activo': i.Activo || 'SI',
+      'Notas': ''
+    });
+    existentes[String(id)] = true;
+    creados++;
+  });
+
+  return { ok: true, creados: creados, omitidos: omitidos };
+}
+
+/** Acción admin para correr la migración desde el frontend. */
+function migrarArticulos(d) {
+  d = d || {};
+  if (d.rolUsuario && d.rolUsuario !== 'ADMIN') {
+    return { ok: false, error: 'Solo ADMIN puede ejecutar la migración de catálogo.' };
+  }
+  return migrarCatalogoArticulos_();
+}
+
+/** Busca un artículo por ID en CAT_Articulos (objeto crudo o null). */
+function getArticuloRaw_(idArticulo) {
+  var rows = sheetToObjects(SHEETS.ARTICULOS);
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i].ID_Articulo) === String(idArticulo)) return rows[i];
+  }
+  return null;
+}
+
+/**
+ * Inventario de TODOS los artículos activos con su saldo, mínimo y
+ * bandera de alerta. Acepta filtro opcional por categoría.
+ * @param {string} categoria - opcional: INSUMO|MEDICAMENTO|MEDICAMENTO_CONTROLADO|OTROS
+ */
+function getInventarioGeneral(categoria) {
+  ensureArticulosSheet_();
+  var filtro = categoria ? normCategoria_(categoria) : null;
+  var arts = sheetToObjects(SHEETS.ARTICULOS).filter(function(a){ return esActivo(a.Activo); });
+  var data = arts.map(function(a){
+    var cat = normCategoria_(a.Categoria);
+    var saldo = calcularSaldo(a.ID_Articulo);
+    var minimo = parseFloat(a.Stock_Minimo) || 0;
+    return {
+      idArticulo: a.ID_Articulo,
+      codigo: a.Codigo || a.ID_Articulo,
+      nombre: a.Nombre,
+      categoria: cat,
+      sustancia: a.Sustancia_Activa,
+      presentacion: a.Presentacion,
+      concentracion: a.Concentracion,
+      fraccion: a.Fraccion_LGS,
+      unidad: a.Unidad,
+      requiereLote: categoriaRequiereLote_(cat),
+      saldo: saldo,
+      minimo: minimo,
+      alerta: saldo <= minimo
+    };
+  });
+  if (filtro) data = data.filter(function(a){ return a.categoria === filtro; });
+  data.sort(function(a, b){ return String(a.nombre || '').localeCompare(String(b.nombre || '')); });
+  return { ok: true, data: data };
+}
+
+/** Catálogo de artículos (para selects del frontend). Filtro opcional por categoría. */
+function getArticulos(categoria) {
+  ensureArticulosSheet_();
+  var filtro = categoria ? normCategoria_(categoria) : null;
+  var data = sheetToObjects(SHEETS.ARTICULOS)
+    .filter(function(a){ return esActivo(a.Activo); })
+    .map(function(a){
+      var cat = normCategoria_(a.Categoria);
+      return {
+        idArticulo: a.ID_Articulo,
+        codigo: a.Codigo || a.ID_Articulo,
+        nombre: a.Nombre,
+        categoria: cat,
+        unidad: a.Unidad,
+        requiereLote: categoriaRequiereLote_(cat),
+        stockMinimo: parseFloat(a.Stock_Minimo) || 0
+      };
+    });
+  if (filtro) data = data.filter(function(a){ return a.categoria === filtro; });
+  return { ok: true, data: data };
+}
+
+/**
+ * Alta de un artículo en el catálogo único. La categoría determina si
+ * requiere lote/caducidad. ID autogenerado por prefijo de categoría.
+ * Requeridos: nombre, categoria, unidad.
+ */
+function altaArticulo(d) {
+  if (!tienePermiso(d.rolUsuario, 'alta_articulo')) {
+    return errorSinPermiso(d.rolUsuario, 'alta_articulo');
+  }
+  if (!d.nombre || !String(d.nombre).trim()) return { ok: false, error: 'El nombre del artículo es obligatorio' };
+  var cat = normCategoria_(d.categoria);
+
+  ensureArticulosSheet_();
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    var prefijo = { 'MEDICAMENTO_CONTROLADO': 'MED', 'MEDICAMENTO': 'MED', 'INSUMO': 'INS', 'OTROS': 'ART' }[cat];
+    var rows = sheetToObjects(SHEETS.ARTICULOS);
+    var num = 0;
+    rows.forEach(function(a){
+      var s = String(a.ID_Articulo || '');
+      var m = s.match(new RegExp('^' + prefijo + '-?(\\d+)$'));
+      if (m) num = Math.max(num, parseInt(m[1], 10) || 0);
+    });
+    var id = prefijo + '-' + String(num + 1).padStart(3, '0');
+
+    appendRowByHeader(SHEETS.ARTICULOS, {
+      'ID_Articulo': id,
+      'Codigo': d.codigo || id,
+      'Nombre': String(d.nombre).trim(),
+      'Categoria': cat,
+      'Sustancia_Activa': d.sustanciaActiva || '',
+      'Presentacion': d.presentacion || '',
+      'Concentracion': d.concentracion || '',
+      'Fraccion_LGS': d.fraccion || '',
+      'Unidad': d.unidad || '',
+      'Stock_Minimo': d.stockMinimo || 0,
+      'Requiere_Lote': categoriaRequiereLote_(cat) ? 'SI' : 'NO',
+      'Activo': 'SI',
+      'Notas': d.notas || ''
+    });
+    return { ok: true, idArticulo: id, categoria: cat, requiereLote: categoriaRequiereLote_(cat) };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Registra una ENTRADA de stock de cualquier artículo.
+ *  - Categorías con lote (MEDICAMENTO / MEDICAMENTO_CONTROLADO): exige
+ *    lote de fabricante + fecha de caducidad y crea la caja en Lotes.
+ *    Si es controlado, además exige folio de receta (COFEPRIS).
+ *  - INSUMO / OTROS: solo registra el movimiento ENTRADA (saldo simple).
+ * Requeridos: idArticulo, cantidad.
+ */
+function registrarEntradaArticulo(d) {
+  if (!tienePermiso(d.rolUsuario, 'entrada_articulo')) {
+    return errorSinPermiso(d.rolUsuario, 'entrada_articulo');
+  }
+  if (!d.idArticulo) return { ok: false, error: 'Artículo requerido' };
+  var cantidad = parseFloat(d.cantidad);
+  if (!cantidad || cantidad <= 0) return { ok: false, error: 'La cantidad debe ser mayor a 0' };
+
+  var art = getArticuloRaw_(d.idArticulo);
+  if (!art) return { ok: false, error: 'Artículo no encontrado: ' + d.idArticulo };
+  var cat = normCategoria_(art.Categoria);
+  var requiereLote = categoriaRequiereLote_(cat);
+  var unidad = d.unidad || art.Unidad || '';
+  var nombre = art.Nombre || d.nombreArticulo || '';
+
+  if (requiereLote) {
+    if (!d.loteFabricante && !d.lote) {
+      return { ok: false, error: 'El lote de fabricante es obligatorio para ' + cat };
+    }
+    if (!d.fechaCaducidad) {
+      return { ok: false, error: 'La fecha de caducidad es obligatoria para ' + cat };
+    }
+  }
+  if (categoriaRequiereReceta_(cat) && (!d.folioReceta || !String(d.folioReceta).trim())) {
+    return { ok: false, error: 'El folio de receta que respalda la caja es obligatorio para medicamentos controlados' };
+  }
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    var fechaEntrada = d.fecha || todayStr();
+    var idLote = '';
+
+    if (requiereLote) {
+      idLote = 'LOTE-' + new Date().getTime();
+      appendRowByHeader(SHEETS.LOTES, {
+        'ID_Lote': idLote,
+        'ID_Medicamento': d.idArticulo,
+        'Nombre_Medicamento': nombre,
+        'Folio_Receta': d.folioReceta ? String(d.folioReceta).trim() : '',
+        'Lote_Fabricante': d.loteFabricante || d.lote || '',
+        'Fecha_Caducidad': d.fechaCaducidad || '',
+        'Cantidad_Inicial': cantidad,
+        'Unidad': unidad,
+        'Cantidad_Consumida': 0,
+        'Saldo': cantidad,
+        'Estado': 'ABIERTA',
+        'Proveedor': d.proveedor || '',
+        'Referencia': d.referencia || '',
+        'Fecha_Entrada': fechaEntrada,
+        'Capturado_Por': d.capturadoPor || '',
+        'Timestamp_Captura': nowTs()
+      });
+    }
+
+    getSheet(SHEETS.INV_MOV).appendRow([
+      'MOV-' + new Date().getTime(),
+      fechaEntrada,
+      'ENTRADA',
+      d.idArticulo,
+      nombre,
+      cantidad,
+      unidad,
+      d.referencia || '',
+      d.loteFabricante || d.lote || '',
+      d.fechaCaducidad || '',
+      d.proveedor || '',
+      d.capturadoPor,
+      nowTs(),
+      d.observaciones || '',
+      idLote
+    ]);
+
+    return {
+      ok: true,
+      idLote: idLote,
+      requiereLote: requiereLote,
+      saldoNuevo: calcularSaldo(d.idArticulo),
+      saldoLote: requiereLote ? cantidad : null
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Registra una SALIDA o AJUSTE de stock de un artículo (uso de almacén
+ * general, mermas, correcciones). Para meds controlados el consumo
+ * clínico sigue su flujo propio (registrarConsumo); esto es para
+ * movimientos administrativos de almacén.
+ * @param {string} d.tipo - 'SALIDA' o 'AJUSTE'. AJUSTE acepta cantidad +/-.
+ */
+function registrarMovimientoArticulo(d) {
+  var tipo = String(d.tipo || 'SALIDA').toUpperCase();
+  var accion = tipo === 'AJUSTE' ? 'ajuste_articulo' : 'salida_articulo';
+  if (!tienePermiso(d.rolUsuario, accion)) {
+    return errorSinPermiso(d.rolUsuario, accion);
+  }
+  if (!d.idArticulo) return { ok: false, error: 'Artículo requerido' };
+  var cantidad = parseFloat(d.cantidad);
+  if (tipo === 'SALIDA') {
+    if (!cantidad || cantidad <= 0) return { ok: false, error: 'La cantidad debe ser mayor a 0' };
+  } else if (isNaN(cantidad) || cantidad === 0) {
+    return { ok: false, error: 'El ajuste debe ser distinto de 0 (usa negativo para descontar)' };
+  }
+
+  var art = getArticuloRaw_(d.idArticulo);
+  if (!art) return { ok: false, error: 'Artículo no encontrado: ' + d.idArticulo };
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    // SALIDA se registra como cantidad positiva con Tipo SALIDA (calcularSaldo resta).
+    // AJUSTE conserva el signo capturado.
+    var qty = tipo === 'SALIDA' ? Math.abs(cantidad) : cantidad;
+    getSheet(SHEETS.INV_MOV).appendRow([
+      'MOV-' + new Date().getTime(),
+      d.fecha || todayStr(),
+      tipo,
+      d.idArticulo,
+      art.Nombre || '',
+      qty,
+      d.unidad || art.Unidad || '',
+      d.referencia || '',
+      '', '', '',
+      d.capturadoPor,
+      nowTs(),
+      d.observaciones || '',
+      ''
+    ]);
+    return { ok: true, saldoNuevo: calcularSaldo(d.idArticulo) };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // ============================================================
