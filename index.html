@@ -3552,7 +3552,7 @@ function renderArticulos() {
   const rows = lista.map(a => {
     const col = CATEGORIA_COLOR[a.categoria] || '#8A8F98';
     const badgeCat = `<span style="background:${col};color:#fff;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700;">${CATEGORIA_LABEL[a.categoria]||a.categoria}</span>`;
-    let acc = '';
+    let acc = `<button class="btn btn-secondary btn-sm" onclick="openModalPreciosArticulo('${artEsc(a.idArticulo)}','${artEsc(a.nombre)}')">💲 Precios</button> `;
     if (puedeEntrada) acc += `<button class="btn btn-secondary btn-sm" onclick="openModalEntradaArticulo('${artEsc(a.idArticulo)}')">↓ Entrada</button> `;
     if (puedeSalida) acc += `<button class="btn btn-secondary btn-sm" onclick="openModalMovimientoArticulo('${artEsc(a.idArticulo)}','SALIDA')">↑ Salida</button> `;
     return `
@@ -3858,6 +3858,34 @@ let ocLineas = [];
 function fmtMoney(n){ return '$' + (Number(n)||0).toLocaleString('es-MX', {minimumFractionDigits:2, maximumFractionDigits:2}); }
 function ocNormCat(c){ c=String(c||'').toUpperCase(); if(c.indexOf('CONTROL')>=0)return 'MEDICAMENTO_CONTROLADO'; if(c.indexOf('MEDICAMENT')>=0)return 'MEDICAMENTO'; if(c.indexOf('INSUMO')>=0)return 'INSUMO'; return 'OTROS'; }
 function ocCategoriaArticulo(idArticulo){ const a=(catalogos.articulos||[]).find(x=>x.ID_Articulo===idArticulo); return a?ocNormCat(a.Categoria):'OTROS'; }
+// Precio de un artículo para un proveedor (o null); y precio mínimo del artículo
+function ocPrecioDe(idArticulo, idProveedor){ const r=(catalogos.precios||[]).find(p=>p.ID_Articulo===idArticulo && p.ID_Proveedor===idProveedor); return r?{precio:Number(r.Precio)||0,descuento:Number(r.Descuento)||0}:null; }
+function ocPrecioMin(idArticulo){ const ps=(catalogos.precios||[]).filter(p=>p.ID_Articulo===idArticulo).map(p=>Number(p.Precio)||0).filter(n=>n>0); return ps.length?Math.min(...ps):null; }
+function ocAutollenarPrecio(i){
+  const l=ocLineas[i]; if(!l.idArticulo) return;
+  const prov=(document.getElementById('oc_prov')||{}).value||'';
+  const pd=ocPrecioDe(l.idArticulo, prov);
+  if(pd){ l.precioUnitario=pd.precio; l.descuento=pd.descuento; }
+  else { const m=ocPrecioMin(l.idArticulo); if(m!=null) l.precioUnitario=m; }
+}
+
+// Modal: precios de compra de un artículo (comparativo por proveedor)
+async function openModalPreciosArticulo(idArticulo, nombre){
+  openModal('Precios de compra · ' + (nombre||''), '<div id="precArt"><div class="loading"><div class="spinner"></div> Cargando…</div></div>');
+  const resp = await apiGet('getPreciosCompra', { idArticulo });
+  const cont = document.getElementById('precArt'); if(!cont) return;
+  if(!resp || !resp.ok){ cont.innerHTML='<div class="empty-state">Error al cargar</div>'; return; }
+  const list = resp.data || [];
+  if(!list.length){ cont.innerHTML='<div class="empty-state"><div class="icon">💲</div>Sin precios registrados para este artículo.</div>'; return; }
+  const rows = list.map((p,idx)=>`
+    <tr${idx===0?' style="background:var(--teal-light);"':''}>
+      <td>${artEsc(p.nombreProveedor||'—')}${idx===0?' <span class="badge badge-realizada">más barato</span>':''}</td>
+      <td style="text-align:right;"><strong>${fmtMoney(p.precio)}</strong></td>
+      <td style="text-align:right;">${p.descuento?fmtMoney(p.descuento):'—'}</td>
+    </tr>`).join('');
+  cont.innerHTML = `<table><thead><tr><th>Proveedor</th><th style="text-align:right;">Precio</th><th style="text-align:right;">Descto.</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="form-actions"><button type="button" class="btn btn-secondary" onclick="closeModal()">Cerrar</button></div>`;
+}
 
 async function loadCompras() {
   const cont = document.getElementById('comprasTable');
@@ -3941,6 +3969,9 @@ function ocProvChange(){
   const sel = document.getElementById('oc_prov').value;
   const p = (catalogos.proveedores || []).find(x => x.ID_Proveedor === sel);
   if (p && p.Condiciones_Pago) document.getElementById('oc_cond').value = p.Condiciones_Pago;
+  // Re-autollenar precios de las partidas según el proveedor elegido
+  ocLineas.forEach((l, i) => { if (l.idArticulo) ocAutollenarPrecio(i); });
+  ocRenderLineas();
 }
 function ocImporteLinea(l){ return Math.max(0, (Number(l.cantidad)||0)*(Number(l.precioUnitario)||0) - (Number(l.descuento)||0)); }
 
@@ -3966,6 +3997,7 @@ function ocSetArticulo(i, idArticulo) {
   const a = (catalogos.articulos || []).find(x => x.ID_Articulo === idArticulo);
   ocLineas[i].idArticulo = idArticulo;
   if (a) { ocLineas[i].codigo = a.Codigo || a.ID_Articulo; ocLineas[i].descripcion = a.Nombre || ''; ocLineas[i].unidad = a.Unidad || ''; }
+  ocAutollenarPrecio(i);
   ocRenderLineas();
 }
 function ocSet(i, campo, valor) {
