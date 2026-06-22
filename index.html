@@ -2337,18 +2337,32 @@ function _repEsc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&a
 
 // Abre una ventana con un documento imprimible (1 hoja Carta) y dispara
 // el diálogo de impresión; el usuario elige "Guardar como PDF".
-function abrirVentanaImpresion(titulo, subtitulo, cuerpoHTML) {
+// Abre de inmediato (en el gesto del clic) una ventana con "Generando…",
+// para dar feedback al instante y evitar el bloqueo de ventanas emergentes.
+function abrirVentanaCargando() {
+  const w = window.open('', '_blank');
+  if (!w) { showToast('Permite las ventanas emergentes para generar el PDF', 'error'); return null; }
+  w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Generando reporte…</title></head><body style="font-family:Arial;padding:48px;text-align:center;color:#555;"><div style="font-size:18px;">Generando reporte…</div><div style="margin-top:8px;font-size:13px;color:#999;">Un momento, por favor.</div></body></html>');
+  return w;
+}
+
+function escribirReporte(w, titulo, subtitulo, cuerpoHTML) {
+  if (!w) { showToast('No se pudo abrir la ventana del reporte', 'error'); return; }
   const clinica = (catalogos.config && catalogos.config.nombreClinica) || 'Clínica Estar Bien';
   const usuario = currentUser ? currentUser.nombre : '';
-  const w = window.open('', '_blank');
-  if (!w) { showToast('Permite las ventanas emergentes para generar el PDF', 'error'); return; }
+  const logoEl = document.querySelector('.sidebar .brand-logo img') || document.querySelector('.login-logo img');
+  const logoSrc = logoEl ? logoEl.src : '';
   const html = `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>${_repEsc(titulo)}</title>
   <style>
     @page { size: Letter landscape; margin: 9mm; }
     *{box-sizing:border-box;}
     body{font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;margin:0;font-size:10px;}
-    .rh{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #0F1923;padding-bottom:5px;margin-bottom:7px;}
+    .rh{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #0F1923;padding-bottom:5px;margin-bottom:4px;}
+    .rh .brand{display:flex;align-items:center;gap:12px;}
+    .rh .brand img{height:46px;width:auto;}
     .rh h1{font-size:16px;margin:0;color:#0F1923;}
+    .rep-titulo{text-align:center;font-size:15px;font-weight:bold;color:#0F1923;margin:2px 0 2px;}
+    .rep-sub{text-align:center;font-size:10px;color:#666;margin-bottom:8px;}
     .rh .sub{font-size:10px;color:#555;margin-top:2px;}
     .rh .meta{text-align:right;font-size:8px;color:#666;line-height:1.4;}
     .resumen{font-size:11px;margin-bottom:7px;padding:5px 9px;background:#f1f5f9;border-radius:5px;}
@@ -2383,13 +2397,16 @@ function abrirVentanaImpresion(titulo, subtitulo, cuerpoHTML) {
     @media print{.noprint{display:none;}}
   </style></head><body>
     <div class="rh">
-      <div><h1>${_repEsc(clinica)}</h1><div class="sub">${_repEsc(subtitulo)}</div></div>
-      <div class="meta"><b>${_repEsc(titulo)}</b><br>Generado: ${new Date().toLocaleString('es-MX')}<br>Por: ${_repEsc(usuario)}</div>
+      <div class="brand">${logoSrc ? `<img src="${logoSrc}" alt="logo">` : ''}<h1>${_repEsc(clinica)}</h1></div>
+      <div class="meta">Reporte oficial<br>Generado: ${new Date().toLocaleString('es-MX')}<br>Por: ${_repEsc(usuario)}</div>
     </div>
+    <div class="rep-titulo">${_repEsc(titulo)}</div>
+    ${subtitulo ? `<div class="rep-sub">${_repEsc(subtitulo)}</div>` : ''}
     ${cuerpoHTML}
     <div class="noprint"><button onclick="window.print()" style="padding:8px 16px;font-size:13px;cursor:pointer;">🖨 Imprimir / Guardar como PDF</button></div>
-    <script>window.onload=function(){setTimeout(function(){window.print();},350);};<\/script>
+    <script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script>
   </body></html>`;
+  w.document.open();
   w.document.write(html);
   w.document.close();
 }
@@ -2410,13 +2427,34 @@ function openModalReporteOcupacion() {
   `);
 }
 
+// Para la fecha de HOY arma la ocupación desde el tablero ya cargado en memoria
+// (cacheHabitaciones), evitando una llamada al servidor → reporte instantáneo.
+function ocupacionDesdeCache() {
+  const t = cacheHabitaciones;
+  if (!t || !t.porTipo) return null;
+  const GR = [['PRIVADA', 'Habitaciones Privadas'], ['SALA_GENERAL', 'Sala General'], ['URGENCIAS', 'Urgencias'], ['TERAPIA_INTENSIVA', 'Terapia Intensiva']];
+  let totalOcup = 0, totalHab = 0;
+  const grupos = GR.map(([tipo, label]) => {
+    const rooms = (t.porTipo[tipo] || []).map(r => {
+      const h = r.hospitalizacion || {};
+      return { numero: r.numero, ocupada: !!r.ocupada, paciente: h.nombrePaciente || '', edad: h.edadPaciente || '', procedimiento: h.diagnostico || '', doctor: h.nombreDoctor || '', fechaIngreso: h.fechaIngreso || '', dias: (h.diasEstancia != null ? h.diasEstancia : '') };
+    });
+    const ocup = rooms.filter(r => r.ocupada).length;
+    totalOcup += ocup; totalHab += rooms.length;
+    return { tipo, label, total: rooms.length, ocupadas: ocup, habitaciones: rooms };
+  });
+  return { ok: true, fecha: todayISO(), esHoy: true, totalOcupadas: totalOcup, totalHabitaciones: totalHab, grupos };
+}
+
 async function generarReporteOcupacion() {
   const fecha = document.getElementById('rep_fecha').value;
   if (!fecha) { showToast('Selecciona una fecha', 'error'); return; }
-  showToast('Generando reporte…');
-  const resp = await apiGet('getOcupacionEnFecha', { fecha });
-  if (!resp || !resp.ok) { showToast('No se pudo generar el reporte', 'error'); return; }
+  const w = abrirVentanaCargando();
   closeModal();
+  // Hoy: desde memoria (instantáneo); fechas pasadas: reconstrucción en el servidor
+  let resp = (fecha === todayISO()) ? ocupacionDesdeCache() : null;
+  if (!resp) resp = await apiGet('getOcupacionEnFecha', { fecha });
+  if (!resp || !resp.ok) { if (w) w.close(); showToast('No se pudo generar el reporte', 'error'); return; }
   const colorTipo = { PRIVADA:'#2563eb', SALA_GENERAL:'#d4a017', URGENCIAS:'#db2777', TERAPIA_INTENSIVA:'#dc2626' };
   let cuerpo = `<div class="resumen">Ocupación total: <b>${resp.totalOcupadas} / ${resp.totalHabitaciones}</b>`;
   cuerpo += resp.grupos.map(g => ` &nbsp;·&nbsp; ${_repEsc(g.label.replace('Habitaciones ',''))}: <b>${g.ocupadas}/${g.total}</b>`).join('');
@@ -2440,8 +2478,8 @@ async function generarReporteOcupacion() {
     });
     cuerpo += `</div>`;
   });
-  const sub = resp.esHoy ? `Estado actual · ${formatDateShort(resp.fecha)}` : `Ocupación al ${formatDateShort(resp.fecha)} (reconstruido)`;
-  abrirVentanaImpresion('Reporte de ocupación de habitaciones', sub, cuerpo);
+  const sub = resp.esHoy ? 'Estado actual' : 'Reconstrucción de la fecha consultada';
+  escribirReporte(w, 'Reporte de ocupación de habitaciones (' + formatDateShort(resp.fecha) + ')', sub, cuerpo);
 }
 
 // ---- Reporte 2: programación quirúrgica del día ----
@@ -2463,10 +2501,10 @@ function openModalReporteProgramacion() {
 async function generarReporteProgramacion() {
   const inp = document.getElementById('rep_prog_fecha');
   const fecha = (inp && inp.value) ? inp.value : (progFechaActual || todayISO());
-  showToast('Generando reporte…');
-  const resp = await apiGet('getProgramacionDia', { fecha });
-  if (!resp || !resp.ok) { showToast('No se pudo generar el reporte', 'error'); return; }
+  const w = abrirVentanaCargando();
   closeModal();
+  const resp = await apiGet('getProgramacionDia', { fecha });
+  if (!resp || !resp.ok) { if (w) w.close(); showToast('No se pudo generar el reporte', 'error'); return; }
   const quirofanos = (resp.quirofanos || []).slice();
   quirofanos.sort((a, b) => (parseInt(a.numero, 10) || 0) - (parseInt(b.numero, 10) || 0));
   let totalCx = 0;
@@ -2485,7 +2523,7 @@ async function generarReporteProgramacion() {
     return `<div class="qcol"><div class="qhead ${urg ? 'urg' : ''}">Quirófano ${_repEsc(q.numero)}<span class="n">${lista.length} cirugía${lista.length === 1 ? '' : 's'}${q.caracteristicas ? '<br>' + _repEsc(q.caracteristicas) : ''}</span></div>${inner}</div>`;
   }).join('');
   const cuerpo = `<div class="resumen"><b>${totalCx}</b> cirugía${totalCx === 1 ? '' : 's'} programada${totalCx === 1 ? '' : 's'} · ${quirofanos.length} quirófano${quirofanos.length === 1 ? '' : 's'}</div><div class="board">${cols}</div>`;
-  abrirVentanaImpresion('Programación quirúrgica', `Cirugías del ${formatDateShort(fecha)}`, cuerpo);
+  escribirReporte(w, 'Programación Quirúrgica (' + formatDateShort(fecha) + ')', '', cuerpo);
 }
 
 // MODAL: PROGRAMAR CIRUGÍA (con todos los campos del Excel actual)
