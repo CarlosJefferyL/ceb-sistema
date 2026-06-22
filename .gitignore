@@ -1,0 +1,12 @@
+# Credenciales de clasp — NUNCA subir al repo
+.clasprc.json
+*.clasprc.json
+
+# Copia del backend que descarga `clasp pull`.
+# La fuente de verdad es apps_script.gs; este duplicado no se rastrea ni se sube.
+Código.js
+Codigo.js
+
+# Node / herramientas
+node_modules/
+npm-debug.log*
