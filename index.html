@@ -858,7 +858,7 @@ textarea { resize: vertical; min-height: 70px; }
             <button class="btn-pill" onclick="irMananaProg()">Mañana</button>
             <div style="margin-left:auto;display:flex;gap:8px;">
               <button class="btn btn-secondary btn-sm" onclick="loadProgramacionDia()">↻ Actualizar</button>
-              <button class="btn btn-secondary btn-sm" onclick="generarReporteProgramacion()">🖨 Reporte PDF</button>
+              <button class="btn btn-secondary btn-sm" onclick="openModalReporteProgramacion()">🖨 Reporte PDF</button>
             </div>
           </div>
         </div>
@@ -2440,11 +2440,28 @@ async function generarReporteOcupacion() {
 }
 
 // ---- Reporte 2: programación quirúrgica del día ----
+function openModalReporteProgramacion() {
+  openModal('Reporte de programación quirúrgica', `
+    <form onsubmit="event.preventDefault();generarReporteProgramacion()">
+      <p style="color:var(--text-muted);font-size:13px;line-height:1.5;">Genera un PDF (horizontal) con las cirugías programadas de la fecha que elijas.</p>
+      <div class="form-grid">
+        <div><label>Fecha del reporte</label><input type="date" id="rep_prog_fecha" value="${progFechaActual || todayISO()}" required></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Generar PDF</button>
+      </div>
+    </form>
+  `);
+}
+
 async function generarReporteProgramacion() {
-  const fecha = progFechaActual || todayISO();
+  const inp = document.getElementById('rep_prog_fecha');
+  const fecha = (inp && inp.value) ? inp.value : (progFechaActual || todayISO());
   showToast('Generando reporte…');
   const resp = await apiGet('getProgramacionDia', { fecha });
   if (!resp || !resp.ok) { showToast('No se pudo generar el reporte', 'error'); return; }
+  closeModal();
   const quirofanos = (resp.quirofanos || []).slice();
   quirofanos.sort((a, b) => (parseInt(a.numero, 10) || 0) - (parseInt(b.numero, 10) || 0));
   let totalCx = 0;
