@@ -37,7 +37,7 @@
 | # | Pendiente | Notas |
 |---|-----------|-------|
 | P1 | **Kardex / movimientos por artículo** | Existe la data en `Inventario_Mov`, pero **no hay vista** para ver el historial (entradas/salidas/ajustes) ni saldo corriente por artículo. Hoy operamos "a ciegas". |
-| P2 | **Traspasos entre ubicaciones** | **No existe el concepto de ubicación/almacén.** Requiere decisión de modelo (ver §3). |
+| P2 | **Traspasos entre ubicaciones** | Modelo confirmado: multi-almacén real, 7 ubicaciones (ver §3). |
 | P3 | **Agrupación piezas/caja/paquete** | Config por artículo: piezas por caja y cajas por paquete. Útil para inventario y **prerequisito de la automatización de recetas (B)**. |
 | P4 | **Reportes y alertas** | Tablero de bajo mínimo, existencias valorizadas (saldo × precio), rotación. *Va al final, según prioridad acordada.* |
 | P5 | **Limpieza de datos** | Corregir saldos negativos (RELACUM −11, BROSPINA −1); recategorizar controlados dentro de los 379 importados. |
@@ -46,33 +46,53 @@
 
 ---
 
-## 3. Decisión central para Traspasos: ¿una o varias ubicaciones?
+## 3. Modelo confirmado: multi-almacén + remisión (cuenta del paciente)
 
-Hoy el saldo es **global por artículo** (una sola bodega lógica). Un "traspaso" solo tiene sentido si hay **ubicaciones** entre las que se mueve el stock (ej. Almacén General, Farmacia, Quirófano, Piso/Hospitalización).
+Decisiones tomadas con el usuario (2026-06-22):
 
-- **Opción A — Multi-ubicación real (recomendada si manejan stock físico por área):**
-  Se agrega una dimensión `Ubicación`. El saldo pasa a ser por **(artículo, ubicación)**. Un traspaso = SALIDA en origen + ENTRADA en destino (mismo artículo/lote). Entradas de compra llegan a un almacén; consumos descuentan del almacén del área. Más potente, más cambios (toca `calcularSaldo`, entradas, consumos, vistas).
+### 3.1 Multi-ubicación (Opción A) — **CONFIRMADO**
+El saldo pasa a ser por **(artículo, ubicación)**. Ubicaciones reales:
+**Almacén General · CEyE · Piso · Carro Rojo 1 · Carro Rojo 2 · Carro Rojo 3 · Carro Rojo 4** (cada carro rojo es un almacén). Un traspaso = SALIDA en origen + ENTRADA en destino (conservando lote).
 
-- **Opción B — Ubicación como etiqueta (más simple):**
-  Saldo sigue global. El traspaso es un **movimiento informativo** (registra origen→destino en `Inventario_Mov`) sin saldo por ubicación. Da trazabilidad de "quién tiene qué" en la bitácora, pero no saldos separados.
+### 3.2 Remisión y cuenta del paciente
+- **Cuenta única por estancia** del paciente, que acumula **línea por línea** servicios, materiales y medicamentos.
+- **Remisión** = el documento con el que se cargan consumos a esa cuenta.
+- Cada consumo **descuenta de una ubicación** (carro/CEyE/piso) y, para medicamentos/controlados, **del lote** específico; y **agrega una línea a la cuenta** automáticamente.
+- **Precio de venta = costo × 2** por default (con excepciones). El módulo para ajustar precios de venta se hará **después**.
+- Al **alta**, se cierra la cuenta y se liga al **módulo de cobro de caja** (materiales + honorarios + hospitalización).
 
-> **Pendiente de definir contigo** antes de construir P2. Recomendación: Opción A si de verdad cuentan existencias por área; Opción B si solo quieren registrar el traslado.
+### 3.3 Flujo clínico (remisión)
+```
+Almacén Gral / CEyE ──(BOM entregado)──► QUIRÓFANO
+   • consumo real del BOM (descuenta + cobra)         ┐
+   • extras NO-BOM surtidos de CEyE (líneas nuevas)   ├─► cuenta del paciente
+   • al cerrar: no usado del BOM se DEVUELVE al almacén┘
+        │
+        ▼
+   PISO (habitación) ── consumos ──► cuenta del paciente
+        │
+        ▼
+   ALTA ──► cierre de cuenta ──► Cobro de caja
+```
 
 ---
 
-## 4. Orden de implementación propuesto
+## 4. Orden de implementación propuesto (epic Remisión + multi-almacén)
 
-Priorizando **movimientos y traspasos antes que reportes** (acordado):
+> Reemplaza el orden anterior. El usuario pidió **arrancar por consumos/BOMs (remisión)**; como la remisión depende de ubicaciones, la base va primero.
 
-1. **P1 · Kardex / movimientos por artículo** — vista de historial + saldo corriente. *Base de trazabilidad; nos saca de operar a ciegas.*
-2. **P2 · Ubicaciones + Traspasos** — según la decisión de §3.
-3. **P3 · Agrupación piezas/caja/paquete** — deja lista la base para B.
-4. **P5 · Limpieza de datos** — saldos negativos y recategorización.
-5. **P4 · Reportes y alertas.**
-6. **B · Automatización de recetas controladas.**
+1. **F1 · Ubicaciones y saldo por almacén** — `CAT_Ubicaciones` (7), columna `Ubicacion` en `Inventario_Mov`, `calcularSaldo(art, ubicacion)`, lotes/cajas con ubicación, entradas a una ubicación (default Almacén General), vista de saldos por almacén. *Migración: stock/lotes existentes → Almacén General.*
+2. **F2 · Traspasos** — mover stock/lote entre ubicaciones (Gral→CEyE→Carro, etc.).
+3. **F3 · Remisión / cuenta del paciente** — `Remisiones` + líneas de cuenta; consumo = línea (descuenta ubicación + lote, precio venta = costo×2), ligado a cirugía (quirófano) o a hospitalización (piso).
+4. **F4 · Conciliación de BOM al cerrar cirugía** — usado real (descuenta + cobra), no usado (devolución/entrada al almacén), extras NO-BOM (líneas nuevas desde CEyE).
+5. **F5 · Cierre de cuenta → cobro** — al alta, cerrar y ligar al módulo de cobro existente.
+6. **F6 (después)** · Módulo de **precios de venta** (ajuste de márgenes/excepciones).
+
+Pendientes anteriores que se reacomodan **después** del epic: Kardex (queda cubierto en parte por F1/F2), agrupación piezas/caja/paquete (P3, prerequisito de Fentanilo), limpieza de datos (P5), reportes (P4), recetas controladas (B).
 
 ---
 
 ## 5. Notas / decisiones abiertas
-- Modelo de traspasos (§3) — **bloquea P2**.
-- Fentanilo: discrepancia 25 vs 30 piezas por paquete (PDF decía 5×6=30; acuerdo verbal 5×5=25) — **confirmar en P3/B**.
+- **Insumos sin lote en consumo:** los medicamentos/controlados se consumen de un lote específico (confirmado). Para **insumos sin lote** el consumo será del **saldo de la ubicación** (sin lote). *(Asunción; confirmar si los insumos también deben llevar lote/caducidad.)*
+- **Stock existente al migrar a multi-almacén:** se asignará a **Almacén General** por default.
+- Fentanilo: discrepancia 25 vs 30 piezas por paquete (PDF 5×6=30 vs acuerdo verbal 5×5=25) — **confirmar en B**.
