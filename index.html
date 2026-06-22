@@ -760,7 +760,8 @@ textarea { resize: vertical; min-height: 70px; }
     <div class="nav-item" data-page="consultas"><span class="icon">🩺</span>Consultas</div>
     <div class="nav-item" data-page="urgencias"><span class="icon">🚑</span>Urgencias</div>
     <div class="nav-section-title">Inventario</div>
-    <div class="nav-item" data-page="inventario"><span class="icon">▦</span>Saldos</div>
+    <div class="nav-item" data-page="articulos"><span class="icon">📋</span>Artículos / Almacén</div>
+    <div class="nav-item" data-page="inventario"><span class="icon">▦</span>Saldos (controlados)</div>
     <div class="nav-item" data-page="entradas"><span class="icon">↓</span>Entradas</div>
     <div class="nav-item" data-page="cajas"><span class="icon">📦</span>Cajas / Lotes</div>
     <div class="nav-section-title">Bitácora</div>
@@ -1066,6 +1067,32 @@ textarea { resize: vertical; min-height: 70px; }
     </div>
 
     <!-- INVENTARIO -->
+    <!-- ARTÍCULOS / ALMACÉN (inventario general de todos los artículos) -->
+    <div id="page-articulos" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Artículos / Almacén</h1>
+          <div class="subtitle">Inventario general — medicamentos, controlados, insumos y otros</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <select id="artFiltroCategoria" onchange="renderArticulos()" style="font-size:13px;">
+            <option value="">Todas las categorías</option>
+            <option value="MEDICAMENTO">Medicamentos</option>
+            <option value="MEDICAMENTO_CONTROLADO">Medicamentos controlados</option>
+            <option value="INSUMO">Insumos</option>
+            <option value="OTROS">Otros</option>
+          </select>
+          <input type="text" id="artBuscar" oninput="renderArticulos()" placeholder="Buscar…" style="font-size:13px;">
+          <button class="btn btn-secondary btn-sm" onclick="loadArticulos()">↻ Actualizar</button>
+          <button class="btn btn-primary btn-sm" data-accion="entrada_articulo" onclick="openModalEntradaArticulo()">↓ Entrada</button>
+          <button class="btn btn-accent btn-sm" data-accion="alta_articulo" onclick="openModalArticulo()">+ Nuevo artículo</button>
+          <button class="btn btn-secondary btn-sm admin-only" onclick="migrarArticulos()" title="Migración única: vuelca medicamentos e insumos al catálogo único">⟳ Migrar catálogo</button>
+        </div>
+      </div>
+      <div id="artResumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;"></div>
+      <div class="card"><div id="articulosTable">Cargando...</div></div>
+    </div>
+
     <div id="page-inventario" class="page">
       <div class="page-header">
         <div>
@@ -1623,6 +1650,7 @@ const PERMISOS = {
     bom:          ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','ALMACEN','DIRECTOR_MEDICO'],
     consultas:    ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
     urgencias:    ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
+    articulos:    ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
     inventario:   ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
     cajas:        ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
     entradas:     ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ALMACEN'],
@@ -1645,6 +1673,11 @@ const PERMISOS = {
     'cancelar_consumo':     ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ALMACEN','DIRECTOR_MEDICO'],
     'nueva_entrada':        ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
     'alta_medicamento':     ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ALMACEN','DIRECTOR_MEDICO'],
+    'alta_articulo':        ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ALMACEN','DIRECTOR_MEDICO'],
+    'editar_articulo':      ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ALMACEN','DIRECTOR_MEDICO'],
+    'entrada_articulo':     ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
+    'salida_articulo':      ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],
+    'ajuste_articulo':      ['ADMIN','ALMACEN','DIRECTOR_MEDICO'],
     'alta_medico':          ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
     'alta_medico_consulta': ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO','RECEPCION'],
     'alta_tipo_cirugia':    ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','DIRECTOR_MEDICO'],
@@ -1788,6 +1821,7 @@ function loadPage(page) {
     case 'bom': loadBOM(); break;
     case 'consultas': loadConsultas(); break;
     case 'urgencias': loadUrgencias(); break;
+    case 'articulos': loadArticulos(); break;
     case 'inventario': loadInventario(); break;
     case 'cajas': loadLotes(); break;
     case 'libro': loadLibro(); break;
@@ -3393,6 +3427,297 @@ async function loadInventario() {
   document.getElementById('inventarioTable').innerHTML = cache.inventario.length
     ? `<table><thead><tr><th>ID</th><th>Medicamento</th><th>Fracción</th><th>Saldo actual</th><th>Mínimo</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table>`
     : '<div class="empty-state"><div class="icon">▦</div>Sin medicamentos en catálogo. Ve a Catálogos para dar de alta.</div>';
+}
+
+// ============================================================
+// ARTÍCULOS / ALMACÉN (inventario general)
+// ------------------------------------------------------------
+// Catálogo único: medicamentos, controlados, insumos y otros.
+// El control por lote/caducidad aplica solo a medicamentos y
+// controlados; la receta COFEPRIS solo a controlados.
+// ============================================================
+const CATEGORIA_LABEL = {
+  MEDICAMENTO: 'Medicamento',
+  MEDICAMENTO_CONTROLADO: 'Med. controlado',
+  INSUMO: 'Insumo',
+  OTROS: 'Otro'
+};
+const CATEGORIA_COLOR = {
+  MEDICAMENTO: '#00BCD4',
+  MEDICAMENTO_CONTROLADO: '#EF5350',
+  INSUMO: '#00C896',
+  OTROS: '#8A8F98'
+};
+function artEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function artRequiereLote(cat){ return cat === 'MEDICAMENTO' || cat === 'MEDICAMENTO_CONTROLADO'; }
+
+async function loadArticulos() {
+  const cont = document.getElementById('articulosTable');
+  if (cont) cont.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  const resp = await apiGet('getInventarioGeneral');
+  cache.articulos = (resp && resp.ok) ? (resp.data || []) : [];
+  renderArticulos();
+}
+
+function renderArticulos() {
+  const cont = document.getElementById('articulosTable');
+  if (!cont) return;
+  const cat = (document.getElementById('artFiltroCategoria') || {}).value || '';
+  const q = ((document.getElementById('artBuscar') || {}).value || '').trim().toLowerCase();
+  let lista = (cache.articulos || []).slice();
+  if (cat) lista = lista.filter(a => a.categoria === cat);
+  if (q) lista = lista.filter(a =>
+    String(a.nombre||'').toLowerCase().includes(q) ||
+    String(a.codigo||'').toLowerCase().includes(q) ||
+    String(a.sustancia||'').toLowerCase().includes(q));
+
+  // Tarjetas resumen por categoría (sobre TODO el catálogo, no el filtro)
+  const resumen = document.getElementById('artResumen');
+  if (resumen) {
+    const cuenta = {};
+    (cache.articulos || []).forEach(a => {
+      cuenta[a.categoria] = cuenta[a.categoria] || { n: 0, alertas: 0 };
+      cuenta[a.categoria].n++;
+      if (a.alerta) cuenta[a.categoria].alertas++;
+    });
+    resumen.innerHTML = Object.keys(CATEGORIA_LABEL).map(k => {
+      const c = cuenta[k] || { n: 0, alertas: 0 };
+      const col = CATEGORIA_COLOR[k];
+      return `<div style="flex:1;min-width:140px;background:var(--surface,#fff);border-left:4px solid ${col};border-radius:8px;padding:10px 14px;box-shadow:0 1px 3px rgba(0,0,0,.06);">
+        <div style="font-size:12px;color:var(--text-muted);">${CATEGORIA_LABEL[k]}</div>
+        <div style="font-size:22px;font-weight:700;color:var(--navy);">${c.n}</div>
+        ${c.alertas ? `<div style="font-size:11px;color:var(--danger);">⚠ ${c.alertas} por reordenar</div>` : '<div style="font-size:11px;color:var(--text-muted);">&nbsp;</div>'}
+      </div>`;
+    }).join('');
+  }
+
+  if (!lista.length) {
+    cont.innerHTML = '<div class="empty-state"><div class="icon">📋</div>Sin artículos para este filtro. Da de alta uno o corre la migración del catálogo.</div>';
+    return;
+  }
+
+  const puedeSalida = puede('salida_articulo');
+  const puedeEntrada = puede('entrada_articulo');
+  const rows = lista.map(a => {
+    const col = CATEGORIA_COLOR[a.categoria] || '#8A8F98';
+    const badgeCat = `<span style="background:${col};color:#fff;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700;">${CATEGORIA_LABEL[a.categoria]||a.categoria}</span>`;
+    let acc = '';
+    if (puedeEntrada) acc += `<button class="btn btn-secondary btn-sm" onclick="openModalEntradaArticulo('${artEsc(a.idArticulo)}')">↓ Entrada</button> `;
+    if (puedeSalida) acc += `<button class="btn btn-secondary btn-sm" onclick="openModalMovimientoArticulo('${artEsc(a.idArticulo)}','SALIDA')">↑ Salida</button> `;
+    return `
+    <tr style="${a.alerta ? 'background:var(--warn-bg);' : ''}">
+      <td><strong>${artEsc(a.codigo)}</strong></td>
+      <td>${artEsc(a.nombre)}${a.sustancia?`<br><small style="color:var(--text-muted);">${artEsc(a.sustancia)}</small>`:''}</td>
+      <td>${badgeCat}</td>
+      <td><strong style="font-size:16px;color:${a.alerta?'var(--danger)':'var(--navy)'};">${a.saldo}</strong> ${artEsc(a.unidad||'')}</td>
+      <td>${a.minimo} ${artEsc(a.unidad||'')}</td>
+      <td>${a.alerta ? '<span class="badge badge-cancelada">⚠ REORDENAR</span>' : '<span class="badge badge-realizada">OK</span>'}</td>
+      <td style="white-space:nowrap;">${acc||'—'}</td>
+    </tr>`;
+  }).join('');
+  cont.innerHTML = `<table><thead><tr><th>Código</th><th>Artículo</th><th>Categoría</th><th>Saldo</th><th>Mínimo</th><th>Estado</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+// MODAL: ALTA DE ARTÍCULO
+function openModalArticulo() {
+  openModal('Nuevo artículo', `
+    <form onsubmit="event.preventDefault();submitAltaArticulo()">
+      <div class="form-grid">
+        <div>
+          <label>Categoría *</label>
+          <select id="ar_cat" required onchange="artToggleCamposMed()">
+            <option value="INSUMO">Insumo</option>
+            <option value="MEDICAMENTO">Medicamento</option>
+            <option value="MEDICAMENTO_CONTROLADO">Medicamento controlado</option>
+            <option value="OTROS">Otro</option>
+          </select>
+        </div>
+        <div><label>Código (opcional)</label><input type="text" id="ar_codigo" placeholder="Se autogenera si lo dejas vacío"></div>
+        <div class="full"><label>Nombre / descripción *</label><input type="text" id="ar_nombre" required></div>
+        <div>
+          <label>Unidad de medida *</label>
+          <input type="text" id="ar_unidad" list="unidadesSugeridas" placeholder="Ej: pieza, caja, ampolla, ml" required>
+        </div>
+        <div><label>Stock mínimo</label><input type="number" id="ar_min" value="0" min="0"></div>
+        <div id="ar_camposMed" style="display:none;" class="full">
+          <div class="form-grid">
+            <div><label>Sustancia activa</label><input type="text" id="ar_sustancia"></div>
+            <div><label>Presentación</label><input type="text" id="ar_pres"></div>
+            <div><label>Concentración</label><input type="text" id="ar_conc"></div>
+            <div id="ar_campoFraccion" style="display:none;">
+              <label>Fracción LGS</label>
+              <select id="ar_fraccion">
+                <option value="">—</option>
+                <option value="I">I — Estupefacientes</option>
+                <option value="II">II — Psicotrópicos especial</option>
+                <option value="III">III — Psicotrópicos</option>
+                <option value="IV">IV — Otros</option>
+                <option value="V">V — Vacunas</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="full"><label>Notas</label><input type="text" id="ar_notas"></div>
+      </div>
+      <div id="ar_avisoLote" style="display:none;font-size:12px;color:var(--text-muted);margin-top:4px;">
+        ⓘ Esta categoría exige <strong>lote y fecha de caducidad</strong> al registrar entradas.
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-accent">Dar de alta</button>
+      </div>
+    </form>
+  `);
+}
+
+function artToggleCamposMed() {
+  const cat = document.getElementById('ar_cat').value;
+  const esMed = (cat === 'MEDICAMENTO' || cat === 'MEDICAMENTO_CONTROLADO');
+  document.getElementById('ar_camposMed').style.display = esMed ? '' : 'none';
+  document.getElementById('ar_campoFraccion').style.display = (cat === 'MEDICAMENTO_CONTROLADO') ? '' : 'none';
+  document.getElementById('ar_avisoLote').style.display = esMed ? '' : 'none';
+}
+
+async function submitAltaArticulo() {
+  const nombre = document.getElementById('ar_nombre').value.trim();
+  if (!nombre) { showToast('El nombre es obligatorio', 'error'); return; }
+  const data = {
+    categoria: document.getElementById('ar_cat').value,
+    codigo: document.getElementById('ar_codigo').value.trim(),
+    nombre: nombre,
+    unidad: document.getElementById('ar_unidad').value.trim(),
+    stockMinimo: parseInt(document.getElementById('ar_min').value, 10) || 0,
+    sustanciaActiva: (document.getElementById('ar_sustancia')||{}).value || '',
+    presentacion: (document.getElementById('ar_pres')||{}).value || '',
+    concentracion: (document.getElementById('ar_conc')||{}).value || '',
+    fraccion: (document.getElementById('ar_fraccion')||{}).value || '',
+    notas: document.getElementById('ar_notas').value
+  };
+  const resp = await apiPost('altaArticulo', data);
+  if (resp.ok) {
+    showToast('✓ Artículo dado de alta: ' + resp.idArticulo);
+    closeModal();
+    await loadArticulos();
+  } else { showToast('Error: ' + resp.error, 'error'); }
+}
+
+// MODAL: ENTRADA DE ARTÍCULO (lote/caducidad/receta condicionales)
+function openModalEntradaArticulo(idArticulo) {
+  const arts = (cache.articulos || []);
+  if (!arts.length) { showToast('Primero carga el catálogo de artículos', 'error'); return; }
+  const opts = arts.map(a => `<option value="${artEsc(a.idArticulo)}" ${a.idArticulo===idArticulo?'selected':''}>${artEsc(a.codigo)} · ${artEsc(a.nombre)}</option>`).join('');
+  openModal('Entrada de almacén', `
+    <form onsubmit="event.preventDefault();submitEntradaArticulo()">
+      <div class="form-grid">
+        <div><label>Fecha de entrada</label><input type="date" id="ea_fecha" value="${todayISO()}" required></div>
+        <div><label>Artículo *</label><select id="ea_art" required onchange="artEntradaToggle()"><option value="">— Seleccionar —</option>${opts}</select></div>
+        <div><label>Cantidad recibida *</label><input type="number" id="ea_cantidad" step="any" min="0" placeholder="Ej: 12" required></div>
+        <div><label>Proveedor</label><input type="text" id="ea_proveedor"></div>
+        <div class="full"><label>Referencia (orden de compra)</label><input type="text" id="ea_ref"></div>
+        <div id="ea_campoReceta" style="display:none;"><label>Folio de receta (respaldo) *</label><input type="text" id="ea_receta" placeholder="Folio COFEPRIS"></div>
+        <div id="ea_campoLote" style="display:none;"><label>Lote del fabricante *</label><input type="text" id="ea_lote" placeholder="Impreso en la caja"></div>
+        <div id="ea_campoCad" style="display:none;"><label>Fecha de caducidad *</label><input type="date" id="ea_cad"></div>
+        <div class="full"><label>Observaciones</label><input type="text" id="ea_obs"></div>
+      </div>
+      <div id="ea_aviso" style="display:none;font-size:12px;color:var(--text-muted);margin-top:4px;"></div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Registrar entrada</button>
+      </div>
+    </form>
+  `);
+  if (idArticulo) artEntradaToggle();
+}
+
+function artEntradaToggle() {
+  const id = document.getElementById('ea_art').value;
+  const art = (cache.articulos || []).find(a => a.idArticulo === id);
+  const cat = art ? art.categoria : '';
+  const reqLote = artRequiereLote(cat);
+  const reqReceta = (cat === 'MEDICAMENTO_CONTROLADO');
+  document.getElementById('ea_campoLote').style.display = reqLote ? '' : 'none';
+  document.getElementById('ea_campoCad').style.display = reqLote ? '' : 'none';
+  document.getElementById('ea_campoReceta').style.display = reqReceta ? '' : 'none';
+  const aviso = document.getElementById('ea_aviso');
+  if (reqReceta) { aviso.style.display=''; aviso.innerHTML='🔒 Medicamento controlado: lote, caducidad y receta son obligatorios (COFEPRIS).'; }
+  else if (reqLote) { aviso.style.display=''; aviso.innerHTML='💊 Medicamento: lote y caducidad obligatorios. Se crea una caja en Lotes.'; }
+  else { aviso.style.display='none'; aviso.innerHTML=''; }
+}
+
+async function submitEntradaArticulo() {
+  const id = document.getElementById('ea_art').value;
+  const art = (cache.articulos || []).find(a => a.idArticulo === id);
+  if (!art) { showToast('Selecciona un artículo', 'error'); return; }
+  const cantidad = parseFloat(document.getElementById('ea_cantidad').value);
+  if (!cantidad || cantidad <= 0) { showToast('La cantidad debe ser mayor a 0', 'error'); return; }
+  const reqLote = artRequiereLote(art.categoria);
+  const reqReceta = (art.categoria === 'MEDICAMENTO_CONTROLADO');
+  const lote = (document.getElementById('ea_lote')||{}).value || '';
+  const cad = (document.getElementById('ea_cad')||{}).value || '';
+  const receta = (document.getElementById('ea_receta')||{}).value || '';
+  if (reqLote && (!lote.trim() || !cad)) { showToast('Lote y caducidad son obligatorios para esta categoría', 'error'); return; }
+  if (reqReceta && !receta.trim()) { showToast('El folio de receta es obligatorio para controlados', 'error'); return; }
+  const data = {
+    fecha: document.getElementById('ea_fecha').value,
+    idArticulo: id, nombreArticulo: art.nombre,
+    cantidad: cantidad, unidad: art.unidad,
+    loteFabricante: lote.trim(), fechaCaducidad: cad, folioReceta: receta.trim(),
+    proveedor: document.getElementById('ea_proveedor').value,
+    referencia: document.getElementById('ea_ref').value,
+    observaciones: document.getElementById('ea_obs').value,
+    capturadoPor: currentUser.nombre
+  };
+  const resp = await apiPost('registrarEntradaArticulo', data);
+  if (resp.ok) { showToast('✓ Entrada registrada. Saldo: ' + resp.saldoNuevo); closeModal(); loadArticulos(); }
+  else { showToast('Error: ' + resp.error, 'error'); }
+}
+
+// MODAL: SALIDA / AJUSTE DE ARTÍCULO
+function openModalMovimientoArticulo(idArticulo, tipo) {
+  const art = (cache.articulos || []).find(a => a.idArticulo === idArticulo);
+  if (!art) { showToast('Artículo no encontrado', 'error'); return; }
+  const esAjuste = tipo === 'AJUSTE';
+  openModal((esAjuste ? 'Ajuste de inventario' : 'Salida de almacén') + ' · ' + artEsc(art.nombre), `
+    <form onsubmit="event.preventDefault();submitMovimientoArticulo('${artEsc(idArticulo)}','${esAjuste?'AJUSTE':'SALIDA'}')">
+      <div style="background:var(--teal-light);padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:12px;color:var(--navy);">
+        Saldo actual: <strong>${art.saldo} ${artEsc(art.unidad||'')}</strong>
+        ${esAjuste ? '· Usa cantidad <strong>negativa</strong> para descontar, positiva para sumar.' : ''}
+      </div>
+      <div class="form-grid">
+        <div><label>Fecha</label><input type="date" id="mv_fecha" value="${todayISO()}" required></div>
+        <div><label>Cantidad *</label><input type="number" id="mv_cantidad" step="any" placeholder="${esAjuste?'Ej: -2':'Ej: 3'}" required></div>
+        <div class="full"><label>Motivo / observaciones</label><input type="text" id="mv_obs" placeholder="${esAjuste?'Conteo físico, merma, corrección…':'Uso interno, traslado…'}"></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Registrar ${esAjuste?'ajuste':'salida'}</button>
+      </div>
+    </form>
+  `);
+}
+
+async function submitMovimientoArticulo(idArticulo, tipo) {
+  const art = (cache.articulos || []).find(a => a.idArticulo === idArticulo);
+  const cantidad = parseFloat(document.getElementById('mv_cantidad').value);
+  if (isNaN(cantidad) || cantidad === 0) { showToast('Captura una cantidad válida', 'error'); return; }
+  const data = {
+    tipo: tipo, idArticulo: idArticulo, unidad: art ? art.unidad : '',
+    cantidad: cantidad, fecha: document.getElementById('mv_fecha').value,
+    observaciones: document.getElementById('mv_obs').value,
+    capturadoPor: currentUser.nombre
+  };
+  const resp = await apiPost('registrarMovimientoArticulo', data);
+  if (resp.ok) { showToast('✓ Movimiento registrado. Saldo: ' + resp.saldoNuevo); closeModal(); loadArticulos(); }
+  else { showToast('Error: ' + resp.error, 'error'); }
+}
+
+// Migración única del catálogo (solo ADMIN)
+async function migrarArticulos() {
+  if (!confirm('Esto vuelca tus medicamentos e insumos al catálogo único CAT_Articulos (es seguro correrlo varias veces, no duplica). ¿Continuar?')) return;
+  showToast('Migrando catálogo…');
+  const resp = await apiPost('migrarArticulos', {});
+  if (resp.ok) { showToast(`✓ Migración lista: ${resp.creados} creados, ${resp.omitidos} ya existían`); loadArticulos(); }
+  else { showToast('Error: ' + resp.error, 'error'); }
 }
 
 // ============================================================
