@@ -49,6 +49,7 @@ var SHEETS = {
   OC_ITEMS: 'OC_Items',
   PRECIOS_COMPRA: 'Precios_Compra',
   UBICACIONES: 'CAT_Ubicaciones',
+  REMISION_ITEMS: 'Remision_Items',
   CONSULTAS: 'Consultas',
   RECIBOS: 'Recibos',
   BENEFICIARIOS: 'CAT_Beneficiarios',
@@ -176,6 +177,7 @@ function doGet(e) {
       case 'getInventarioGeneral': result = getInventarioGeneral(e.parameter.categoria, e.parameter.ubicacion); break;
       case 'getArticulos': result = getArticulos(e.parameter.categoria); break;
       case 'getUbicaciones': result = getUbicaciones(); break;
+      case 'getRemisionPaciente': result = getRemisionPaciente(e.parameter.idPaciente); break;
       case 'getProveedores': result = getProveedores(); break;
       case 'getOrdenesCompra': result = getOrdenesCompra(e.parameter.estado, e.parameter.desde, e.parameter.hasta); break;
       case 'getOrdenCompra': result = getOrdenCompra(e.parameter.folioOC); break;
@@ -228,6 +230,7 @@ function doPost(e) {
       case 'registrarEntradaArticulo': result = registrarEntradaArticulo(payload.data); break;
       case 'registrarMovimientoArticulo': result = registrarMovimientoArticulo(payload.data); break;
       case 'registrarTraspaso':  result = registrarTraspaso(payload.data); break;
+      case 'registrarRemision':  result = registrarRemision(payload.data); break;
       case 'migrarArticulos':    result = migrarArticulos(payload.data); break;
       case 'altaProveedor':      result = altaProveedor(payload.data); break;
       case 'editarProveedor':    result = editarProveedor(payload.data); break;
@@ -439,6 +442,7 @@ function getCatalogos() {
   ensureArticulosSheet_(); // catálogo único de inventario general
   ensureComprasSheets_();  // proveedores y órdenes de compra
   ensureUbicacionesSheet_(); // almacenes (multi-ubicación) + columnas Ubicacion
+  ensureRemisionSheet_();    // líneas de remisión (cuenta del paciente)
   return {
     ok: true,
     medicamentos: sheetToObjects(SHEETS.MEDICAMENTOS).filter(function(m){return esActivo(m.Activo);}),
@@ -2196,6 +2200,204 @@ function registrarTraspaso(d) {
       cantidad: cantidad,
       saldoOrigen: calcularSaldo(d.idArticulo, d.ubicacionOrigen),
       saldoDestino: calcularSaldo(d.idArticulo, d.ubicacionDestino)
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ============================================================
+// MÓDULO REMISIÓN — consumo del paciente con cargo a su cuenta
+// ------------------------------------------------------------
+// "Remisión" = documento con el que se cargan los consumos a la cuenta única
+// del paciente. Cada consumo: descuenta inventario (almacén + lote), escribe
+// el Libro COFEPRIS SOLO si es controlado, deja traza en Consumos y agrega una
+// línea cobrable a Remision_Items a precio de venta (último costo × 2).
+// ============================================================
+var REMISION_ITEMS_HEADERS = ['ID_Remision_Item','Fecha','ID_Paciente','Nombre_Paciente','Origen',
+  'Folio_Cirugia','ID_Hospitalizacion','ID_Articulo','Codigo','Descripcion','Categoria',
+  'Cantidad','Unidad','ID_Lote','Ubicacion','Costo_Unitario','Precio_Venta_Unitario','Importe',
+  'Estado','Capturado_Por','Timestamp_Captura'];
+
+function ensureRemisionSheet_() {
+  ensureSheetConHeaders_(SHEETS.REMISION_ITEMS, REMISION_ITEMS_HEADERS);
+}
+
+/** Precio de compra más reciente de un artículo (0 si no hay). */
+function precioCompraReciente_(idArticulo) {
+  var rows = sheetToObjects(SHEETS.PRECIOS_COMPRA).filter(function(p){
+    return String(p.ID_Articulo) === String(idArticulo) && num_(p.Precio) > 0;
+  });
+  if (!rows.length) return 0;
+  rows.sort(function(a, b){ return String(b.Fecha_Actualizacion || '').localeCompare(String(a.Fecha_Actualizacion || '')); });
+  return num_(rows[0].Precio);
+}
+
+/** Precio de venta = último costo de compra × 2. */
+function precioVentaArticulo_(idArticulo) {
+  return ocRound_(precioCompraReciente_(idArticulo) * 2);
+}
+
+/** Total cobrable (materiales+medicamentos) de la remisión de un paciente. */
+function totalRemisionMateriales_(idPaciente) {
+  ensureRemisionSheet_();
+  var total = 0;
+  sheetToObjects(SHEETS.REMISION_ITEMS).forEach(function(r){
+    if (String(r.ID_Paciente) === String(idPaciente) && r.Estado !== 'CANCELADO') total += num_(r.Importe);
+  });
+  return ocRound_(total);
+}
+
+function getRemisionPaciente(idPaciente) {
+  if (!idPaciente) return { ok: false, error: 'Paciente requerido' };
+  ensureRemisionSheet_();
+  var data = sheetToObjects(SHEETS.REMISION_ITEMS)
+    .filter(function(r){ return String(r.ID_Paciente) === String(idPaciente) && r.Estado !== 'CANCELADO'; })
+    .map(function(r){
+      return {
+        idItem: r.ID_Remision_Item, fecha: dateOnly(r.Fecha), origen: r.Origen,
+        folioCirugia: r.Folio_Cirugia, idArticulo: r.ID_Articulo, codigo: r.Codigo,
+        descripcion: r.Descripcion, categoria: r.Categoria, cantidad: num_(r.Cantidad),
+        unidad: r.Unidad, idLote: r.ID_Lote, ubicacion: r.Ubicacion,
+        precioVenta: num_(r.Precio_Venta_Unitario), importe: num_(r.Importe)
+      };
+    });
+  return { ok: true, data: data, totalMateriales: totalRemisionMateriales_(idPaciente) };
+}
+
+/**
+ * Registra una remisión (uno o varios consumos del paciente). UNIFICA el
+ * consumo: descuenta inventario por almacén/lote, escribe el Libro COFEPRIS
+ * solo para controlados, deja traza en Consumos y agrega líneas cobrables.
+ * Requeridos: idPaciente, items[]. Cada item: idArticulo, cantidad, ubicacion,
+ * idLote (si la categoría lleva lote).
+ */
+function registrarRemision(d) {
+  if (!tienePermiso(d.rolUsuario, 'registrar_consumo')) {
+    return errorSinPermiso(d.rolUsuario, 'registrar_consumo');
+  }
+  var items = d.items || [];
+  if (!items.length) return { ok: false, error: 'No hay artículos a registrar' };
+  if (!d.idPaciente) return { ok: false, error: 'Paciente requerido' };
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    ensureRemisionSheet_();
+    ensureHeaders_(SHEETS.CONSUMOS, ['Estado', 'ID_Lote', 'Lote_Fabricante']);
+
+    // Cédula del médico (para el Libro)
+    var cedula = '';
+    if (d.idMedico) {
+      var medicos = sheetToObjects(SHEETS.MEDICOS);
+      for (var j = 0; j < medicos.length; j++) {
+        if (medicos[j].ID_Medico === d.idMedico) { cedula = medicos[j].Cedula_Profesional; break; }
+      }
+    }
+
+    // Último asiento del Libro COFEPRIS
+    var shLibro = getSheet(SHEETS.LIBRO);
+    var libroData = shLibro.getDataRange().getValues();
+    var ultimoAsiento = 0;
+    for (var k = 4; k < libroData.length; k++) {
+      if (libroData[k][0] && !isNaN(libroData[k][0])) ultimoAsiento = Math.max(ultimoAsiento, parseInt(libroData[k][0], 10));
+    }
+
+    var fecha = d.fecha || todayStr();
+    var hora = d.hora || Utilities.formatDate(new Date(), getConfig('ZonaHoraria') || 'America/Chihuahua', 'HH:mm');
+    var origen = d.origen || 'QUIROFANO';
+
+    // ---- Validar TODO antes de escribir ----
+    var prep = [];
+    for (var v = 0; v < items.length; v++) {
+      var it = items[v];
+      var art = getArticuloRaw_(it.idArticulo);
+      if (!art) return { ok: false, error: 'Artículo no encontrado: ' + it.idArticulo };
+      var cat = normCategoria_(art.Categoria);
+      var reqLote = categoriaRequiereLote_(cat);
+      var cantidad = parseFloat(it.cantidad);
+      if (!cantidad || cantidad <= 0) return { ok: false, error: 'Cantidad inválida para ' + (art.Nombre || it.idArticulo) };
+      var ubic = it.ubicacion || UBICACION_DEFAULT;
+      if (reqLote && !it.idLote) return { ok: false, error: 'Selecciona la caja/lote para ' + (art.Nombre || it.idArticulo) };
+      if (!reqLote) {
+        var saldoU = calcularSaldo(it.idArticulo, ubic);
+        if (cantidad > saldoU) return { ok: false, error: 'Saldo insuficiente de ' + (art.Nombre || '') + ' en ese almacén (disponible: ' + saldoU + ')' };
+      }
+      prep.push({ art: art, cat: cat, reqLote: reqLote, cantidad: cantidad, ubic: ubic, it: it });
+    }
+
+    // ---- Escribir ----
+    var creados = 0, totalMateriales = 0, base = new Date().getTime();
+    for (var i = 0; i < prep.length; i++) {
+      var p = prep[i], art = p.art, cantidad = p.cantidad, ubic = p.ubic, cat = p.cat;
+      var unidad = p.it.unidad || art.Unidad || '';
+      var nombre = art.Nombre || '';
+      var loteFab = '';
+
+      if (p.reqLote) {
+        var desc = descontarLote_(p.it.idLote, cantidad);
+        if (!desc.ok) return desc;
+        loteFab = desc.loteFabricante || '';
+      }
+
+      var saldoAntes = calcularSaldo(art.ID_Articulo);     // global (COFEPRIS)
+      var saldoDespues = saldoAntes - cantidad;
+      var idConsumo = 'CONS-' + base + '-' + i;
+
+      // 1) Movimiento SALIDA en el almacén de origen
+      appendInvMov_([
+        'MOV-' + base + '-' + i, fecha, 'SALIDA', art.ID_Articulo, nombre, cantidad, unidad,
+        'Remisión ' + (d.nombrePaciente || d.idPaciente) + (d.folioCirugia ? ' / ' + d.folioCirugia : ''),
+        loteFab, '', '', d.capturadoPor, nowTs(), d.observaciones || '', p.it.idLote || ''
+      ], ubic);
+
+      // 2) Traza en Consumos
+      appendRowByHeader(SHEETS.CONSUMOS, {
+        'ID_Consumo': idConsumo, 'Fecha_Consumo': fecha, 'Hora_Consumo': "'" + hora,
+        'Folio_Cirugia': d.folioCirugia || '', 'Folio_Receta': d.folioReceta || '',
+        'ID_Paciente': d.idPaciente, 'Nombre_Paciente': d.nombrePaciente || '',
+        'ID_Medicamento': art.ID_Articulo, 'Nombre_Medicamento': nombre,
+        'Cantidad_Consumida': cantidad, 'Unidad': unidad,
+        'ID_Medico': d.idMedico || '', 'Nombre_Medico': d.nombreMedico || '',
+        'Administrado_Por': d.administradoPor || '', 'Observaciones': d.observaciones || '',
+        'Capturado_Por': d.capturadoPor, 'Timestamp_Captura': nowTs(), 'Estado': 'ACTIVO',
+        'ID_Lote': p.it.idLote || '', 'Lote_Fabricante': loteFab
+      });
+
+      // 3) Libro COFEPRIS SOLO si es controlado
+      if (cat === 'MEDICAMENTO_CONTROLADO') {
+        ultimoAsiento++;
+        appendLibroRow_({
+          'No_Asiento': ultimoAsiento, 'Fecha': fecha, 'Folio_Receta': d.folioReceta || '',
+          'ID_Medicamento': art.ID_Articulo, 'Nombre_Medicamento': nombre, 'Fraccion_LGS': art.Fraccion_LGS || '',
+          'Nombre_Paciente': d.nombrePaciente || '', 'Nombre_Medico': d.nombreMedico || '', 'Cedula_Medico': cedula,
+          'Cantidad_Salida': cantidad, 'Existencia_Anterior': saldoAntes, 'Existencia_Posterior': saldoDespues,
+          'Folio_Cirugia': d.folioCirugia || '', 'Observaciones': d.observaciones || '',
+          'Estado': 'ACTIVO', 'Ref_Consumo': idConsumo, 'ID_Lote': p.it.idLote || '', 'Lote_Fabricante': loteFab
+        });
+      }
+
+      // 4) Línea cobrable (precio venta congelado = último costo × 2)
+      var costo = precioCompraReciente_(art.ID_Articulo);
+      var pventa = ocRound_(costo * 2);
+      var importe = ocRound_(pventa * cantidad);
+      totalMateriales += importe;
+      appendRowByHeader(SHEETS.REMISION_ITEMS, {
+        'ID_Remision_Item': 'REM-' + base + '-' + i, 'Fecha': fecha,
+        'ID_Paciente': d.idPaciente, 'Nombre_Paciente': d.nombrePaciente || '', 'Origen': origen,
+        'Folio_Cirugia': d.folioCirugia || '', 'ID_Hospitalizacion': d.idHospitalizacion || '',
+        'ID_Articulo': art.ID_Articulo, 'Codigo': art.Codigo || art.ID_Articulo, 'Descripcion': nombre,
+        'Categoria': cat, 'Cantidad': cantidad, 'Unidad': unidad, 'ID_Lote': p.it.idLote || '',
+        'Ubicacion': ubic, 'Costo_Unitario': costo, 'Precio_Venta_Unitario': pventa, 'Importe': importe,
+        'Estado': 'ACTIVO', 'Capturado_Por': d.capturadoPor, 'Timestamp_Captura': nowTs()
+      });
+      creados++;
+    }
+
+    return {
+      ok: true, lineas: creados,
+      totalLineasImporte: ocRound_(totalMateriales),
+      totalCuentaMateriales: totalRemisionMateriales_(d.idPaciente)
     };
   } finally {
     lock.releaseLock();
@@ -5358,7 +5560,11 @@ function getDatosPacienteParaCobro(idPaciente) {
   // ¿Ya tiene una cuenta de caja empezada?
   var cuentaExistente = leerCuentaCaja(pac.ID_Paciente) || leerCuentaCajaPorExpediente(pac.ID_Paciente);
 
-  return { ok: true, paciente: paciente, cirugias: cirugias, cuentaExistente: cuentaExistente };
+  // Total cobrable de materiales/medicamentos consumidos (remisión) para
+  // auto-alimentar el campo Materiales_Medicamentos de la cuenta.
+  var materialesRemision = totalRemisionMateriales_(pac.ID_Paciente);
+
+  return { ok: true, paciente: paciente, cirugias: cirugias, cuentaExistente: cuentaExistente, materialesRemision: materialesRemision };
 }
 
 function leerCuentaCajaPorExpediente(expediente) {
