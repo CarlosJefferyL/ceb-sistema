@@ -25,6 +25,7 @@ var SHEETS = {
   CONFIG: 'CONFIG',
   MEDICAMENTOS: 'CAT_Medicamentos',
   MEDICOS: 'CAT_Medicos',
+  MEDICOS_CONSULTA: 'CAT_MedicosConsulta',
   CIRUGIAS_TIPO: 'CAT_Cirugias',
   USUARIOS: 'CAT_Usuarios',
   QUIROFANOS: 'CAT_Quirofanos',
@@ -52,6 +53,9 @@ var SHEETS = {
   BOM_CIRUGIA: 'BOM_Cirugia',
   BOM_ITEMS: 'BOM_Items'
 };
+
+// Encabezados de la hoja de médicos de consulta externa (creada bajo demanda).
+var MEDICOS_CONSULTA_HEADERS = ['ID_MedicoConsulta','Nombre_Completo','Titulo','Cedula_Profesional','Activo','Capturado_Por','Timestamp_Captura'];
 
 // ============================================================
 // MATRIZ DE PERMISOS — DEBE COINCIDIR EXACTAMENTE CON LA DEL FRONTEND
@@ -194,6 +198,7 @@ function doPost(e) {
       case 'altaPaciente':       result = altaPaciente(payload.data); break;
       case 'altaMedicamento':    result = altaMedicamento(payload.data); break;
       case 'altaMedico':         result = altaMedico(payload.data); break;
+      case 'altaMedicoConsulta': result = altaMedicoConsulta(payload.data); break;
       case 'altaCirugiaTipo':    result = altaCirugiaTipo(payload.data); break;
       case 'altaQuirofano':      result = altaQuirofano(payload.data); break;
       case 'ingresarPaciente':   result = ingresarPaciente(payload.data); break;
@@ -389,10 +394,12 @@ function getCatalogos() {
   // Las cirugías se buscan bajo demanda con buscarCirugias() — son ~5,000 entradas
   // y enviarlas todas haría lento el login y consumiría datos en celular.
   ensureBOMSheets_(); // crea las hojas del módulo BOM en el primer arranque
+  ensureSheetConHeaders_(SHEETS.MEDICOS_CONSULTA, MEDICOS_CONSULTA_HEADERS); // médicos de consulta externa
   return {
     ok: true,
     medicamentos: sheetToObjects(SHEETS.MEDICAMENTOS).filter(function(m){return esActivo(m.Activo);}),
     medicos:      sheetToObjects(SHEETS.MEDICOS).filter(function(m){return esActivo(m.Activo);}),
+    medicosConsulta: sheetToObjects(SHEETS.MEDICOS_CONSULTA).filter(function(m){return esActivo(m.Activo);}),
     quirofanos:   sheetToObjects(SHEETS.QUIROFANOS).filter(function(q){return esActivo(q.Activo);}),
     habitaciones: sheetToObjects(SHEETS.HABITACIONES).filter(function(h){return esActivo(h.Activo);}),
     aseguradoras: sheetToObjects(SHEETS.ASEGURADORAS).filter(function(a){return esActivo(a.Activo);}),
@@ -2223,6 +2230,71 @@ function altaMedico(d) {
   sh.appendRow([id, d.nombreCompleto, d.cedulaProfesional, d.especialidad,
                 d.cedulaEspecialidad || '', d.telefono || '', 'SI']);
   return { ok: true, idMedico: id };
+}
+
+/**
+ * Da de alta un MÉDICO DE CONSULTA EXTERNA en la hoja CAT_MedicosConsulta.
+ * Es un catálogo independiente del de cirujanos (CAT_Medicos): aquí solo se
+ * guardan los médicos que atienden consulta/urgencia, con nombre, título y
+ * cédula. Se crea la hoja en el primer uso si aún no existe.
+ *
+ * Payload esperado: { nombreCompleto, titulo, cedulaProfesional, capturadoPor }
+ * Respuesta: { ok, idMedicoConsulta, nombreCompleto, titulo, cedulaProfesional }
+ * Permiso: alta_medico_consulta (incluye RECEPCION).
+ */
+function altaMedicoConsulta(d) {
+  // Validación de permisos
+  if (!tienePermiso(d.rolUsuario, 'alta_medico_consulta')) {
+    return errorSinPermiso(d.rolUsuario, 'alta_medico_consulta');
+  }
+
+  var nombre = String(d.nombreCompleto || '').trim();
+  if (!nombre) {
+    return { ok: false, error: 'El nombre del médico de consulta es obligatorio.' };
+  }
+  var titulo = String(d.titulo || '').trim();
+  var cedula = String(d.cedulaProfesional || '').trim();
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    // Garantiza la hoja y sus encabezados antes de leer/escribir.
+    ensureSheetConHeaders_(SHEETS.MEDICOS_CONSULTA, MEDICOS_CONSULTA_HEADERS);
+
+    var sh = getSheet(SHEETS.MEDICOS_CONSULTA);
+    var data = sh.getDataRange().getValues();
+
+    // Generar ID consecutivo: MC-XXX
+    var num = 0;
+    for (var i = 1; i < data.length; i++) {
+      var v = String(data[i][0] || '');
+      if (v.indexOf('MC-') === 0) {
+        var n = parseInt(v.replace('MC-', ''), 10);
+        if (!isNaN(n)) num = Math.max(num, n);
+      }
+    }
+    var id = 'MC-' + String(num + 1).padStart(3, '0');
+
+    appendRowByHeader(SHEETS.MEDICOS_CONSULTA, {
+      'ID_MedicoConsulta': id,
+      'Nombre_Completo': nombre,
+      'Titulo': titulo,
+      'Cedula_Profesional': cedula,
+      'Activo': 'SI',
+      'Capturado_Por': d.capturadoPor || '',
+      'Timestamp_Captura': nowTs()
+    });
+
+    return {
+      ok: true,
+      idMedicoConsulta: id,
+      nombreCompleto: nombre,
+      titulo: titulo,
+      cedulaProfesional: cedula
+    };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /**
