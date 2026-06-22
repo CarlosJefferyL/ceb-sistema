@@ -81,9 +81,12 @@ Almacén Gral / CEyE ──(BOM entregado)──► QUIRÓFANO
 
 > Reemplaza el orden anterior. El usuario pidió **arrancar por consumos/BOMs (remisión)**; como la remisión depende de ubicaciones, la base va primero.
 
-1. **F1 · Ubicaciones y saldo por almacén** — `CAT_Ubicaciones` (7), columna `Ubicacion` en `Inventario_Mov`, `calcularSaldo(art, ubicacion)`, lotes/cajas con ubicación, entradas a una ubicación (default Almacén General), vista de saldos por almacén. *Migración: stock/lotes existentes → Almacén General.*
-2. **F2 · Traspasos** — mover stock/lote entre ubicaciones (Gral→CEyE→Carro, etc.).
-3. **F3 · Remisión / cuenta del paciente** — `Remisiones` + líneas de cuenta; consumo = línea (descuenta ubicación + lote, precio venta = costo×2), ligado a cirugía (quirófano) o a hospitalización (piso).
+1. ✅ **F1 · Ubicaciones y saldo por almacén** — `CAT_Ubicaciones` (7), `Ubicacion` en `Inventario_Mov`/`Lotes`, `calcularSaldo(art, ubicacion)`, filtro de almacén en Artículos, entradas/salidas/ajustes con ubicación. Stock previo → Almacén General. **HECHO.**
+2. ✅ **F2 · Traspasos** — `registrarTraspaso` (SALIDA origen + ENTRADA destino); lote = caja completa, insumos = cantidad. Botón ⇄ Traspaso. **HECHO.**
+3. **F3 · Remisión / cuenta del paciente** — *en curso:*
+   - ✅ **F3a (backend)**: `Remision_Items`, `registrarRemision` unificado (descuenta almacén/lote, Libro solo controlados, traza en Consumos, línea a precio venta = último costo×2), `getRemisionPaciente`, `getDatosPacienteParaCobro` expone `materialesRemision`.
+   - ✅ **F3b (frontend)**: pantalla "Nueva remisión" (buscar paciente → carrito → registrar).
+   - ⬜ **F3c**: que el frontend de **cobro** prellene/actualice `Materiales_Medicamentos` desde `materialesRemision`; entrada directa de remisión desde tarjeta de piso y desde cirugía.
 4. **F4 · Conciliación de BOM al cerrar cirugía** — usado real (descuenta + cobra), no usado (devolución/entrada al almacén), extras NO-BOM (líneas nuevas desde CEyE).
 5. **F5 · Cierre de cuenta → cobro** — al alta, cerrar y ligar al módulo de cobro existente.
 6. **F6 (después)** · Módulo de **precios de venta** (ajuste de márgenes/excepciones).
