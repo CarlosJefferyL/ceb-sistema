@@ -47,6 +47,7 @@ var SHEETS = {
   PROVEEDORES: 'CAT_Proveedores',
   ORDENES_COMPRA: 'Ordenes_Compra',
   OC_ITEMS: 'OC_Items',
+  PRECIOS_COMPRA: 'Precios_Compra',
   CONSULTAS: 'Consultas',
   RECIBOS: 'Recibos',
   BENEFICIARIOS: 'CAT_Beneficiarios',
@@ -175,6 +176,7 @@ function doGet(e) {
       case 'getProveedores': result = getProveedores(); break;
       case 'getOrdenesCompra': result = getOrdenesCompra(e.parameter.estado, e.parameter.desde, e.parameter.hasta); break;
       case 'getOrdenCompra': result = getOrdenCompra(e.parameter.folioOC); break;
+      case 'getPreciosCompra': result = getPreciosCompra(e.parameter.idArticulo); break;
       case 'getLotes':     result = getLotes(e.parameter.estado, e.parameter.idMedicamento); break;
       case 'getConsumosPorLote': result = getConsumosPorLote(e.parameter.idLote); break;
       case 'getDashboard': result = getDashboard(e.parameter.horizonte); break;
@@ -227,6 +229,7 @@ function doPost(e) {
       case 'crearOrdenCompra':   result = crearOrdenCompra(payload.data); break;
       case 'cambiarEstadoOC':    result = cambiarEstadoOC(payload.data); break;
       case 'recibirOrdenCompra': result = recibirOrdenCompra(payload.data); break;
+      case 'importarCatalogoPrecios': result = importarCatalogoPrecios(payload.data); break;
       case 'actualizarCirugia':  result = actualizarCirugia(payload.data); break;
       case 'altaPaciente':       result = altaPaciente(payload.data); break;
       case 'altaMedicamento':    result = altaMedicamento(payload.data); break;
@@ -435,6 +438,7 @@ function getCatalogos() {
     medicamentos: sheetToObjects(SHEETS.MEDICAMENTOS).filter(function(m){return esActivo(m.Activo);}),
     articulos:    sheetToObjects(SHEETS.ARTICULOS).filter(function(a){return esActivo(a.Activo);}),
     proveedores:  sheetToObjects(SHEETS.PROVEEDORES).filter(function(p){return esActivo(p.Activo);}),
+    precios:      sheetToObjects(SHEETS.PRECIOS_COMPRA),
     medicos:      sheetToObjects(SHEETS.MEDICOS).filter(function(m){return esActivo(m.Activo);}),
     medicosConsulta: sheetToObjects(SHEETS.MEDICOS_CONSULTA).filter(function(m){return esActivo(m.Activo);}),
     quirofanos:   sheetToObjects(SHEETS.QUIROFANOS).filter(function(q){return esActivo(q.Activo);}),
@@ -2027,6 +2031,8 @@ var OC_HEADERS = ['Folio_OC','Fecha','ID_Proveedor','Nombre_Proveedor','Condicio
   'Creado_Por','Timestamp_Creacion','Recibido_Por','Timestamp_Recepcion'];
 var OC_ITEMS_HEADERS = ['ID_OC_Item','Folio_OC','ID_Articulo','Codigo','Descripcion','Unidad',
   'Cantidad','Precio_Unitario','Descuento','Importe','Cantidad_Recibida','Estado_Item'];
+var PRECIOS_COMPRA_HEADERS = ['ID_Precio','ID_Articulo','Nombre_Articulo','ID_Proveedor','Nombre_Proveedor',
+  'Precio','Descuento','Moneda','Fecha_Actualizacion'];
 
 var OC_IVA_TASA = 0.16;
 
@@ -2035,6 +2041,166 @@ function ensureComprasSheets_() {
   ensureSheetConHeaders_(SHEETS.PROVEEDORES, PROVEEDORES_HEADERS);
   ensureSheetConHeaders_(SHEETS.ORDENES_COMPRA, OC_HEADERS);
   ensureSheetConHeaders_(SHEETS.OC_ITEMS, OC_ITEMS_HEADERS);
+  ensureSheetConHeaders_(SHEETS.PRECIOS_COMPRA, PRECIOS_COMPRA_HEADERS);
+}
+
+/** Clave normalizada para comparar nombres (sin acentos, mayúsculas, espacios colapsados). */
+function normNombre_(s) {
+  return String(s == null ? '' : s).trim().toUpperCase()
+    .replace(/Í/g,'I').replace(/Á/g,'A').replace(/É/g,'E').replace(/Ó/g,'O').replace(/Ú/g,'U').replace(/Ñ/g,'N')
+    .replace(/\s+/g, ' ');
+}
+
+/**
+ * Lista de precios de compra. Sin filtro devuelve todo; con idArticulo
+ * devuelve los proveedores y precios de ese artículo (orden ascendente).
+ */
+function getPreciosCompra(idArticulo) {
+  ensureComprasSheets_();
+  var data = sheetToObjects(SHEETS.PRECIOS_COMPRA).map(function(p){
+    return {
+      idArticulo: p.ID_Articulo,
+      nombreArticulo: p.Nombre_Articulo,
+      idProveedor: p.ID_Proveedor,
+      nombreProveedor: p.Nombre_Proveedor,
+      precio: num_(p.Precio),
+      descuento: num_(p.Descuento),
+      moneda: p.Moneda || 'MXN'
+    };
+  });
+  if (idArticulo) {
+    data = data.filter(function(p){ return String(p.idArticulo) === String(idArticulo); });
+    data.sort(function(a, b){ return a.precio - b.precio; });
+  }
+  return { ok: true, data: data };
+}
+
+/**
+ * Importación masiva del catálogo de precios (idempotente). Crea los
+ * proveedores y artículos faltantes (match por nombre normalizado) y
+ * agrega/actualiza la lista de precios. Usa escritura en bloque.
+ * Payload d:
+ *   proveedores: [nombre, ...]
+ *   articulos:   [{nombre, categoria, unidad}, ...]
+ *   precios:     [{articulo, proveedor, precio, descuento}, ...]
+ * Pensado para correrse por tramos (chunks) varias veces sin duplicar.
+ */
+function importarCatalogoPrecios(d) {
+  if (d && d.rolUsuario && d.rolUsuario !== 'ADMIN') {
+    return { ok: false, error: 'Solo ADMIN puede importar el catálogo de precios.' };
+  }
+  ensureArticulosSheet_();
+  ensureComprasSheets_();
+  var hoy = todayStr();
+  var res = { ok: true, proveedoresNuevos: 0, articulosNuevos: 0, preciosNuevos: 0, preciosActualizados: 0 };
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    // ---- 1) PROVEEDORES (match por nombre) ----
+    var provSh = getSheet(SHEETS.PROVEEDORES);
+    var provRows = sheetToObjects(SHEETS.PROVEEDORES);
+    var provPorNombre = {};
+    var provMaxNum = 0;
+    provRows.forEach(function(p){
+      if (p.Nombre) provPorNombre[normNombre_(p.Nombre)] = p.ID_Proveedor;
+      var m = String(p.ID_Proveedor || '').match(/^PROV-?(\d+)$/);
+      if (m) provMaxNum = Math.max(provMaxNum, parseInt(m[1], 10) || 0);
+    });
+    var provHeaders = provSh.getRange(1, 1, 1, provSh.getLastColumn()).getValues()[0];
+    var nuevosProv = [];
+    (d.proveedores || []).forEach(function(nombre){
+      var k = normNombre_(nombre);
+      if (!k || provPorNombre[k]) return;
+      provMaxNum++;
+      var id = 'PROV-' + String(provMaxNum).padStart(3, '0');
+      provPorNombre[k] = id;
+      var obj = { 'ID_Proveedor': id, 'Nombre': String(nombre).trim(), 'Activo': 'SI', 'Timestamp_Captura': nowTs() };
+      nuevosProv.push(provHeaders.map(function(h){ return obj.hasOwnProperty(h) ? obj[h] : ''; }));
+    });
+    if (nuevosProv.length) {
+      provSh.getRange(provSh.getLastRow() + 1, 1, nuevosProv.length, provHeaders.length).setValues(nuevosProv);
+      res.proveedoresNuevos = nuevosProv.length;
+    }
+
+    // ---- 2) ARTÍCULOS (match por nombre) ----
+    var artSh = getSheet(SHEETS.ARTICULOS);
+    var artRows = sheetToObjects(SHEETS.ARTICULOS);
+    var artPorNombre = {};
+    var medMaxNum = 0, insMaxNum = 0, otrMaxNum = 0;
+    artRows.forEach(function(a){
+      if (a.Nombre) artPorNombre[normNombre_(a.Nombre)] = a.ID_Articulo;
+      var s = String(a.ID_Articulo || '');
+      var mm = s.match(/^MED-?(\d+)$/); if (mm) medMaxNum = Math.max(medMaxNum, parseInt(mm[1],10)||0);
+      var mi = s.match(/^INS-?(\d+)$/); if (mi) insMaxNum = Math.max(insMaxNum, parseInt(mi[1],10)||0);
+      var mo = s.match(/^ART-?(\d+)$/); if (mo) otrMaxNum = Math.max(otrMaxNum, parseInt(mo[1],10)||0);
+    });
+    var artHeaders = artSh.getRange(1, 1, 1, artSh.getLastColumn()).getValues()[0];
+    var nuevosArt = [];
+    (d.articulos || []).forEach(function(a){
+      var k = normNombre_(a.nombre);
+      if (!k || artPorNombre[k]) return;
+      var cat = normCategoria_(a.categoria || 'MEDICAMENTO');
+      var id;
+      if (cat === 'INSUMO') { insMaxNum++; id = 'INS-' + String(insMaxNum).padStart(3,'0'); }
+      else if (cat === 'OTROS') { otrMaxNum++; id = 'ART-' + String(otrMaxNum).padStart(3,'0'); }
+      else { medMaxNum++; id = 'MED-' + String(medMaxNum).padStart(3,'0'); }
+      artPorNombre[k] = id;
+      var obj = {
+        'ID_Articulo': id, 'Codigo': id, 'Nombre': String(a.nombre).trim(), 'Categoria': cat,
+        'Unidad': a.unidad || '', 'Stock_Minimo': 0,
+        'Requiere_Lote': categoriaRequiereLote_(cat) ? 'SI' : 'NO', 'Activo': 'SI'
+      };
+      nuevosArt.push(artHeaders.map(function(h){ return obj.hasOwnProperty(h) ? obj[h] : ''; }));
+    });
+    if (nuevosArt.length) {
+      artSh.getRange(artSh.getLastRow() + 1, 1, nuevosArt.length, artHeaders.length).setValues(nuevosArt);
+      res.articulosNuevos = nuevosArt.length;
+    }
+
+    // ---- 3) PRECIOS (clave artículo|proveedor; idempotente) ----
+    var preSh = getSheet(SHEETS.PRECIOS_COMPRA);
+    var preData = preSh.getDataRange().getValues();
+    var PH = preData[0];
+    var pcol = {}; PH.forEach(function(h, i){ pcol[h] = i; });
+    var existePrecio = {}; // "idArt|idProv" -> fila (1-indexed)
+    for (var i = 1; i < preData.length; i++) {
+      var key = String(preData[i][pcol['ID_Articulo']]) + '|' + String(preData[i][pcol['ID_Proveedor']]);
+      existePrecio[key] = i + 1;
+    }
+    var nuevosPre = [];
+    (d.precios || []).forEach(function(pr){
+      var idArt = artPorNombre[normNombre_(pr.articulo)];
+      var idProv = provPorNombre[normNombre_(pr.proveedor)];
+      if (!idArt || !idProv) return;
+      var key = idArt + '|' + idProv;
+      if (existePrecio[key]) {
+        // Actualizar precio/descuento de la fila existente
+        preSh.getRange(existePrecio[key], pcol['Precio'] + 1).setValue(num_(pr.precio));
+        preSh.getRange(existePrecio[key], pcol['Descuento'] + 1).setValue(num_(pr.descuento));
+        preSh.getRange(existePrecio[key], pcol['Fecha_Actualizacion'] + 1).setValue(hoy);
+        res.preciosActualizados++;
+        return;
+      }
+      var obj = {
+        'ID_Precio': 'PR-' + idArt + '-' + idProv,
+        'ID_Articulo': idArt, 'Nombre_Articulo': pr.articulo,
+        'ID_Proveedor': idProv, 'Nombre_Proveedor': pr.proveedor,
+        'Precio': num_(pr.precio), 'Descuento': num_(pr.descuento),
+        'Moneda': 'MXN', 'Fecha_Actualizacion': hoy
+      };
+      existePrecio[key] = -1; // marcar para no duplicar dentro del mismo lote
+      nuevosPre.push(PH.map(function(h){ return obj.hasOwnProperty(h) ? obj[h] : ''; }));
+    });
+    if (nuevosPre.length) {
+      preSh.getRange(preSh.getLastRow() + 1, 1, nuevosPre.length, PH.length).setValues(nuevosPre);
+      res.preciosNuevos = nuevosPre.length;
+    }
+
+    return res;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function ocRound_(n) { return Math.round((num_(n) + Number.EPSILON) * 100) / 100; }
