@@ -88,7 +88,7 @@ Almacén Gral / CEyE ──(BOM entregado)──► QUIRÓFANO
    - ✅ **F3b (frontend)**: pantalla "Nueva remisión" (buscar paciente → carrito → registrar).
    - ✅ **F3c**: el **cobro** prellena "Materiales y medicamento" desde `materialesRemision` (cuenta nueva y existente); botón **🧾 Remisión** en el detalle del cuarto (piso). *Falta opcional: entrada directa de remisión desde la cirugía (quirófano) — hoy se hace por "Nueva remisión" buscando al paciente.*
 4. ✅ **F4 · Conciliación de BOM al cerrar cirugía** — botón "Conciliar BOM" en la cirugía abre la remisión pre-cargada con items del BOM que mapean por Código (insumos con cantidad entregada); meds (con lote) e items fuera de catálogo se listan como aviso para agregarlos manual. Al registrar: descuenta+cobra y guarda `Cantidad_R` en el BOM. Lo no agregado = se queda en almacén. **HECHO.** *Nota: como `entregarBOM` no mueve inventario, el descuento ocurre al conciliar; "lo no usado" simplemente no se descuenta.*
-5. **F5 · Cierre de cuenta → cobro** — al alta, cerrar y ligar al módulo de cobro existente.
+5. ✅ **F5 · Cierre de cuenta → cobro** — al egresar (alta) se ofrece ir a Cobro con el paciente cargado; en Cobro hay "Cerrar cuenta" (Estado CERRADA) y "Reabrir" (admin). Una cuenta CERRADA **bloquea** nuevos consumos (remisión). **HECHO.**
 6. **F6 (después)** · Módulo de **precios de venta** (ajuste de márgenes/excepciones).
 
 Pendientes anteriores que se reacomodan **después** del epic: Kardex (queda cubierto en parte por F1/F2), agrupación piezas/caja/paquete (P3, prerequisito de Fentanilo), limpieza de datos (P5), reportes (P4), recetas controladas (B).
