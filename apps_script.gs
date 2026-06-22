@@ -231,6 +231,7 @@ function doPost(e) {
       case 'registrarMovimientoArticulo': result = registrarMovimientoArticulo(payload.data); break;
       case 'registrarTraspaso':  result = registrarTraspaso(payload.data); break;
       case 'registrarRemision':  result = registrarRemision(payload.data); break;
+      case 'registrarUsoBOM':    result = registrarUsoBOM(payload.data); break;
       case 'migrarArticulos':    result = migrarArticulos(payload.data); break;
       case 'altaProveedor':      result = altaProveedor(payload.data); break;
       case 'editarProveedor':    result = editarProveedor(payload.data); break;
@@ -2246,6 +2247,41 @@ function totalRemisionMateriales_(idPaciente) {
     if (String(r.ID_Paciente) === String(idPaciente) && r.Estado !== 'CANCELADO') total += num_(r.Importe);
   });
   return ocRound_(total);
+}
+
+/**
+ * Registra en el BOM lo realmente usado (Cantidad_R) por código de artículo,
+ * al conciliar el BOM con la remisión del cierre de cirugía.
+ * d.folioCirugia, d.usos: [{ codigo, cantidad }]
+ */
+function registrarUsoBOM(d) {
+  if (!tienePermiso(d.rolUsuario, 'registrar_consumo')) {
+    return errorSinPermiso(d.rolUsuario, 'registrar_consumo');
+  }
+  if (!d.folioCirugia) return { ok: false, error: 'Folio de cirugía requerido' };
+  var usos = {};
+  (d.usos || []).forEach(function(u){
+    var c = String(u.codigo || '');
+    if (!c) return;
+    usos[c] = (usos[c] || 0) + (parseFloat(u.cantidad) || 0);
+  });
+  var sh = getSheet(SHEETS.BOM_ITEMS);
+  var data = sh.getDataRange().getValues();
+  var H = data[0];
+  var cFolio = H.indexOf('Folio_Cirugia');
+  var cCodigo = H.indexOf('Codigo');
+  var cR = H.indexOf('Cantidad_R');
+  if (cR === -1) return { ok: true, actualizados: 0 }; // sin columna, nada que hacer
+  var n = 0;
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][cFolio]) !== String(d.folioCirugia)) continue;
+    var cod = String(data[i][cCodigo] || '');
+    if (usos.hasOwnProperty(cod)) {
+      sh.getRange(i + 1, cR + 1).setValue(usos[cod]);
+      n++;
+    }
+  }
+  return { ok: true, actualizados: n };
 }
 
 function getRemisionPaciente(idPaciente) {

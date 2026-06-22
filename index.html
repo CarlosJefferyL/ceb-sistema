@@ -3270,6 +3270,11 @@ function renderCirugiaActions(c) {
   const activa = estado !== 'TERMINADA' && estado !== 'CANCELADA' && estado !== '';
   let botones = [];
 
+  // F4: conciliar BOM (consumo real) al cerrar la cirugía
+  if (activa && puede('registrar_consumo')) {
+    botones.push(`<button class="btn btn-accent btn-sm" onclick="openModalConciliarBOM('${escJs(folio)}','${escJs(c.ID_Paciente || '')}','${escJs(c.Nombre_Paciente || '')}','${escJs(c.ID_Medico || '')}','${escJs(c.Nombre_Medico || '')}')">🧾 Conciliar BOM</button>`);
+  }
+
   // Consumos / recetas según estado
   if (estado === 'PROGRAMADA' || estado === '') {
     if (puede('vincular_receta')) {
@@ -4456,19 +4461,25 @@ function remisionBuscarPaciente() {
 
 function remisionElegirPaciente(idPaciente, nombre) { openModalRemision(idPaciente, nombre, 'QUIROFANO', ''); }
 
-function openModalRemision(idPaciente, nombre, origen, folioCirugia) {
-  remisionCart = [];
-  remisionCtx = { idPaciente: idPaciente, nombrePaciente: nombre, origen: origen || 'QUIROFANO', folioCirugia: folioCirugia || '' };
+function openModalRemision(idPaciente, nombre, origen, folioCirugia, opts) {
+  opts = opts || {};
+  remisionCart = Array.isArray(opts.seedItems) ? opts.seedItems.slice() : [];
+  remisionCtx = { idPaciente: idPaciente, nombrePaciente: nombre, origen: origen || 'QUIROFANO', folioCirugia: folioCirugia || '', bomConciliacion: !!opts.bomConciliacion };
   const arts = (cache.articulos || []);
   if (!arts.length) { showToast('Primero abre Artículos / Almacén para cargar el catálogo', 'error'); return; }
-  const opts = arts.map(a => `<option value="${artEsc(a.idArticulo)}">${artEsc(a.codigo)} · ${artEsc(a.nombre)}</option>`).join('');
-  const medOpts = (catalogos.medicos || []).map(m => `<option value="${m.ID_Medico}">${artEsc(m.Nombre_Completo)}</option>`).join('');
-  openModal('Remisión · ' + artEsc(nombre), `
-    <div style="background:var(--teal-light);padding:8px 12px;border-radius:8px;margin-bottom:10px;font-size:12px;color:var(--navy);">Paciente: <b>${artEsc(nombre)}</b> · cada consumo descuenta del almacén/lote y se carga a su cuenta a precio de venta.</div>
+  const opciones = arts.map(a => `<option value="${artEsc(a.idArticulo)}">${artEsc(a.codigo)} · ${artEsc(a.nombre)}</option>`).join('');
+  const medDef = opts.idMedico || '';
+  const medOpts = (catalogos.medicos || []).map(m => `<option value="${m.ID_Medico}" ${m.ID_Medico === medDef ? 'selected' : ''}>${artEsc(m.Nombre_Completo)}</option>`).join('');
+  const intro = opts.bomConciliacion
+    ? `Conciliación de BOM · cirugía <b>${artEsc(folioCirugia)}</b>. Ajusta lo realmente usado; lo no agregado se queda en almacén. Agrega los extras de CEyE.`
+    : `Paciente: <b>${artEsc(nombre)}</b> · cada consumo descuenta del almacén/lote y se carga a su cuenta a precio de venta.`;
+  openModal((opts.bomConciliacion ? 'Conciliar BOM · ' : 'Remisión · ') + artEsc(nombre), `
+    <div style="background:var(--teal-light);padding:8px 12px;border-radius:8px;margin-bottom:10px;font-size:12px;color:var(--navy);">${intro}</div>
+    ${opts.bomInfoHtml || ''}
     <div class="form-grid">
       <div><label>Origen</label><select id="rm_origen"><option value="QUIROFANO" ${origen !== 'PISO' ? 'selected' : ''}>Quirófano</option><option value="PISO" ${origen === 'PISO' ? 'selected' : ''}>Piso</option></select></div>
       <div><label>Médico (para controlados)</label><select id="rm_medico"><option value="">— Opcional —</option>${medOpts}</select></div>
-      <div class="full"><label>Artículo</label><select id="rm_art" onchange="remisionArtChange()"><option value="">— Seleccionar —</option>${opts}</select></div>
+      <div class="full"><label>Artículo</label><select id="rm_art" onchange="remisionArtChange()"><option value="">— Seleccionar —</option>${opciones}</select></div>
       <div><label>Almacén</label><select id="rm_ubic" onchange="remisionRefreshLotes()">${ubicacionOpts('ALM_GENERAL')}</select></div>
       <div id="rm_loteWrap" style="display:none;"><label>Caja / lote</label><select id="rm_lote"></select></div>
       <div><label>Cantidad</label><input type="number" id="rm_cant" step="any" min="0" placeholder="Ej: 1"></div>
@@ -4550,8 +4561,61 @@ async function submitRemision() {
     capturadoPor: currentUser.nombre
   };
   const resp = await apiPost('registrarRemision', data);
-  if (resp.ok) { showToast(`✓ Remisión registrada (${resp.lineas} línea${resp.lineas === 1 ? '' : 's'}). Cuenta materiales: ${fmtMoney(resp.totalCuentaMateriales)}`); closeModal(); }
-  else { showToast('Error: ' + resp.error, 'error'); }
+  if (!resp.ok) { showToast('Error: ' + resp.error, 'error'); return; }
+  // Si es conciliación de BOM, registra lo usado (Cantidad_R) por código de artículo
+  if (remisionCtx.bomConciliacion && remisionCtx.folioCirugia) {
+    const usos = remisionCart.map(l => {
+      const a = (cache.articulos || []).find(x => x.idArticulo === l.idArticulo);
+      return { codigo: a ? a.codigo : '', cantidad: l.cantidad };
+    }).filter(u => u.codigo);
+    await apiPost('registrarUsoBOM', { folioCirugia: remisionCtx.folioCirugia, usos });
+  }
+  showToast(`✓ Remisión registrada (${resp.lineas} línea${resp.lineas === 1 ? '' : 's'}). Cuenta materiales: ${fmtMoney(resp.totalCuentaMateriales)}`);
+  closeModal();
+}
+
+// ---- F4: conciliar BOM al cerrar cirugía ----
+async function openModalConciliarBOM(folioCirugia, idPaciente, nombrePaciente, idMedico, nombreMedico) {
+  if (!(cache.articulos || []).length) { showToast('Abre Artículos / Almacén para cargar el catálogo', 'error'); return; }
+  showToast('Cargando BOM…');
+  const resp = await apiGet('getBOM', { folioCirugia });
+  const items = (resp && resp.ok) ? (resp.items || []) : [];
+  // Mapear items del BOM a artículos por Código
+  const porCodigo = {};
+  (cache.articulos || []).forEach(a => { if (a.codigo) porCodigo[String(a.codigo)] = a; });
+  const seed = [];
+  const mapeados = [];
+  const noMapeados = [];
+  items.forEach(it => {
+    const entregada = parseFloat(it.Cantidad_U) || parseFloat(it.Cantidad_S) || 0;
+    const art = porCodigo[String(it.Codigo || '')];
+    if (art && !artRequiereLote(art.categoria) && entregada > 0) {
+      // Insumos/otros: se pre-cargan al carrito con la cantidad entregada
+      const pv = precioVentaCli(art.idArticulo);
+      seed.push({ idArticulo: art.idArticulo, descripcion: art.nombre, categoria: art.categoria, cantidad: entregada, unidad: art.unidad, ubicacion: 'ALM_GENERAL', idLote: '', precioVenta: pv, importe: Math.round(pv * entregada * 100) / 100 });
+      mapeados.push(it);
+    } else if (art) {
+      // Medicamentos/controlados: requieren lote -> el usuario los agrega manual
+      mapeados.push(it);
+    } else {
+      noMapeados.push(it);
+    }
+  });
+  // Panel informativo
+  const medsPend = items.filter(it => { const a = porCodigo[String(it.Codigo || '')]; return a && artRequiereLote(a.categoria); });
+  let info = '';
+  if (medsPend.length) {
+    info += `<div style="background:#FEF9C3;border:1px solid #FDE047;border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:12px;color:#713f12;"><b>Medicamentos del BOM (agrégalos abajo eligiendo lote):</b> ${medsPend.map(it => artEsc(it.Descripcion || it.Codigo)).join(', ')}</div>`;
+  }
+  if (noMapeados.length) {
+    info += `<div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:12px;color:#991B1B;"><b>⚠ No están en el catálogo de artículos</b> (no se descuentan/cobran; agrégalos al catálogo si aplica): ${noMapeados.map(it => artEsc(it.Descripcion || it.Codigo)).join(', ')}</div>`;
+  }
+  if (!items.length) {
+    info = `<div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:12px;color:#991B1B;">Esta cirugía no tiene BOM con partidas. Registra la remisión manualmente.</div>`;
+  }
+  openModalRemision(idPaciente, nombrePaciente, 'QUIROFANO', folioCirugia, {
+    bomConciliacion: true, seedItems: seed, bomInfoHtml: info, idMedico: idMedico
+  });
 }
 
 // ============================================================
