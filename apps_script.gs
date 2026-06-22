@@ -3804,6 +3804,7 @@ function getTableroHabitaciones() {
       ocupada: !!ocup,
       hospitalizacion: ocup ? {
         id: ocup.ID_Hospitalizacion,
+        idPaciente: ocup.ID_Paciente,
         nombrePaciente: pac.Nombre_Completo || ocup.Nombre_Paciente,
         edadPaciente: (pac.Edad !== undefined && pac.Edad !== '') ? pac.Edad : ocup.Edad_Paciente,
         telefono: pac.Telefono_1 || ocup.Telefono_Paciente,

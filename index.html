@@ -6258,6 +6258,9 @@ function verDetalleHab(idHabitacion) {
     </div>
 
     <div class="form-actions">
+      ${puede('registrar_consumo') && hosp.idPaciente ? `
+        <button class="btn btn-primary btn-sm" onclick="closeModal();openModalRemision('${escJs(hosp.idPaciente)}','${escJs(hosp.nombrePaciente)}','PISO','')">🧾 Remisión</button>
+      ` : ''}
       ${puedeGestionar ? `
         <button class="btn btn-secondary btn-sm" onclick="openModalMover('${hosp.id}','${hosp.nombrePaciente}','${h.idHabitacion}')">↔ Mover</button>
         <button class="btn btn-accent btn-sm" onclick="openModalEgresar('${hosp.id}','${hosp.nombrePaciente}')">↗ Egresar</button>
@@ -8045,6 +8048,7 @@ async function seleccionarPacienteCobro(idPaciente) {
   if (resp.cuentaExistente) {
     cargarCobroEnFormulario(resp.cuentaExistente);
     pintarPacienteSeleccionado(resp.paciente);
+    aplicarMaterialesRemision(resp.materialesRemision);
     showToast('Cuenta de caja existente cargada para ' + resp.paciente.nombrePaciente);
     return;
   }
@@ -8089,11 +8093,21 @@ async function seleccionarPacienteCobro(idPaciente) {
     }
   }
 
+  aplicarMaterialesRemision(resp.materialesRemision);
   recalcularCobro();
   const msg = (resp.cirugias && resp.cirugias.length)
     ? 'Paciente cargado con ' + resp.cirugias.length + ' cirugía(s). Captura los montos del cobro.'
     : 'Paciente cargado. Captura los datos del cobro.';
   showToast(msg);
+}
+
+// Auto-alimenta "Materiales y medicamento" con el total de la remisión del
+// paciente (fuente de verdad). Si no hay remisión, no toca el campo.
+function aplicarMaterialesRemision(total) {
+  if (!total || total <= 0) return;
+  cjSetVal('cj_materiales', moneyOrBlank(total));
+  recalcularCobro();
+  showToast('Materiales y medicamentos: ' + fmtMoney(total) + ' (desde remisión)');
 }
 
 function pintarPacienteSeleccionado(p) {
