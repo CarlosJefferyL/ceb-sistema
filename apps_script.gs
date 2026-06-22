@@ -263,6 +263,8 @@ function doPost(e) {
       case 'altaBeneficiario':   result = altaBeneficiario(payload.data); break;
       case 'editarBeneficiario': result = editarBeneficiario(payload.data); break;
       case 'guardarIngreso':     result = guardarIngreso(payload.data); break;
+      case 'cerrarCuentaCobro':  result = cerrarCuentaCobro(payload.data); break;
+      case 'reabrirCuentaCobro': result = reabrirCuentaCobro(payload.data); break;
       case 'proponerBOM':        result = proponerBOM(payload.data); break;
       case 'asignarBOMPaquetes':  result = asignarBOMPaquetes(payload.data); break;
       case 'autorizarBOM':       result = autorizarBOM(payload.data); break;
@@ -2315,6 +2317,9 @@ function registrarRemision(d) {
   var items = d.items || [];
   if (!items.length) return { ok: false, error: 'No hay artículos a registrar' };
   if (!d.idPaciente) return { ok: false, error: 'Paciente requerido' };
+  if (cuentaCerrada_(d.idPaciente)) {
+    return { ok: false, error: 'La cuenta del paciente está CERRADA. Reábrela en Cobro de caja para agregar consumos.' };
+  }
 
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -5620,6 +5625,54 @@ function leerCuentaCaja(idPaciente) {
   return rows.length ? cuentaRowToObj(rows[0]) : null;
 }
 
+/** ¿La cuenta del paciente está CERRADA? (no admite más consumos/remisión). */
+function cuentaCerrada_(idPaciente) {
+  if (!idPaciente) return false;
+  ensureCajaSheet();
+  return sheetToObjects(SHEETS.CAJA).some(function (r) {
+    return String(r.ID_Paciente) === String(idPaciente) && String(r.Estado).toUpperCase() === 'CERRADA';
+  });
+}
+
+/** Cambia el Estado de la cuenta de caja del paciente (CERRADA / ACTIVO). */
+function setEstadoCuenta_(idPaciente, nuevoEstado) {
+  var sh = getSheet(SHEETS.CAJA);
+  var data = sh.getDataRange().getValues();
+  var H = data[0];
+  var cPac = H.indexOf('ID_Paciente');
+  var cEstado = H.indexOf('Estado');
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][cPac]) === String(idPaciente) && String(data[i][cEstado]).toUpperCase() !== 'CANCELADO') {
+      sh.getRange(i + 1, cEstado + 1).setValue(nuevoEstado);
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Cierra la cuenta del paciente al alta: marca la cuenta de caja como CERRADA.
+ * A partir de aquí no se aceptan más consumos (remisión) hasta reabrir.
+ * Requiere que ya exista la cuenta de caja (que el cajero la haya guardado).
+ */
+function cerrarCuentaCobro(d) {
+  if (!tienePermiso(d.rolUsuario, 'cobro_caja')) return errorSinPermiso(d.rolUsuario, 'cobro_caja');
+  if (!d.idPaciente) return { ok: false, error: 'Paciente requerido' };
+  if (!leerCuentaCaja(d.idPaciente)) {
+    return { ok: false, error: 'Primero guarda la cuenta de caja del paciente; luego se puede cerrar.' };
+  }
+  if (!setEstadoCuenta_(d.idPaciente, 'CERRADA')) return { ok: false, error: 'No se encontró la cuenta a cerrar.' };
+  return { ok: true, estado: 'CERRADA' };
+}
+
+/** Reabre una cuenta CERRADA (para corregir/agregar consumos). */
+function reabrirCuentaCobro(d) {
+  if (!tienePermiso(d.rolUsuario, 'cobro_caja')) return errorSinPermiso(d.rolUsuario, 'cobro_caja');
+  if (!d.idPaciente) return { ok: false, error: 'Paciente requerido' };
+  if (!setEstadoCuenta_(d.idPaciente, 'ACTIVO')) return { ok: false, error: 'No se encontró la cuenta a reabrir.' };
+  return { ok: true, estado: 'ACTIVO' };
+}
+
 // Convierte una fila de la pestaña Caja al objeto que espera el frontend
 function cuentaRowToObj(r) {
   return {
@@ -5674,7 +5727,8 @@ function cuentaRowToObj(r) {
     detPagoTC: r.Det_Pago_TC,
     detPagoTransferencia: r.Det_Pago_Transferencia,
     operacion: esVerdadero(r.Operacion),
-    aplicarComision: esVerdadero(r.Aplicar_Comision)
+    aplicarComision: esVerdadero(r.Aplicar_Comision),
+    estado: r.Estado || 'ACTIVO'
   };
 }
 

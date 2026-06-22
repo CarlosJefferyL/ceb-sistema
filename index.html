@@ -1502,6 +1502,8 @@ textarea { resize: vertical; min-height: 70px; }
           <span style="flex:1;"></span>
           <span style="font-size:13px;color:var(--text-muted);">Comisión calculada: <strong id="cj_comisionTotal">$0.00</strong></span>
           <button class="btn btn-primary" data-accion="cobro_caja" onclick="guardarCobro()">💾 Registrar cobro</button>
+          <button class="btn btn-accent" data-accion="cobro_caja" onclick="cerrarCuentaPacienteFront()" title="Cierra la cuenta: ya no acepta más consumos">🔒 Cerrar cuenta</button>
+          <button class="btn btn-secondary admin-only" onclick="reabrirCuentaPacienteFront()" title="Reabrir cuenta cerrada">🔓 Reabrir</button>
         </div>
       </div>
     </div>
@@ -6365,7 +6367,7 @@ function verDetalleHab(idHabitacion) {
       ` : ''}
       ${puedeGestionar ? `
         <button class="btn btn-secondary btn-sm" onclick="openModalMover('${hosp.id}','${hosp.nombrePaciente}','${h.idHabitacion}')">↔ Mover</button>
-        <button class="btn btn-accent btn-sm" onclick="openModalEgresar('${hosp.id}','${hosp.nombrePaciente}')">↗ Egresar</button>
+        <button class="btn btn-accent btn-sm" onclick="openModalEgresar('${hosp.id}','${escJs(hosp.nombrePaciente)}','${escJs(hosp.idPaciente || '')}')">↗ Egresar</button>
       ` : ''}
       <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
     </div>
@@ -6627,9 +6629,9 @@ function irARecepcionDesdeIngreso() {
 }
 
 // MODAL: Egresar
-function openModalEgresar(idHosp, nombrePaciente) {
+function openModalEgresar(idHosp, nombrePaciente, idPaciente) {
   openModal('Egresar paciente', `
-    <form onsubmit="event.preventDefault();confirmarEgreso('${idHosp}')">
+    <form onsubmit="event.preventDefault();confirmarEgreso('${idHosp}','${escJs(idPaciente || '')}')">
       <div style="background:var(--bg);padding:14px;border-radius:8px;margin-bottom:16px;">
         <strong>Paciente:</strong> ${nombrePaciente}
       </div>
@@ -6646,7 +6648,7 @@ function openModalEgresar(idHosp, nombrePaciente) {
   `);
 }
 
-async function confirmarEgreso(idHosp) {
+async function confirmarEgreso(idHosp, idPaciente) {
   const data = {
     idHospitalizacion: idHosp,
     fechaEgreso: document.getElementById('eg_fecha').value,
@@ -6659,6 +6661,11 @@ async function confirmarEgreso(idHosp) {
     showToast('Paciente egresado');
     closeModal();
     loadHabitaciones();
+    // Al alta, ofrecer ir a cerrar la cuenta en cobro de caja
+    if (idPaciente && document.querySelector('.nav-item[data-page="cobro"]') &&
+        confirm('Paciente egresado. ¿Ir a Cobro de caja para cerrar su cuenta?')) {
+      irACobroPaciente(idPaciente);
+    }
   } else {
     showToast('Error: ' + resp.error, 'error');
   }
@@ -8138,6 +8145,28 @@ function escJs(s) {
  * Al elegir un paciente, trae TODA su información de cobro:
  * datos personales, sus cirugías, y si ya tiene una cuenta empezada.
  */
+// F5: cerrar / reabrir la cuenta del paciente
+async function cerrarCuentaPacienteFront() {
+  const idPaciente = cjVal('cj_idPaciente');
+  if (!idPaciente) { showToast('Primero selecciona un paciente', 'error'); return; }
+  if (!confirm('¿Cerrar la cuenta de este paciente? Ya no se podrán agregar consumos (remisión) hasta reabrirla.')) return;
+  const resp = await apiPost('cerrarCuentaCobro', { idPaciente });
+  if (resp.ok) showToast('🔒 Cuenta cerrada'); else showToast('Error: ' + resp.error, 'error');
+}
+async function reabrirCuentaPacienteFront() {
+  const idPaciente = cjVal('cj_idPaciente');
+  if (!idPaciente) { showToast('Primero selecciona un paciente', 'error'); return; }
+  const resp = await apiPost('reabrirCuentaCobro', { idPaciente });
+  if (resp.ok) showToast('🔓 Cuenta reabierta'); else showToast('Error: ' + resp.error, 'error');
+}
+// F5: ir directo a Cobro de caja con el paciente cargado (desde el egreso)
+function irACobroPaciente(idPaciente) {
+  const nav = document.querySelector('.nav-item[data-page="cobro"]');
+  if (!nav || nav.style.display === 'none') { showToast('No tienes acceso a Cobro de caja', 'warn'); return; }
+  nav.click();
+  setTimeout(function () { seleccionarPacienteCobro(idPaciente); }, 200);
+}
+
 async function seleccionarPacienteCobro(idPaciente) {
   document.getElementById('cj_resultadosPaciente').style.display = 'none';
   const resp = await apiGet('getDatosPacienteParaCobro', { idPaciente });
@@ -8151,7 +8180,11 @@ async function seleccionarPacienteCobro(idPaciente) {
     cargarCobroEnFormulario(resp.cuentaExistente);
     pintarPacienteSeleccionado(resp.paciente);
     aplicarMaterialesRemision(resp.materialesRemision);
-    showToast('Cuenta de caja existente cargada para ' + resp.paciente.nombrePaciente);
+    if ((resp.cuentaExistente.estado || '').toUpperCase() === 'CERRADA') {
+      showToast('🔒 Cuenta CERRADA: no acepta más consumos (reábrela si necesitas ajustar)', 'warn');
+    } else {
+      showToast('Cuenta de caja existente cargada para ' + resp.paciente.nombrePaciente);
+    }
     return;
   }
 
