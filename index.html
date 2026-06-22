@@ -1086,6 +1086,7 @@ textarea { resize: vertical; min-height: 70px; }
             <option value="INSUMO">Insumos</option>
             <option value="OTROS">Otros</option>
           </select>
+          <select id="artFiltroUbicacion" onchange="loadArticulos()" style="font-size:13px;" title="Saldo por almacén"><option value="">Todos los almacenes</option></select>
           <input type="text" id="artBuscar" oninput="renderArticulos()" placeholder="Buscar…" style="font-size:13px;">
           <button class="btn btn-secondary btn-sm" onclick="loadArticulos()">↻ Actualizar</button>
           <button class="btn btn-primary btn-sm" data-accion="entrada_articulo" onclick="openModalEntradaArticulo()">↓ Entrada</button>
@@ -3616,10 +3617,22 @@ const CATEGORIA_COLOR = {
 function artEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function artRequiereLote(cat){ return cat === 'MEDICAMENTO' || cat === 'MEDICAMENTO_CONTROLADO'; }
 
+// Opciones <option> de almacenes (desde catálogos). selId = idUbicacion seleccionada.
+function ubicacionOpts(selId) {
+  return (catalogos.ubicaciones || []).map(u =>
+    `<option value="${u.idUbicacion}" ${u.idUbicacion === selId ? 'selected' : ''}>${artEsc(u.nombre)}</option>`).join('');
+}
+
 async function loadArticulos() {
   const cont = document.getElementById('articulosTable');
   if (cont) cont.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
-  const resp = await apiGet('getInventarioGeneral');
+  // Poblar el filtro de almacenes una sola vez
+  const selUbi = document.getElementById('artFiltroUbicacion');
+  if (selUbi && selUbi.options.length <= 1 && (catalogos.ubicaciones || []).length) {
+    selUbi.innerHTML = '<option value="">Todos los almacenes</option>' + ubicacionOpts('');
+  }
+  const ubicacion = selUbi ? selUbi.value : '';
+  const resp = await apiGet('getInventarioGeneral', { ubicacion });
   cache.articulos = (resp && resp.ok) ? (resp.data || []) : [];
   renderArticulos();
 }
@@ -3776,6 +3789,7 @@ function openModalEntradaArticulo(idArticulo) {
       <div class="form-grid">
         <div><label>Fecha de entrada</label><input type="date" id="ea_fecha" value="${todayISO()}" required></div>
         <div><label>Artículo *</label><select id="ea_art" required onchange="artEntradaToggle()"><option value="">— Seleccionar —</option>${opts}</select></div>
+        <div><label>Almacén destino *</label><select id="ea_ubicacion" required>${ubicacionOpts('ALM_GENERAL')}</select></div>
         <div><label>Cantidad recibida *</label><input type="number" id="ea_cantidad" step="any" min="0" placeholder="Ej: 12" required></div>
         <div><label>Proveedor</label><input type="text" id="ea_proveedor"></div>
         <div class="full"><label>Referencia (orden de compra)</label><input type="text" id="ea_ref"></div>
@@ -3827,6 +3841,7 @@ async function submitEntradaArticulo() {
     idArticulo: id, nombreArticulo: art.nombre,
     cantidad: cantidad, unidad: art.unidad,
     loteFabricante: lote.trim(), fechaCaducidad: cad, folioReceta: receta.trim(),
+    ubicacion: (document.getElementById('ea_ubicacion')||{}).value || 'ALM_GENERAL',
     proveedor: document.getElementById('ea_proveedor').value,
     referencia: document.getElementById('ea_ref').value,
     observaciones: document.getElementById('ea_obs').value,
@@ -3850,6 +3865,7 @@ function openModalMovimientoArticulo(idArticulo, tipo) {
       </div>
       <div class="form-grid">
         <div><label>Fecha</label><input type="date" id="mv_fecha" value="${todayISO()}" required></div>
+        <div><label>Almacén *</label><select id="mv_ubicacion" required>${ubicacionOpts('ALM_GENERAL')}</select></div>
         <div><label>Cantidad *</label><input type="number" id="mv_cantidad" step="any" placeholder="${esAjuste?'Ej: -2':'Ej: 3'}" required></div>
         <div class="full"><label>Motivo / observaciones</label><input type="text" id="mv_obs" placeholder="${esAjuste?'Conteo físico, merma, corrección…':'Uso interno, traslado…'}"></div>
       </div>
@@ -3868,6 +3884,7 @@ async function submitMovimientoArticulo(idArticulo, tipo) {
   const data = {
     tipo: tipo, idArticulo: idArticulo, unidad: art ? art.unidad : '',
     cantidad: cantidad, fecha: document.getElementById('mv_fecha').value,
+    ubicacion: (document.getElementById('mv_ubicacion')||{}).value || 'ALM_GENERAL',
     observaciones: document.getElementById('mv_obs').value,
     capturadoPor: currentUser.nombre
   };

@@ -48,6 +48,7 @@ var SHEETS = {
   ORDENES_COMPRA: 'Ordenes_Compra',
   OC_ITEMS: 'OC_Items',
   PRECIOS_COMPRA: 'Precios_Compra',
+  UBICACIONES: 'CAT_Ubicaciones',
   CONSULTAS: 'Consultas',
   RECIBOS: 'Recibos',
   BENEFICIARIOS: 'CAT_Beneficiarios',
@@ -171,8 +172,9 @@ function doGet(e) {
       case 'getConsumosPorCirugia': result = getConsumosPorCirugia(e.parameter.folioCirugia); break;
       case 'getLibro':     result = getLibro(e.parameter.desde, e.parameter.hasta); break;
       case 'getInventario':result = getInventario(); break;
-      case 'getInventarioGeneral': result = getInventarioGeneral(e.parameter.categoria); break;
+      case 'getInventarioGeneral': result = getInventarioGeneral(e.parameter.categoria, e.parameter.ubicacion); break;
       case 'getArticulos': result = getArticulos(e.parameter.categoria); break;
+      case 'getUbicaciones': result = getUbicaciones(); break;
       case 'getProveedores': result = getProveedores(); break;
       case 'getOrdenesCompra': result = getOrdenesCompra(e.parameter.estado, e.parameter.desde, e.parameter.hasta); break;
       case 'getOrdenCompra': result = getOrdenCompra(e.parameter.folioOC); break;
@@ -434,12 +436,14 @@ function getCatalogos() {
   ensureSheetConHeaders_(SHEETS.MEDICOS_CONSULTA, MEDICOS_CONSULTA_HEADERS); // médicos de consulta externa
   ensureArticulosSheet_(); // catálogo único de inventario general
   ensureComprasSheets_();  // proveedores y órdenes de compra
+  ensureUbicacionesSheet_(); // almacenes (multi-ubicación) + columnas Ubicacion
   return {
     ok: true,
     medicamentos: sheetToObjects(SHEETS.MEDICAMENTOS).filter(function(m){return esActivo(m.Activo);}),
     articulos:    sheetToObjects(SHEETS.ARTICULOS).filter(function(a){return esActivo(a.Activo);}),
     proveedores:  sheetToObjects(SHEETS.PROVEEDORES).filter(function(p){return esActivo(p.Activo);}),
     precios:      sheetToObjects(SHEETS.PRECIOS_COMPRA),
+    ubicaciones:  getUbicaciones().data,
     medicos:      sheetToObjects(SHEETS.MEDICOS).filter(function(m){return esActivo(m.Activo);}),
     medicosConsulta: sheetToObjects(SHEETS.MEDICOS_CONSULTA).filter(function(m){return esActivo(m.Activo);}),
     quirofanos:   sheetToObjects(SHEETS.QUIROFANOS).filter(function(q){return esActivo(q.Activo);}),
@@ -1310,18 +1314,85 @@ function cancelarConsumo(d) {
 // INVENTARIO
 // ============================================================
 
-function calcularSaldo(idMedicamento) {
+/**
+ * Saldo de un artículo. Si se pasa `ubicacion`, devuelve el saldo SOLO de
+ * ese almacén; si no, el saldo global (suma de todas las ubicaciones).
+ * Los movimientos antiguos sin Ubicacion se consideran del Almacén General.
+ */
+function calcularSaldo(idMedicamento, ubicacion) {
   var movs = sheetToObjects(SHEETS.INV_MOV);
   var saldo = 0;
   for (var i = 0; i < movs.length; i++) {
     var m = movs[i];
     if (m.ID_Medicamento !== idMedicamento) continue;
+    if (ubicacion) {
+      var u = m.Ubicacion || UBICACION_DEFAULT;
+      if (u !== ubicacion) continue;
+    }
     var qty = parseFloat(m.Cantidad) || 0;
     if (m.Tipo === 'ENTRADA') saldo += qty;
     else if (m.Tipo === 'SALIDA') saldo -= qty;
     else if (m.Tipo === 'AJUSTE') saldo += qty; // los ajustes pueden ser positivos o negativos
   }
   return saldo;
+}
+
+// ============================================================
+// UBICACIONES / ALMACENES (multi-almacén)
+// ------------------------------------------------------------
+// El stock pasa a ser por (artículo, ubicación). Cada movimiento de
+// Inventario_Mov y cada caja/lote guardan su Ubicacion. Los datos previos
+// (sin Ubicacion) se asumen en el Almacén General.
+// ============================================================
+var UBICACIONES_HEADERS = ['ID_Ubicacion', 'Nombre', 'Tipo', 'Activo', 'Orden'];
+var UBICACION_DEFAULT = 'ALM_GENERAL';
+var UBICACIONES_SEED = [
+  ['ALM_GENERAL', 'Almacén General', 'ALMACEN', 'SI', 1],
+  ['CEYE', 'CEyE', 'ALMACEN', 'SI', 2],
+  ['PISO', 'Piso', 'PISO', 'SI', 3],
+  ['CARRO_1', 'Carro Rojo 1', 'CARRO', 'SI', 4],
+  ['CARRO_2', 'Carro Rojo 2', 'CARRO', 'SI', 5],
+  ['CARRO_3', 'Carro Rojo 3', 'CARRO', 'SI', 6],
+  ['CARRO_4', 'Carro Rojo 4', 'CARRO', 'SI', 7]
+];
+
+/** Crea la hoja de ubicaciones y la siembra con los 7 almacenes si está vacía. */
+function ensureUbicacionesSheet_() {
+  var sh = ensureSheetConHeaders_(SHEETS.UBICACIONES, UBICACIONES_HEADERS);
+  if (sh.getLastRow() < 2) {
+    sh.getRange(2, 1, UBICACIONES_SEED.length, UBICACIONES_HEADERS.length).setValues(UBICACIONES_SEED);
+  }
+  // Asegurar columna Ubicacion en las hojas de stock
+  ensureHeaders_(SHEETS.INV_MOV, ['Ubicacion']);
+  ensureHeaders_(SHEETS.LOTES, ['Ubicacion']);
+  return sh;
+}
+
+function getUbicaciones() {
+  ensureUbicacionesSheet_();
+  var data = sheetToObjects(SHEETS.UBICACIONES)
+    .filter(function(u){ return esActivo(u.Activo); })
+    .map(function(u){ return { idUbicacion: u.ID_Ubicacion, nombre: u.Nombre, tipo: u.Tipo, orden: parseFloat(u.Orden) || 99 }; });
+  data.sort(function(a, b){ return a.orden - b.orden; });
+  return { ok: true, data: data };
+}
+
+/**
+ * Agrega un movimiento a Inventario_Mov (positional) y fija su Ubicacion
+ * por nombre de encabezado, de forma robusta al número/orden de columnas.
+ */
+function appendInvMov_(valores, ubicacion) {
+  var sh = getSheet(SHEETS.INV_MOV);
+  sh.appendRow(valores);
+  var fila = sh.getLastRow();
+  var headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  var c = headers.indexOf('Ubicacion');
+  if (c === -1) {
+    c = sh.getLastColumn();
+    sh.getRange(1, c + 1).setValue('Ubicacion');
+  }
+  sh.getRange(fila, c + 1).setValue(ubicacion || UBICACION_DEFAULT);
+  return fila;
 }
 
 function getInventario() {
@@ -1456,6 +1527,7 @@ function getLotes(estado, idMedicamento) {
       proveedor: l.Proveedor,
       referencia: l.Referencia,
       fechaEntrada: dateOnly(l.Fecha_Entrada),
+      ubicacion: l.Ubicacion || UBICACION_DEFAULT,
       caducada: caduca && caduca < hoy
     };
   });
@@ -1745,16 +1817,18 @@ function getArticuloRaw_(idArticulo) {
 
 /**
  * Inventario de TODOS los artículos activos con su saldo, mínimo y
- * bandera de alerta. Acepta filtro opcional por categoría.
+ * bandera de alerta. Acepta filtro opcional por categoría y por ubicación.
  * @param {string} categoria - opcional: INSUMO|MEDICAMENTO|MEDICAMENTO_CONTROLADO|OTROS
+ * @param {string} ubicacion - opcional: si se pasa, el saldo es solo de ese almacén
  */
-function getInventarioGeneral(categoria) {
+function getInventarioGeneral(categoria, ubicacion) {
   ensureArticulosSheet_();
   var filtro = categoria ? normCategoria_(categoria) : null;
+  var ubi = (ubicacion && String(ubicacion).trim()) ? String(ubicacion).trim() : null;
   var arts = sheetToObjects(SHEETS.ARTICULOS).filter(function(a){ return esActivo(a.Activo); });
   var data = arts.map(function(a){
     var cat = normCategoria_(a.Categoria);
-    var saldo = calcularSaldo(a.ID_Articulo);
+    var saldo = calcularSaldo(a.ID_Articulo, ubi);
     var minimo = parseFloat(a.Stock_Minimo) || 0;
     return {
       idArticulo: a.ID_Articulo,
@@ -1769,12 +1843,13 @@ function getInventarioGeneral(categoria) {
       requiereLote: categoriaRequiereLote_(cat),
       saldo: saldo,
       minimo: minimo,
-      alerta: saldo <= minimo
+      alerta: saldo <= minimo,
+      ubicacion: ubi || 'TODAS'
     };
   });
   if (filtro) data = data.filter(function(a){ return a.categoria === filtro; });
   data.sort(function(a, b){ return String(a.nombre || '').localeCompare(String(b.nombre || '')); });
-  return { ok: true, data: data };
+  return { ok: true, data: data, ubicacion: ubi || 'TODAS' };
 }
 
 /** Catálogo de artículos (para selects del frontend). Filtro opcional por categoría. */
@@ -1879,6 +1954,7 @@ function entradaArticuloEscribir_(art, cantidad, d) {
   var unidad = d.unidad || art.Unidad || '';
   var nombre = art.Nombre || d.nombreArticulo || '';
   var fechaEntrada = d.fecha || todayStr();
+  var ubicacion = d.ubicacion || UBICACION_DEFAULT;
   var idLote = '';
 
   if (requiereLote) {
@@ -1898,12 +1974,13 @@ function entradaArticuloEscribir_(art, cantidad, d) {
       'Proveedor': d.proveedor || '',
       'Referencia': d.referencia || '',
       'Fecha_Entrada': fechaEntrada,
+      'Ubicacion': ubicacion,
       'Capturado_Por': d.capturadoPor || '',
       'Timestamp_Captura': nowTs()
     });
   }
 
-  getSheet(SHEETS.INV_MOV).appendRow([
+  appendInvMov_([
     'MOV-' + new Date().getTime() + '-' + Math.floor(num_(d._seq)),
     fechaEntrada,
     'ENTRADA',
@@ -1919,9 +1996,9 @@ function entradaArticuloEscribir_(art, cantidad, d) {
     nowTs(),
     d.observaciones || '',
     idLote
-  ]);
+  ], ubicacion);
 
-  return { idLote: idLote };
+  return { idLote: idLote, ubicacion: ubicacion };
 }
 
 /** Convierte a número (0 si no aplica). Para sufijos de ID únicos en lote. */
@@ -1996,7 +2073,8 @@ function registrarMovimientoArticulo(d) {
     // SALIDA se registra como cantidad positiva con Tipo SALIDA (calcularSaldo resta).
     // AJUSTE conserva el signo capturado.
     var qty = tipo === 'SALIDA' ? Math.abs(cantidad) : cantidad;
-    getSheet(SHEETS.INV_MOV).appendRow([
+    var ubicacion = d.ubicacion || UBICACION_DEFAULT;
+    appendInvMov_([
       'MOV-' + new Date().getTime(),
       d.fecha || todayStr(),
       tipo,
@@ -2010,8 +2088,8 @@ function registrarMovimientoArticulo(d) {
       nowTs(),
       d.observaciones || '',
       ''
-    ]);
-    return { ok: true, saldoNuevo: calcularSaldo(d.idArticulo) };
+    ], ubicacion);
+    return { ok: true, saldoNuevo: calcularSaldo(d.idArticulo, ubicacion), saldoGlobal: calcularSaldo(d.idArticulo) };
   } finally {
     lock.releaseLock();
   }
