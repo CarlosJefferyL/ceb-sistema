@@ -5115,6 +5115,7 @@ async function guardarNuevaConsulta(imprimir) {
     const edad = document.getElementById('nc_nuevo_edad').value || calcEdadDesdeISO(fnac);
     const alta = await apiPost('altaPaciente', {
       contexto: 'recepcion',
+      origen: 'CONSULTA_EXTERNA',
       servicio: 'CONSULTA EXTERNA',
       nombre: nombre,
       fechaNacimiento: fnac,
@@ -6155,22 +6156,26 @@ async function confirmarEgreso(idHosp) {
 // MODAL: Mover paciente
 function openModalMover(idHosp, nombrePaciente, idHabActual) {
   const habs = (cacheHabitaciones && cacheHabitaciones.habitaciones) || [];
-  const habsDisponibles = habs.filter(h => !h.ocupada && h.idHabitacion !== idHabActual);
-  if (habsDisponibles.length === 0) {
-    showToast('No hay habitaciones disponibles para mover', 'warn');
+  const tipoLbl = (t) => t === 'PRIVADA' ? 'Privada' : t === 'SALA_GENERAL' ? 'Sala Gral.' : 'Urgencias';
+  const candidatas = habs.filter(h => h.idHabitacion !== idHabActual);
+  if (candidatas.length === 0) {
+    showToast('No hay otras habitaciones para mover', 'warn');
     return;
   }
-  const habsOpts = habsDisponibles.map(h => {
-    const tipoLbl = h.tipo === 'PRIVADA' ? 'Privada' : h.tipo === 'SALA_GENERAL' ? 'Sala Gral.' : 'Urgencias';
-    return `<option value="${h.idHabitacion}">${tipoLbl} ${h.numero}</option>`;
-  }).join('');
+  const libres = candidatas.filter(h => !h.ocupada);
+  const ocupadas = candidatas.filter(h => h.ocupada);
+  const optLibres = libres.map(h => `<option value="${h.idHabitacion}">${tipoLbl(h.tipo)} ${h.numero}</option>`).join('');
+  const optOcup = ocupadas.map(h => `<option value="${h.idHabitacion}">${tipoLbl(h.tipo)} ${h.numero} — ocupada por ${(h.hospitalizacion && h.hospitalizacion.nombrePaciente) || 'paciente'}</option>`).join('');
+  const habsOpts = (optLibres ? `<optgroup label="Disponibles">${optLibres}</optgroup>` : '') +
+                   (optOcup ? `<optgroup label="Ocupadas (se intercambian las camas)">${optOcup}</optgroup>` : '');
   openModal('Mover paciente', `
     <form onsubmit="event.preventDefault();confirmarMover('${idHosp}')">
       <div style="background:var(--bg);padding:14px;border-radius:8px;margin-bottom:16px;">
         <strong>Paciente:</strong> ${nombrePaciente}
       </div>
       <div class="form-grid">
-        <div class="full"><label>Nueva habitación</label><select id="mv_habitacion" required><option value="">—</option>${habsOpts}</select></div>
+        <div class="full"><label>Nueva habitación</label><select id="mv_habitacion" required><option value="">—</option>${habsOpts}</select>
+          <small style="color:var(--text-muted);font-size:11px;">Si eliges una habitación ocupada, se intercambiarán los pacientes entre las dos camas.</small></div>
         <div class="full"><label>Motivo del cambio (obligatorio)</label><textarea id="mv_motivo" placeholder="Ej: Solicitud familiar, mejora de comodidad, alta de UCI" required minlength="5"></textarea></div>
       </div>
       <div class="form-actions">
@@ -6187,20 +6192,33 @@ async function confirmarMover(idHosp) {
     showToast('Motivo muy corto (mínimo 5 caracteres)', 'error');
     return;
   }
-  const data = {
-    idHospitalizacion: idHosp,
-    idHabitacionNueva: document.getElementById('mv_habitacion').value,
-    motivo,
-    capturadoPor: currentUser.nombre
-  };
+  const idHabitacionNueva = document.getElementById('mv_habitacion').value;
+  if (!idHabitacionNueva) { showToast('Selecciona una habitación', 'error'); return; }
+  await ejecutarMover(idHosp, idHabitacionNueva, motivo, false);
+}
+
+// Ejecuta el movimiento. Si el destino está ocupado, el backend pide
+// confirmación de intercambio (requiereIntercambio) y reintentamos con
+// confirmarIntercambio:true tras confirmar con el usuario.
+async function ejecutarMover(idHosp, idHabitacionNueva, motivo, confirmarIntercambio) {
+  const data = { idHospitalizacion: idHosp, idHabitacionNueva, motivo, capturadoPor: currentUser.nombre };
+  if (confirmarIntercambio) data.confirmarIntercambio = true;
   const resp = await apiPost('moverPaciente', data);
   if (resp.ok) {
-    showToast(`Movido de ${resp.habitacionAnterior} a ${resp.habitacionNueva}`);
+    showToast(resp.intercambio
+      ? `Intercambio realizado: ${resp.habitacionAnterior} ⇄ ${resp.habitacionNueva}`
+      : `Movido de ${resp.habitacionAnterior} a ${resp.habitacionNueva}`);
     closeModal();
     loadHabitaciones();
-  } else {
-    showToast('Error: ' + resp.error, 'error');
+    return;
   }
+  if (resp.requiereIntercambio) {
+    if (confirm(resp.error + '\n\n¿Confirmar el intercambio de camas?')) {
+      await ejecutarMover(idHosp, idHabitacionNueva, motivo, true);
+    }
+    return;
+  }
+  showToast('Error: ' + resp.error, 'error');
 }
 
 // ============================================================

@@ -2794,6 +2794,12 @@ function altaPaciente(d) {
   if (!d.nombre || !String(d.nombre).trim()) {
     return { ok: false, error: 'Nombre completo es obligatorio' };
   }
+  // CURP obligatorio salvo en consulta externa (datos más simples) o
+  // paciente extranjero (no cuenta con CURP).
+  var exentoCurp = (d.origen === 'CONSULTA_EXTERNA') || esVerdadero(d.esExtranjero);
+  if (!exentoCurp && (!d.curp || !String(d.curp).trim())) {
+    return { ok: false, error: 'El CURP es obligatorio para dar de alta al paciente (o marca al paciente como extranjero)' };
+  }
   if (d.curp && !validarCURP(d.curp)) {
     return { ok: false, error: 'CURP inválido (debe tener 18 caracteres alfanuméricos)' };
   }
