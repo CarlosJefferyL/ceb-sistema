@@ -4826,20 +4826,40 @@ async function loadCatalogosPage() {
 // ============================================================
 // MODALES
 // ============================================================
+// Bandera de "datos sin guardar" del modal abierto. Solo se marca true ante
+// interacción REAL del usuario (eventos input/change); los rellenados
+// programáticos por .value=... no disparan estos eventos, así que abrir un
+// modal a editar y solo mirarlo no cuenta como captura.
+var modalSucio = false;
+
 function openModal(title, content) {
+  modalSucio = false;
   document.getElementById('modalContainer').innerHTML = `
-    <div class="modal-overlay active" onclick="if(event.target===this)closeModal()">
+    <div class="modal-overlay active" oninput="modalSucio=true" onchange="modalSucio=true" onclick="if(event.target===this)intentarCerrarModal()">
       <div class="modal">
         <div class="modal-header">
           <h2>${title}</h2>
-          <button class="modal-close" onclick="closeModal()">×</button>
+          <button class="modal-close" onclick="intentarCerrarModal()">×</button>
         </div>
         ${content}
       </div>
     </div>
   `;
 }
-function closeModal() { document.getElementById('modalContainer').innerHTML = ''; }
+
+// Cierre "seguro": si el usuario capturó datos sin guardar, confirma antes de
+// descartar. Lo usan el clic en el fondo (backdrop) y el botón ×, que son las
+// vías de cierre accidental que borraban toda la captura del alta de paciente.
+function intentarCerrarModal() {
+  if (modalSucio && !confirm('Hay datos capturados que no se han guardado.\n¿Cerrar y perder lo capturado?')) {
+    return;
+  }
+  closeModal();
+}
+
+// Cierre directo (sin preguntar). Lo invocan el guardado exitoso y las
+// transiciones programáticas entre modales, donde no hay nada que perder.
+function closeModal() { modalSucio = false; document.getElementById('modalContainer').innerHTML = ''; }
 
 // MODAL: NUEVA CIRUGÍA - Redirige a "Programar cirugía"
 // El modal completo vive en la sección de Programación arriba.

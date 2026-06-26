@@ -10,3 +10,7 @@ Codigo.js
 # Node / herramientas
 node_modules/
 npm-debug.log*
+
+# Basura de Google Drive (la carpeta vive en G:\Mi unidad\)
+desktop.ini
+**/desktop.ini
