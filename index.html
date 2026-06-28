@@ -5320,8 +5320,9 @@ async function loadUrgencias() {
   renderUrgencias();
 }
 
-// Render genérico para ambos tipos
-function renderListaConsultas(lista, searchValue, contId) {
+// Render genérico para ambos tipos. Si origenRemision viene (ej. 'URGENCIAS'),
+// y el usuario tiene permiso, agrega una columna con botón de remisión por fila.
+function renderListaConsultas(lista, searchValue, contId, origenRemision) {
   let rows = lista.slice();
   const search = (searchValue || '').toLowerCase();
   if (search) {
@@ -5330,6 +5331,7 @@ function renderListaConsultas(lista, searchValue, contId) {
       (c.Nombre_Medico||'').toLowerCase().includes(search)
     );
   }
+  const conAcc = !!origenRemision && puede('registrar_consumo');
   const html = rows.map(c => `
     <tr>
       <td>${c.Folio||'—'}</td>
@@ -5339,10 +5341,11 @@ function renderListaConsultas(lista, searchValue, contId) {
       <td>${c.Motivo||'—'}</td>
       <td>${c.Indicaciones||'—'}</td>
       <td><small>${c.Capturado_Por||'—'}</small></td>
+      ${conAcc ? `<td>${c.ID_Paciente ? `<button class="btn btn-accent btn-sm" onclick="openModalRemision('${escJs(c.ID_Paciente)}','${escJs(c.Nombre_Paciente)}','${origenRemision}','')">🧾 Remisión</button>` : '<small style="color:var(--text-muted);">sin paciente</small>'}</td>` : ''}
     </tr>
   `).join('');
   document.getElementById(contId).innerHTML = rows.length
-    ? `<table><thead><tr><th>Folio</th><th>Fecha</th><th>Paciente</th><th>Médico</th><th>Motivo</th><th>Indicaciones</th><th>Capturó</th></tr></thead><tbody>${html}</tbody></table>`
+    ? `<table><thead><tr><th>Folio</th><th>Fecha</th><th>Paciente</th><th>Médico</th><th>Motivo</th><th>Indicaciones</th><th>Capturó</th>${conAcc ? '<th>Acciones</th>' : ''}</tr></thead><tbody>${html}</tbody></table>`
     : '<div class="empty-state"><div class="icon">🩺</div>Sin registros</div>';
 }
 
@@ -5351,7 +5354,7 @@ function renderConsultas() {
 }
 
 function renderUrgencias() {
-  renderListaConsultas(cache.urgencias, document.getElementById('searchUrgencias').value, 'urgenciasTable');
+  renderListaConsultas(cache.urgencias, document.getElementById('searchUrgencias').value, 'urgenciasTable', 'URGENCIAS');
 }
 
 /**
