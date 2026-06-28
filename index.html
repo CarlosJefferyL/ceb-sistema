@@ -4464,6 +4464,7 @@ let remisionCart = [];
 let remisionCtx = { idPaciente: '', nombrePaciente: '', origen: 'QUIROFANO', folioCirugia: '' };
 let remisionLotesArt = [];
 let remisionBuscarTimer = null;
+let remisionActivos = [];
 
 // Precio de venta cliente = compra más reciente × 2 (mismo criterio que el backend)
 function precioVentaCli(idArticulo) {
@@ -4474,20 +4475,45 @@ function precioVentaCli(idArticulo) {
 }
 
 function openModalNuevaRemision() {
+  remisionActivos = [];
   openModal('Nueva remisión · elegir paciente', `
     <div class="form-grid"><div class="full">
       <label>Buscar paciente (nombre, CURP o folio)</label>
-      <input type="search" id="rm_buscar" oninput="remisionBuscarPaciente()" placeholder="Mín. 2 letras" autocomplete="off">
-      <div id="rm_resultados" style="display:none;max-height:240px;overflow:auto;border:1px solid var(--border);border-radius:8px;margin-top:6px;"></div>
+      <input type="search" id="rm_buscar" oninput="remisionBuscarPaciente()" placeholder="Mín. 2 letras — o elige de la lista" autocomplete="off">
+      <div id="rm_resultados" style="max-height:300px;overflow:auto;border:1px solid var(--border);border-radius:8px;margin-top:6px;"><div style="padding:10px;color:var(--text-muted);font-size:13px;">Cargando pacientes activos…</div></div>
     </div></div>
     <div class="form-actions"><button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button></div>
   `);
+  cargarRemisionActivos();
+}
+
+async function cargarRemisionActivos() {
+  const resp = await apiGet('getPacientesActivos');
+  remisionActivos = (resp && resp.ok) ? (resp.data || []) : [];
+  const buscar = document.getElementById('rm_buscar');
+  // Si el usuario ya empezó a buscar, no piso su búsqueda
+  if (buscar && (buscar.value || '').trim().length >= 2) return;
+  remisionRenderActivos();
+}
+
+function remisionRenderActivos() {
+  const cont = document.getElementById('rm_resultados');
+  if (!cont) return;
+  cont.innerHTML = remisionActivos.length
+    ? remisionActivos.map(p => `<div onclick="remisionElegirActivo('${escJs(p.idPaciente)}')" style="padding:9px 11px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px;"><b>${artEsc(p.nombrePaciente)}</b>${p.edad ? ` <small style="color:var(--text-muted);">· ${p.edad} años</small>` : ''}<br><small style="color:var(--teal);">${artEsc(p.ubicacionTexto)}</small></div>`).join('')
+    : '<div style="padding:10px;color:var(--text-muted);font-size:13px;">No hay pacientes activos ahora. Usa el buscador.</div>';
+}
+
+function remisionElegirActivo(idPaciente) {
+  const p = remisionActivos.find(x => String(x.idPaciente) === String(idPaciente));
+  if (!p) return;
+  openModalRemision(p.idPaciente, p.nombrePaciente, p.origen, p.folioCirugia);
 }
 
 function remisionBuscarPaciente() {
   const q = (document.getElementById('rm_buscar').value || '').trim();
   const cont = document.getElementById('rm_resultados');
-  if (q.length < 2) { cont.style.display = 'none'; return; }
+  if (q.length < 2) { remisionRenderActivos(); return; }
   clearTimeout(remisionBuscarTimer);
   remisionBuscarTimer = setTimeout(async () => {
     const resp = await apiGet('buscarPacientesCobro', { q });
