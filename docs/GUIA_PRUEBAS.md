@@ -50,6 +50,15 @@ Datos útiles que ya existen: artículo **FENODID** (med. controlado con saldo e
 15. [ ] (Controlados) Revisa el **Libro COFEPRIS**: el medicamento controlado consumido debe tener su asiento.
     - Resultado: ______________________________
 
+### 4.b Lista de pacientes activos y botones de remisión (F1)
+12.a [ ] **Consumos → 🧾 Nueva remisión**: al abrir, sin teclear, aparece la **lista de pacientes activos** (hospitalizados, cirugías de hoy, urgencias de hoy) con su etiqueta de ubicación. Un paciente que esté en varias (ej. cirugía hoy + cama) sale **una sola vez**.
+12.b [ ] Escribir ≥2 letras en el buscador filtra a **todos** los pacientes; **borrar** el campo regresa la lista de activos.
+12.c [ ] Elegir un paciente de **cirugía de hoy** desde la lista → el formulario abre con **origen QUIROFANO** y el **folio** precargado.
+12.d [ ] **Programación Q.X.** → detalle de una cirugía de hoy → botón **🧾 Nueva remisión** abre el formulario con ese paciente, origen Quirófano y folio.
+12.e [ ] **Urgencias** → cada fila con paciente tiene botón **🧾 Remisión** → abre con **origen URGENCIAS**. En **Consultas** normales no aparece la columna.
+12.f [ ] Registrar una remisión con origen URGENCIAS → en la hoja `Remision_Items` la columna **Origen** dice `URGENCIAS`, y el total cae en **Cobro de caja** (Materiales y medicamento).
+12.g [ ] Un rol **sin** permiso `registrar_consumo` no ve ninguno de estos botones.
+
 ## 5. Conciliación del BOM al cerrar cirugía (F4)
 16. [ ] En **Cirugías**, una cirugía activa con BOM: botón **🧾 Conciliar BOM**. Verifica que:
     - los **insumos del BOM** que existen en catálogo se **pre-cargan** con la cantidad entregada,
