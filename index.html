@@ -2252,6 +2252,11 @@ async function verDetalleProgramacion(folio) {
       }
     }
 
+    // Remisión directa (consumos a la cuenta del paciente) desde la cirugía
+    if (puede('registrar_consumo') && c.ID_Paciente) {
+      acciones += `<button class="btn btn-accent btn-sm" onclick="closeModal();openModalRemision('${escJs(c.ID_Paciente)}','${escJs(c.Nombre_Paciente)}','QUIROFANO','${escJs(folio)}')">🧾 Nueva remisión</button> `;
+    }
+
     // ¿La cirugía tiene paciente registrado del catálogo?
     const tienePacienteRegistrado = !!(c.ID_Paciente && String(c.ID_Paciente).trim());
 
