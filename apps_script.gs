@@ -203,6 +203,7 @@ function doGet(e) {
       case 'getBeneficiariosAdmin': result = getBeneficiariosAdmin(); break;
       case 'buscarPacientesCobro': result = buscarPacientesCobro(e.parameter.q); break;
       case 'getDatosPacienteParaCobro': result = getDatosPacienteParaCobro(e.parameter.idPaciente); break;
+      case 'getPacientesActivos': result = getPacientesActivos(); break;
       case 'getIngresos':    result = getIngresos(e.parameter.desde, e.parameter.hasta); break;
       case 'getBOM':         result = getBOM(e.parameter.folioCirugia); break;
       case 'getBOMPendientes': result = getBOMPendientes(); break;
@@ -2305,6 +2306,75 @@ function mergeActivos_() {
            String(a.nombrePaciente).localeCompare(String(b.nombrePaciente));
   });
   return out;
+}
+
+/**
+ * Pacientes "activos ahora" para la lista rápida de remisión:
+ * hospitalizados (PISO), cirugías de HOY (QUIROFANO) y urgencias de HOY (URGENCIAS).
+ * Deduplicados por ID_Paciente vía mergeActivos_.
+ */
+function getPacientesActivos() {
+  var hoy = todayStr();
+  var tz = getConfig('ZonaHoraria') || 'America/Chihuahua';
+  function dStr(d) {
+    if (!d) return '';
+    if (d instanceof Date) return Utilities.formatDate(d, tz, 'yyyy-MM-dd');
+    return String(d).substring(0, 10);
+  }
+
+  // 1) Hospitalizados (cuartos ocupados) -> PISO
+  var hospArr = [];
+  try {
+    var tablero = getTableroHabitaciones();
+    (tablero.habitaciones || []).forEach(function(h) {
+      if (h.ocupada && h.hospitalizacion && h.hospitalizacion.idPaciente) {
+        hospArr.push({
+          idPaciente: String(h.hospitalizacion.idPaciente),
+          nombrePaciente: h.hospitalizacion.nombrePaciente || '',
+          edad: h.hospitalizacion.edadPaciente || '',
+          origen: 'PISO',
+          folioCirugia: '',
+          ubicacionTexto: 'Hab. ' + (h.numero || '?')
+        });
+      }
+    });
+  } catch (err) {}
+
+  // 2) Cirugías de hoy -> QUIROFANO
+  var cxArr = [];
+  try {
+    sheetToObjects(SHEETS.CIRUGIAS).forEach(function(r) {
+      if (dStr(r.Fecha_Programada) === hoy && r.Estado !== 'CANCELADA' && r.ID_Paciente) {
+        cxArr.push({
+          idPaciente: String(r.ID_Paciente),
+          nombrePaciente: r.Nombre_Paciente || '',
+          edad: r.Edad_Paciente || '',
+          origen: 'QUIROFANO',
+          folioCirugia: r.Folio_Cirugia || '',
+          ubicacionTexto: 'Q.X. · ' + (r.Tipo_Cirugia || '')
+        });
+      }
+    });
+  } catch (err) {}
+
+  // 3) Urgencias de hoy -> URGENCIAS
+  var urgArr = [];
+  try {
+    sheetToObjects(SHEETS.CONSULTAS).forEach(function(r) {
+      if (String(r.Tipo).toUpperCase() === 'URGENCIA' && dStr(r.Fecha) === hoy && r.ID_Paciente) {
+        urgArr.push({
+          idPaciente: String(r.ID_Paciente),
+          nombrePaciente: r.Nombre_Paciente || '',
+          edad: '',
+          origen: 'URGENCIAS',
+          folioCirugia: '',
+          ubicacionTexto: 'Urgencias'
+        });
+      }
+    });
+  } catch (err) {}
+
+  return { ok: true, data: mergeActivos_(cxArr, hospArr, urgArr) };
 }
 
 /**
