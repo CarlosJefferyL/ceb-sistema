@@ -4543,7 +4543,7 @@ function openModalRemision(idPaciente, nombre, origen, folioCirugia, opts) {
     <div style="background:var(--teal-light);padding:8px 12px;border-radius:8px;margin-bottom:10px;font-size:12px;color:var(--navy);">${intro}</div>
     ${opts.bomInfoHtml || ''}
     <div class="form-grid">
-      <div><label>Origen</label><select id="rm_origen"><option value="QUIROFANO" ${origen !== 'PISO' ? 'selected' : ''}>Quirófano</option><option value="PISO" ${origen === 'PISO' ? 'selected' : ''}>Piso</option></select></div>
+      <div><label>Origen</label><select id="rm_origen"><option value="QUIROFANO" ${(!origen || origen === 'QUIROFANO') ? 'selected' : ''}>Quirófano</option><option value="PISO" ${origen === 'PISO' ? 'selected' : ''}>Piso</option><option value="URGENCIAS" ${origen === 'URGENCIAS' ? 'selected' : ''}>Urgencias</option></select></div>
       <div><label>Médico (para controlados)</label><select id="rm_medico"><option value="">— Opcional —</option>${medOpts}</select></div>
       <div class="full"><label>Artículo</label><select id="rm_art" onchange="remisionArtChange()"><option value="">— Seleccionar —</option>${opciones}</select></div>
       <div><label>Almacén</label><select id="rm_ubic" onchange="remisionRefreshLotes()">${ubicacionOpts('ALM_GENERAL')}</select></div>
