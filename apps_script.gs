@@ -2252,6 +2252,62 @@ function totalRemisionMateriales_(idPaciente) {
 }
 
 /**
+ * Une varias listas de pacientes activos y deduplica por idPaciente.
+ * El origen del paciente duplicado gana por prioridad QUIROFANO > PISO > URGENCIAS;
+ * las etiquetas de ubicación se concatenan. Función PURA (sin SpreadsheetApp).
+ * Cada entrada de entrada: {idPaciente, nombrePaciente, edad, origen, folioCirugia, ubicacionTexto}
+ */
+function mergeActivos_() {
+  var prioridad = { QUIROFANO: 3, PISO: 2, URGENCIAS: 1 };
+  var listas = Array.prototype.slice.call(arguments);
+  var porId = {};
+  listas.forEach(function(lista) {
+    (lista || []).forEach(function(e) {
+      var id = String(e.idPaciente || '');
+      if (!id) return;
+      if (!porId[id]) {
+        porId[id] = {
+          idPaciente: id,
+          nombrePaciente: e.nombrePaciente || '',
+          edad: e.edad || '',
+          origen: e.origen,
+          folioCirugia: e.folioCirugia || '',
+          ubicaciones: e.ubicacionTexto ? [e.ubicacionTexto] : []
+        };
+      } else {
+        var cur = porId[id];
+        if ((prioridad[e.origen] || 0) > (prioridad[cur.origen] || 0)) {
+          cur.origen = e.origen;
+          if (e.folioCirugia) cur.folioCirugia = e.folioCirugia;
+        }
+        if (!cur.folioCirugia && e.folioCirugia) cur.folioCirugia = e.folioCirugia;
+        if (!cur.nombrePaciente && e.nombrePaciente) cur.nombrePaciente = e.nombrePaciente;
+        if (!cur.edad && e.edad) cur.edad = e.edad;
+        if (e.ubicacionTexto && cur.ubicaciones.indexOf(e.ubicacionTexto) === -1) {
+          cur.ubicaciones.push(e.ubicacionTexto);
+        }
+      }
+    });
+  });
+  var out = Object.keys(porId).map(function(id) {
+    var e = porId[id];
+    return {
+      idPaciente: e.idPaciente,
+      nombrePaciente: e.nombrePaciente,
+      edad: e.edad,
+      origen: e.origen,
+      folioCirugia: e.folioCirugia,
+      ubicacionTexto: e.ubicaciones.join(' · ')
+    };
+  });
+  out.sort(function(a, b) {
+    return String(a.ubicacionTexto).localeCompare(String(b.ubicacionTexto)) ||
+           String(a.nombrePaciente).localeCompare(String(b.nombrePaciente));
+  });
+  return out;
+}
+
+/**
  * Registra en el BOM lo realmente usado (Cantidad_R) por código de artículo,
  * al conciliar el BOM con la remisión del cierre de cirugía.
  * d.folioCirugia, d.usos: [{ codigo, cantidad }]
