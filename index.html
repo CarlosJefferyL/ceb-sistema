@@ -2582,7 +2582,7 @@ function openModalProgramar() {
             <strong style="color:var(--navy);font-size:13px;">Paciente *</strong>
             <a href="#" onclick="event.preventDefault();irARecepcion()" style="font-size:11px;color:var(--teal);text-decoration:underline;">¿Paciente no registrado? Ir a Recepción →</a>
           </div>
-          <input type="text" id="cx_paciente_busqueda" placeholder="Buscar por nombre, folio o CURP (mín. 2 letras)..." autocomplete="off" oninput="buscarPacienteEnVivo()">
+          <input type="text" id="cx_paciente_busqueda" placeholder="Buscar por nombre, folio o CURP (solo pacientes en alta)..." autocomplete="off" oninput="buscarPacienteEnVivo()" onfocus="buscarPacienteEnVivo()">
           <input type="hidden" id="cx_paciente">
           <input type="hidden" id="cx_paciente_nombre">
           <div id="cx_paciente_resultados" style="display:none;background:white;border:1px solid var(--border);border-radius:8px;max-height:220px;overflow-y:auto;box-shadow:var(--shadow);margin-top:4px;position:relative;z-index:5;"></div>
@@ -2820,25 +2820,48 @@ function limpiarMedico(prefijoCampo) {
 // ============================================================
 // BÚSQUEDA INTELIGENTE DE PACIENTES
 // ============================================================
+/**
+ * Un paciente está "en alta" si sigue activo en el sistema. Se excluye el
+ * histórico: los que ya cerraron ciclo ('Atendido') y los 'Suspendido'.
+ * Los registros sin Estatus (datos legados) se tratan como en alta.
+ */
+function pacienteEnAlta(p) {
+  const est = String(p.Estatus || '').trim();
+  return est !== 'Atendido' && est !== 'Suspendido';
+}
+
 function buscarPacienteEnVivo() {
   const q = (document.getElementById('cx_paciente_busqueda').value || '').trim().toLowerCase();
   const cont = document.getElementById('cx_paciente_resultados');
-  if (q.length < 2) {
-    cont.style.display = 'none';
-    return;
-  }
-  // Filtrar pacientes activos
-  const resultados = catalogos.pacientes.filter(p => {
-    if (p.Estatus === 'Suspendido') return false;
-    const text = ((p.Nombre_Completo || '') + ' ' + (p.CURP || '') + ' ' + (p.Folio_Recepcion || '') + ' ' + (p.ID_Paciente || '')).toLowerCase();
-    return text.includes(q);
-  }).slice(0, 15);
+
+  // Solo pacientes en alta, ordenados alfabéticamente por nombre
+  const enAlta = catalogos.pacientes
+    .filter(pacienteEnAlta)
+    .sort((a, b) => (a.Nombre_Completo || '').localeCompare(b.Nombre_Completo || '', 'es', { sensitivity: 'base' }));
+
+  // Filtrado incremental desde la primera letra; con el campo vacío se muestra la lista completa
+  const resultados = (q.length === 0
+    ? enAlta
+    : enAlta.filter(p => {
+        const text = ((p.Nombre_Completo || '') + ' ' + (p.CURP || '') + ' ' + (p.Folio_Recepcion || '') + ' ' + (p.ID_Paciente || '')).toLowerCase();
+        return text.includes(q);
+      })
+  ).slice(0, 50);
 
   if (resultados.length === 0) {
     const nombreEscrito = (document.getElementById('cx_paciente_busqueda').value || '').trim();
+    // Sin texto y sin resultados: no hay nadie en alta. No ofrecer "paciente libre" aquí.
+    if (q.length === 0) {
+      cont.innerHTML =
+        '<div style="padding:14px;font-size:13px;text-align:center;color:var(--text-muted);">' +
+          'No hay pacientes en alta. Da de alta al paciente en Recepción.' +
+        '</div>';
+      cont.style.display = 'block';
+      return;
+    }
     cont.innerHTML =
       '<div style="padding:14px;font-size:13px;text-align:center;">' +
-        '<div style="color:var(--text-muted);margin-bottom:10px;">No hay pacientes registrados con ese nombre.</div>' +
+        '<div style="color:var(--text-muted);margin-bottom:10px;">No hay pacientes en alta con ese nombre.</div>' +
         '<button type="button" onclick="usarPacienteLibreDesdeBusqueda()" ' +
           'style="background:var(--teal);color:white;border:none;border-radius:6px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;width:100%;margin-bottom:8px;">' +
           'Programar cirugía con &quot;' + nombreEscrito.replace(/"/g,'&quot;') + '&quot; (paciente no registrado)' +
