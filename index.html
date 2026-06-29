@@ -1227,6 +1227,7 @@ textarea { resize: vertical; min-height: 70px; }
             <option value="TODOS">Todos</option>
           </select>
           <button class="btn btn-secondary btn-sm" onclick="loadPedidos()">↻ Actualizar</button>
+          <button class="btn btn-secondary btn-sm" data-accion="devolucion_material" onclick="openModalDevolucionPaciente()">↩ Devolución</button>
           <button class="btn btn-primary btn-sm" data-accion="crear_pedido" onclick="openModalNuevoPedido()">+ Nuevo pedido</button>
         </div>
       </div>
@@ -1793,7 +1794,8 @@ const PERMISOS = {
     'editar_plantilla_bom': ['ADMIN','ALMACEN','DIRECTOR_MEDICO'],
     'crear_pedido':         ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO'],
     'surtir_pedido':        ['ADMIN','ALMACEN','DIRECTOR_MEDICO'],
-    'cancelar_pedido':      ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','DIRECTOR_MEDICO']
+    'cancelar_pedido':      ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],
+    'devolucion_material':  ['ADMIN','ALMACEN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO']
   }
 };
 
@@ -2417,6 +2419,146 @@ async function confirmarSurtido() {
     loadPedidos();
   } else {
     showToast('Error: ' + ((resp && resp.error) || 'no se pudo surtir'), 'error');
+  }
+}
+
+// ============================================================
+// DEVOLUCIÓN DE MATERIAL CON ESCÁNER (reintegra + revierte cargo)
+// ============================================================
+let devolCtx = {};
+let devolItems = [];
+let devolActivos = [];
+let devolBuscarTimer = null;
+
+// 1) Elegir paciente
+function openModalDevolucionPaciente() {
+  devolActivos = [];
+  openModal('Devolución · elegir paciente', `
+    <div class="form-grid"><div class="full">
+      <label>Buscar paciente (nombre, CURP o folio)</label>
+      <input type="search" id="dv_buscar" oninput="devolBuscarPaciente()" placeholder="Mín. 2 letras — o elige de la lista" autocomplete="off">
+      <div id="dv_resultados" style="max-height:300px;overflow:auto;border:1px solid var(--border);border-radius:8px;margin-top:6px;"><div style="padding:10px;color:var(--text-muted);font-size:13px;">Cargando pacientes activos…</div></div>
+    </div></div>
+    <div class="form-actions"><button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button></div>
+  `);
+  cargarDevolActivos();
+}
+
+async function cargarDevolActivos() {
+  const resp = await apiGet('getPacientesActivos');
+  devolActivos = (resp && resp.ok) ? (resp.data || []) : [];
+  const buscar = document.getElementById('dv_buscar');
+  if (buscar && (buscar.value || '').trim().length >= 2) return;
+  devolRenderActivos();
+}
+
+function devolRenderActivos() {
+  const cont = document.getElementById('dv_resultados');
+  if (!cont) return;
+  cont.innerHTML = devolActivos.length
+    ? devolActivos.map(p => `<div onclick="devolElegirActivo('${escJs(p.idPaciente)}')" style="padding:9px 11px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px;"><b>${artEsc(p.nombrePaciente)}</b>${p.edad ? ` <small style="color:var(--text-muted);">· ${p.edad} años</small>` : ''}<br><small style="color:var(--teal);">${artEsc(p.ubicacionTexto)}</small></div>`).join('')
+    : '<div style="padding:10px;color:var(--text-muted);font-size:13px;">No hay pacientes activos ahora. Usa el buscador.</div>';
+}
+
+function devolBuscarPaciente() {
+  const q = (document.getElementById('dv_buscar').value || '').trim();
+  const cont = document.getElementById('dv_resultados');
+  if (q.length < 2) { devolRenderActivos(); return; }
+  clearTimeout(devolBuscarTimer);
+  devolBuscarTimer = setTimeout(async () => {
+    const resp = await apiGet('buscarPacientesCobro', { q });
+    const lista = (resp && resp.ok) ? (resp.resultados || []) : [];
+    cont.innerHTML = lista.length
+      ? lista.map(p => `<div onclick="devolElegirPaciente('${escJs(p.idPaciente)}','${escJs(p.nombrePaciente)}')" style="padding:9px 11px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px;"><b>${artEsc(p.nombrePaciente)}</b><br><small style="color:var(--text-muted);">${artEsc(p.idPaciente)}</small></div>`).join('')
+      : '<div style="padding:10px;color:var(--text-muted);font-size:13px;">Sin resultados.</div>';
+  }, 280);
+}
+
+function devolElegirActivo(idPaciente) {
+  const p = devolActivos.find(x => String(x.idPaciente) === String(idPaciente));
+  if (!p) return;
+  abrirDevolucionEscaner(p.idPaciente, p.nombrePaciente);
+}
+function devolElegirPaciente(idPaciente, nombre) { abrirDevolucionEscaner(idPaciente, nombre); }
+
+// 2) Escanear y confirmar devolución
+async function abrirDevolucionEscaner(idPaciente, nombre) {
+  const resp = await apiGet('getMaterialDevolverPaciente', { idPaciente: idPaciente });
+  if (!resp || !resp.ok) { showToast('No se pudo cargar el material del paciente', 'error'); return; }
+  const lista = resp.data || [];
+  if (!lista.length) { showToast('Ese paciente no tiene material devolvible cargado', 'warn'); return; }
+  devolCtx = { idPaciente: idPaciente, nombrePaciente: nombre };
+  devolItems = lista.map(a => ({
+    idArticulo: a.idArticulo, codigo: a.codigo || '', descripcion: a.descripcion || '',
+    categoria: String(a.categoria || '').toUpperCase(), unidad: a.unidad || '',
+    devolvible: a.devolvible, devolver: 0
+  }));
+  openModal('Devolución de material · ' + artEsc(nombre), `
+    <div style="background:var(--teal-light);padding:8px 12px;border-radius:8px;margin-bottom:10px;font-size:12px;color:var(--navy);">Escanea el material que regresa <b>${artEsc(nombre)}</b>. Solo se aceptan artículos cargados a su cuenta; al confirmar se <b>reintegra al inventario</b> y se <b>acredita</b> su cuenta.</div>
+    <div style="margin:10px 0;">
+      <label>Escanear código de barras</label>
+      <input type="text" id="dv_scan" placeholder="Dispara la pistola aquí…" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();escanearDevolucion();}">
+    </div>
+    <div id="dv_items"></div>
+    <div class="form-actions">
+      <button type="button" class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+      <button type="button" class="btn btn-primary" onclick="confirmarDevolucion()">Registrar devolución</button>
+    </div>
+  `);
+  renderDevolItems();
+  setTimeout(() => { const el = document.getElementById('dv_scan'); if (el) el.focus(); }, 60);
+}
+
+function devolAjustar(i, delta) {
+  const it = devolItems[i]; if (!it) return;
+  it.devolver = Math.max(0, Math.min(it.devolvible, it.devolver + delta));
+  renderDevolItems();
+}
+
+function renderDevolItems() {
+  const cont = document.getElementById('dv_items'); if (!cont) return;
+  const rows = devolItems.map((it, i) => {
+    const activo = it.devolver > 0;
+    return `<tr style="${activo ? 'background:#FEF3C7;' : ''}">
+      <td>${artEsc(it.descripcion)}${it.codigo ? `<br><small style="color:var(--text-muted);">${artEsc(it.codigo)}</small>` : ''}</td>
+      <td style="text-align:center;">${it.devolvible} ${artEsc(it.unidad || '')}</td>
+      <td style="text-align:center;font-weight:700;font-size:15px;">${it.devolver}</td>
+      <td style="text-align:center;"><button class="btn btn-secondary btn-sm" onclick="devolAjustar(${i},-1)" title="Quitar uno">−</button> <button class="btn btn-secondary btn-sm" onclick="devolAjustar(${i},1)" title="Agregar uno">+</button></td>
+    </tr>`;
+  }).join('');
+  cont.innerHTML = `<table><thead><tr><th>Artículo cargado</th><th>Devolvible</th><th>A devolver</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+async function escanearDevolucion() {
+  const input = document.getElementById('dv_scan');
+  const code = ((input || {}).value || '').trim();
+  if (input) { input.value = ''; input.focus(); }
+  if (!code) return;
+  const resp = await apiGet('buscarArticuloPorBarras', { codigo: code });
+  if (!resp || !resp.ok) { showToast('❌ ' + ((resp && resp.error) || 'Código no reconocido'), 'error'); return; }
+  const art = resp.articulo;
+  const it = devolItems.find(x => String(x.idArticulo) === String(art.idArticulo));
+  if (!it) { showToast('⛔ "' + art.nombre + '" no está cargado a este paciente', 'error'); return; }
+  if (it.devolver >= it.devolvible) { showToast('⚠ "' + it.descripcion + '" ya alcanzó lo devolvible (' + it.devolvible + ')', 'warn'); return; }
+  it.devolver += 1;
+  showToast('↩ ' + it.descripcion + ' (' + it.devolver + '/' + it.devolvible + ')');
+  renderDevolItems();
+}
+
+async function confirmarDevolucion() {
+  const dev = devolItems.filter(it => it.devolver > 0);
+  if (!dev.length) { showToast('Escanea al menos un artículo a devolver', 'error'); return; }
+  const data = {
+    idPaciente: devolCtx.idPaciente, nombrePaciente: devolCtx.nombrePaciente,
+    realizadoPor: currentUser.nombre,
+    items: dev.map(it => ({ idArticulo: it.idArticulo, cantidad: it.devolver }))
+  };
+  const resp = await apiPost('registrarDevolucion', data);
+  if (resp && resp.ok) {
+    showToast(`✓ Devolución registrada · ${resp.lineas} línea(s) reintegradas. Cuenta materiales: ${fmtMoney(resp.totalCuentaMateriales)}`);
+    closeModal();
+  } else {
+    showToast('Error: ' + ((resp && resp.error) || 'no se pudo registrar la devolución'), 'error');
   }
 }
 

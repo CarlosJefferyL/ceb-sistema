@@ -135,7 +135,8 @@ var PERMISOS_ACCIONES = {
   // ---- Módulo Pedidos (enfermería pide, almacén surte) ----
   'crear_pedido':         ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO'],
   'surtir_pedido':        ['ADMIN','ALMACEN','DIRECTOR_MEDICO'],
-  'cancelar_pedido':      ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','DIRECTOR_MEDICO']
+  'cancelar_pedido':      ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],
+  'devolucion_material':  ['ADMIN','ALMACEN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO']
 };
 
 // JEFE_ENFERMERIA se conserva como rol legado (equivale a "ambos" flujos) para no
@@ -225,6 +226,7 @@ function doGet(e) {
       case 'getPedidos':     result = getPedidos(e.parameter.estado, e.parameter.desde, e.parameter.hasta); break;
       case 'getPedido':      result = getPedido(e.parameter.idPedido); break;
       case 'buscarArticuloPorBarras': result = buscarArticuloPorBarras(e.parameter.codigo); break;
+      case 'getMaterialDevolverPaciente': result = getMaterialDevolverPaciente(e.parameter.idPaciente); break;
       default:             result = { ok: false, error: 'Acción no reconocida: ' + action };
     }
     return jsonResponse(result);
@@ -296,6 +298,7 @@ function doPost(e) {
       case 'surtirPedido':       result = surtirPedido(payload.data); break;
       case 'surtirPedidoConEscaneo': result = surtirPedidoConEscaneo(payload.data); break;
       case 'cancelarPedido':     result = cancelarPedido(payload.data); break;
+      case 'registrarDevolucion': result = registrarDevolucion(payload.data); break;
       default:                   result = { ok: false, error: 'Acción POST no reconocida: ' + action };
     }
     return jsonResponse(result);
@@ -2315,7 +2318,7 @@ function registrarTraspaso(d) {
 var REMISION_ITEMS_HEADERS = ['ID_Remision_Item','Fecha','ID_Paciente','Nombre_Paciente','Origen',
   'Folio_Cirugia','ID_Hospitalizacion','ID_Articulo','Codigo','Descripcion','Categoria',
   'Cantidad','Unidad','ID_Lote','Ubicacion','Costo_Unitario','Precio_Venta_Unitario','Importe',
-  'Estado','Capturado_Por','Timestamp_Captura'];
+  'Estado','Capturado_Por','Timestamp_Captura','Ref_Item_Devuelto'];
 
 function ensureRemisionSheet_() {
   ensureSheetConHeaders_(SHEETS.REMISION_ITEMS, REMISION_ITEMS_HEADERS);
@@ -2632,6 +2635,156 @@ function getRemisionPaciente(idPaciente) {
       };
     });
   return { ok: true, data: data, totalMateriales: totalRemisionMateriales_(idPaciente) };
+}
+
+/**
+ * Material devolvible de un paciente: agrega sus líneas de remisión por artículo
+ * (cargado − ya devuelto). Lo usa la pantalla de devoluciones para validar
+ * pertenencia al paciente y topar la cantidad a devolver.
+ */
+function getMaterialDevolverPaciente(idPaciente) {
+  if (!idPaciente) return { ok: false, error: 'Paciente requerido' };
+  ensureRemisionSheet_();
+  var rows = sheetToObjects(SHEETS.REMISION_ITEMS).filter(function (r) {
+    return String(r.ID_Paciente) === String(idPaciente) && r.Estado !== 'CANCELADO';
+  });
+  var agg = {};
+  rows.forEach(function (r) {
+    var id = String(r.ID_Articulo);
+    if (!agg[id]) agg[id] = { idArticulo: r.ID_Articulo, codigo: r.Codigo, descripcion: r.Descripcion, categoria: r.Categoria, unidad: r.Unidad, cargado: 0, devuelto: 0 };
+    var c = num_(r.Cantidad);
+    if (c >= 0) agg[id].cargado += c; else agg[id].devuelto += -c;
+  });
+  var data = Object.keys(agg).map(function (k) {
+    var a = agg[k];
+    a.cargado = ocRound_(a.cargado);
+    a.devuelto = ocRound_(a.devuelto);
+    a.devolvible = ocRound_(a.cargado - a.devuelto);
+    return a;
+  }).filter(function (a) { return a.devolvible > 0; });
+  data.sort(function (a, b) { return String(a.descripcion || '').localeCompare(String(b.descripcion || '')); });
+  return { ok: true, data: data };
+}
+
+/**
+ * Registra la devolución de material de un paciente: reintegra al inventario
+ * (al mismo lote por revertirLote_, o ENTRADA al almacén para insumos) y revierte
+ * el cargo con líneas negativas en Remision_Items. Valida pertenencia al paciente
+ * y que no se devuelva más de lo cargado. Para controlados deja asiento en el Libro.
+ * d.items = [{idArticulo, cantidad}].
+ */
+function registrarDevolucion(d) {
+  if (!tienePermiso(d.rolUsuario, 'devolucion_material')) {
+    return errorSinPermiso(d.rolUsuario, 'devolucion_material');
+  }
+  if (!d.idPaciente) return { ok: false, error: 'Paciente requerido' };
+  var req = Array.isArray(d.items) ? d.items.filter(function (it) {
+    return it && it.idArticulo && (parseFloat(it.cantidad) || 0) > 0;
+  }) : [];
+  if (!req.length) return { ok: false, error: 'No hay artículos a devolver' };
+  ensureRemisionSheet_();
+  if (cuentaCerrada_(d.idPaciente)) {
+    return { ok: false, error: 'La cuenta del paciente está CERRADA. Reábrela en Cobro para registrar la devolución.' };
+  }
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var allRows = sheetToObjects(SHEETS.REMISION_ITEMS).filter(function (r) {
+      return String(r.ID_Paciente) === String(d.idPaciente) && r.Estado !== 'CANCELADO';
+    });
+    var devueltoPorRef = {};
+    allRows.forEach(function (r) {
+      if (num_(r.Cantidad) < 0 && r.Ref_Item_Devuelto) {
+        var k = String(r.Ref_Item_Devuelto);
+        devueltoPorRef[k] = (devueltoPorRef[k] || 0) + (-num_(r.Cantidad));
+      }
+    });
+
+    // PASO 1: planear sin escribir (PEPS sobre las líneas de cargo del artículo)
+    var plan = [];
+    for (var x = 0; x < req.length; x++) {
+      var it = req[x];
+      var restante = parseFloat(it.cantidad) || 0;
+      var fuentes = allRows.filter(function (r) { return String(r.ID_Articulo) === String(it.idArticulo) && num_(r.Cantidad) > 0; });
+      fuentes.sort(function (a, b) { return String(a.Timestamp_Captura || a.Fecha || '').localeCompare(String(b.Timestamp_Captura || b.Fecha || '')); });
+      var nombreArt = fuentes.length ? fuentes[0].Descripcion : it.idArticulo;
+      for (var f = 0; f < fuentes.length && restante > 0.0001; f++) {
+        var src = fuentes[f];
+        var yaDev = devueltoPorRef[String(src.ID_Remision_Item)] || 0;
+        var disp = num_(src.Cantidad) - yaDev;
+        if (disp <= 0) continue;
+        var tomar = Math.min(restante, disp);
+        plan.push({ src: src, tomar: tomar });
+        devueltoPorRef[String(src.ID_Remision_Item)] = yaDev + tomar;
+        restante -= tomar;
+      }
+      if (restante > 0.0001) {
+        return { ok: false, error: 'No puedes devolver más de lo cargado para "' + nombreArt + '" (excede por ' + ocRound_(restante) + ')' };
+      }
+    }
+
+    var hayControlado = plan.some(function (p) { return normCategoria_(p.src.Categoria) === 'MEDICAMENTO_CONTROLADO'; });
+    var ultimoAsiento = 0;
+    if (hayControlado) {
+      var libroData = getSheet(SHEETS.LIBRO).getDataRange().getValues();
+      for (var k = 4; k < libroData.length; k++) {
+        if (libroData[k][0] && !isNaN(libroData[k][0])) ultimoAsiento = Math.max(ultimoAsiento, parseInt(libroData[k][0], 10));
+      }
+    }
+
+    // PASO 2: escribir
+    var base = new Date().getTime();
+    var seq = 0, totalCredito = 0, lineas = 0;
+    plan.forEach(function (p) {
+      var src = p.src, tomar = p.tomar; seq++;
+      var cat = normCategoria_(src.Categoria);
+      var saldoAntes = (cat === 'MEDICAMENTO_CONTROLADO') ? calcularSaldo(src.ID_Articulo) : 0;
+
+      // Reintegrar inventario
+      if (categoriaRequiereLote_(cat) && src.ID_Lote) {
+        var rv = revertirLote_(src.ID_Lote, tomar);
+        if (!rv.ok) {
+          appendInvMov_(['MOV-' + base + '-' + seq, todayStr(), 'ENTRADA', src.ID_Articulo, src.Descripcion, tomar, src.Unidad || '', 'Devolución (lote no disponible) ' + (d.nombrePaciente || d.idPaciente), '', '', '', d.realizadoPor || '', nowTs(), 'Devolución de material', src.ID_Lote || ''], src.Ubicacion || UBICACION_DEFAULT);
+        }
+      } else {
+        appendInvMov_(['MOV-' + base + '-' + seq, todayStr(), 'ENTRADA', src.ID_Articulo, src.Descripcion, tomar, src.Unidad || '', 'Devolución ' + (d.nombrePaciente || d.idPaciente), '', '', '', d.realizadoPor || '', nowTs(), 'Devolución de material', src.ID_Lote || ''], src.Ubicacion || UBICACION_DEFAULT);
+      }
+
+      // Línea negativa cobrable (crédito)
+      var pventa = num_(src.Precio_Venta_Unitario);
+      var importe = ocRound_(-pventa * tomar);
+      totalCredito += importe;
+      appendRowByHeader(SHEETS.REMISION_ITEMS, {
+        'ID_Remision_Item': 'DEV-' + base + '-' + seq, 'Fecha': todayStr(), 'ID_Paciente': d.idPaciente,
+        'Nombre_Paciente': d.nombrePaciente || src.Nombre_Paciente || '', 'Origen': src.Origen || '',
+        'Folio_Cirugia': src.Folio_Cirugia || '', 'ID_Hospitalizacion': src.ID_Hospitalizacion || '',
+        'ID_Articulo': src.ID_Articulo, 'Codigo': src.Codigo || '', 'Descripcion': src.Descripcion || '',
+        'Categoria': src.Categoria || '', 'Cantidad': -tomar, 'Unidad': src.Unidad || '',
+        'ID_Lote': src.ID_Lote || '', 'Ubicacion': src.Ubicacion || '',
+        'Costo_Unitario': num_(src.Costo_Unitario), 'Precio_Venta_Unitario': pventa, 'Importe': importe,
+        'Estado': 'DEVOLUCION', 'Capturado_Por': d.realizadoPor || '', 'Timestamp_Captura': nowTs(),
+        'Ref_Item_Devuelto': src.ID_Remision_Item
+      });
+
+      // Libro COFEPRIS (reingreso) para controlados
+      if (cat === 'MEDICAMENTO_CONTROLADO') {
+        ultimoAsiento++;
+        appendLibroRow_({
+          'No_Asiento': ultimoAsiento, 'Fecha': todayStr(), 'Folio_Receta': '',
+          'ID_Medicamento': src.ID_Articulo, 'Nombre_Medicamento': src.Descripcion, 'Fraccion_LGS': '',
+          'Nombre_Paciente': d.nombrePaciente || '', 'Nombre_Medico': '', 'Cedula_Medico': '',
+          'Cantidad_Salida': -tomar, 'Existencia_Anterior': saldoAntes, 'Existencia_Posterior': saldoAntes + tomar,
+          'Folio_Cirugia': src.Folio_Cirugia || '', 'Observaciones': 'DEVOLUCIÓN de material',
+          'Estado': 'ACTIVO', 'Ref_Consumo': 'DEV-' + base + '-' + seq, 'ID_Lote': src.ID_Lote || '', 'Lote_Fabricante': ''
+        });
+      }
+      lineas++;
+    });
+    return { ok: true, lineas: lineas, totalCredito: ocRound_(totalCredito), totalCuentaMateriales: totalRemisionMateriales_(d.idPaciente) };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /**
