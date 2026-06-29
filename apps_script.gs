@@ -294,6 +294,7 @@ function doPost(e) {
       case 'crearPedido':        result = crearPedido(payload.data); break;
       case 'setCodigoBarras':    result = setCodigoBarras(payload.data); break;
       case 'surtirPedido':       result = surtirPedido(payload.data); break;
+      case 'surtirPedidoConEscaneo': result = surtirPedidoConEscaneo(payload.data); break;
       case 'cancelarPedido':     result = cancelarPedido(payload.data); break;
       default:                   result = { ok: false, error: 'Acción POST no reconocida: ' + action };
     }
@@ -6743,6 +6744,72 @@ function cancelarPedido(d) {
     var ok = setEstadoPedido_(d.idPedido, 'CANCELADO', d.rolUsuario || '');
     if (!ok) return { ok: false, error: 'Pedido no encontrado: ' + d.idPedido };
     return { ok: true, idPedido: d.idPedido, estado: 'CANCELADO' };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Surte un pedido validado por escáner: descuenta del inventario y lo carga a
+ * la cuenta del paciente (reutiliza registrarRemision), luego marca el pedido y
+ * sus partidas como surtidas. d.items = [{idArticulo, cantidad, ubicacion, idLote, unidad}].
+ */
+function surtirPedidoConEscaneo(d) {
+  if (!tienePermiso(d.rolUsuario, 'surtir_pedido')) {
+    return errorSinPermiso(d.rolUsuario, 'surtir_pedido');
+  }
+  if (!d.idPedido) return { ok: false, error: 'Falta el pedido' };
+  if (!d.idPaciente) return { ok: false, error: 'Falta el paciente del pedido' };
+  var items = Array.isArray(d.items) ? d.items.filter(function (it) {
+    return it && it.idArticulo && (parseFloat(it.cantidad) || 0) > 0;
+  }) : [];
+  if (!items.length) return { ok: false, error: 'No hay artículos surtidos para descontar' };
+
+  // 1) Descuento de inventario + cobro a la cuenta del paciente (NO sostener lock:
+  //    registrarRemision toma su propio ScriptLock).
+  var rem = registrarRemision({
+    rolUsuario: d.rolUsuario,
+    idPaciente: d.idPaciente,
+    nombrePaciente: d.nombrePaciente || '',
+    origen: d.origen || '',
+    folioCirugia: d.folioCirugia || '',
+    idMedico: d.idMedico || '',
+    nombreMedico: d.nombreMedico || '',
+    items: items.map(function (it) {
+      return { idArticulo: it.idArticulo, cantidad: parseFloat(it.cantidad) || 0, ubicacion: it.ubicacion, idLote: it.idLote || '', unidad: it.unidad || '' };
+    }),
+    capturadoPor: d.realizadoPor || d.rolUsuario || ''
+  });
+  if (!rem.ok) return rem;
+
+  // 2) Marcar el pedido y sus partidas como surtidas.
+  ensurePedidosSheets_();
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    var surtPorArt = {};
+    items.forEach(function (it) {
+      var k = String(it.idArticulo);
+      surtPorArt[k] = (surtPorArt[k] || 0) + (parseFloat(it.cantidad) || 0);
+    });
+    var shI = getSheet(SHEETS.PEDIDO_ITEMS);
+    var di = shI.getDataRange().getValues();
+    var HI = di[0];
+    var cPed = HI.indexOf('ID_Pedido'), cArt = HI.indexOf('ID_Articulo'),
+        cSur = HI.indexOf('Cantidad_Surtida'), cEstI = HI.indexOf('Estado_Item'),
+        cSol = HI.indexOf('Cantidad_Solicitada');
+    for (var i = 1; i < di.length; i++) {
+      if (String(di[i][cPed]) === String(d.idPedido) && surtPorArt.hasOwnProperty(String(di[i][cArt]))) {
+        var s = surtPorArt[String(di[i][cArt])];
+        if (cSur !== -1) shI.getRange(i + 1, cSur + 1).setValue(s);
+        if (cEstI !== -1) {
+          var sol = parseFloat(di[i][cSol]) || 0;
+          shI.getRange(i + 1, cEstI + 1).setValue(s >= sol ? 'SURTIDO' : 'PARCIAL');
+        }
+      }
+    }
+    setEstadoPedido_(d.idPedido, 'SURTIDO', d.realizadoPor || d.rolUsuario || '');
+    return { ok: true, idPedido: d.idPedido, lineas: rem.lineas, totalCuentaMateriales: rem.totalCuentaMateriales };
   } finally {
     lock.releaseLock();
   }
