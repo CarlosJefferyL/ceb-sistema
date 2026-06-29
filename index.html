@@ -1022,6 +1022,7 @@ textarea { resize: vertical; min-height: 70px; }
         </div>
         <div style="display:flex;gap:8px;">
           <button class="btn btn-primary" data-accion="registrar_consumo" onclick="openModalNuevaRemision()">🧾 Nueva remisión</button>
+          <button class="btn btn-accent" data-accion="registrar_consumo" onclick="openModalCargarServicios()">🧰 Cargar servicios</button>
           <button class="btn btn-accent" data-accion="registrar_consumo" onclick="openModalConsumo()">+ Consumo (cirugía)</button>
         </div>
       </div>
@@ -4470,6 +4471,10 @@ let remisionCtx = { idPaciente: '', nombrePaciente: '', origen: 'QUIROFANO', fol
 let remisionLotesArt = [];
 let remisionBuscarTimer = null;
 let remisionActivos = [];
+let cargosActivos = [];
+let cargosCart = [];
+let cargosCtx = {};
+let cargosBuscarTimer = null;
 
 // Precio de venta cliente = compra más reciente × 2 (mismo criterio que el backend)
 function precioVentaCli(idArticulo) {
@@ -4513,6 +4518,147 @@ function remisionElegirActivo(idPaciente) {
   const p = remisionActivos.find(x => String(x.idPaciente) === String(idPaciente));
   if (!p) return;
   openModalRemision(p.idPaciente, p.nombrePaciente, p.origen, p.folioCirugia);
+}
+
+// ---- F2a: Cargar servicios a la cuenta del paciente ----
+function openModalCargarServicios() {
+  cargosActivos = [];
+  openModal('Cargar servicios · elegir paciente', `
+    <div class="form-grid"><div class="full">
+      <label>Buscar paciente (nombre, CURP o folio)</label>
+      <input type="search" id="cs_buscar" oninput="cargosBuscarPaciente()" placeholder="Mín. 2 letras — o elige de la lista" autocomplete="off">
+      <div id="cs_resultados" style="max-height:300px;overflow:auto;border:1px solid var(--border);border-radius:8px;margin-top:6px;"><div style="padding:10px;color:var(--text-muted);font-size:13px;">Cargando pacientes activos…</div></div>
+    </div></div>
+    <div class="form-actions"><button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button></div>
+  `);
+  cargarCargosActivos();
+}
+
+async function cargarCargosActivos() {
+  const resp = await apiGet('getPacientesActivos');
+  cargosActivos = (resp && resp.ok) ? (resp.data || []) : [];
+  const buscar = document.getElementById('cs_buscar');
+  if (buscar && (buscar.value || '').trim().length >= 2) return;
+  cargosRenderActivos();
+}
+
+function cargosRenderActivos() {
+  const cont = document.getElementById('cs_resultados');
+  if (!cont) return;
+  cont.innerHTML = cargosActivos.length
+    ? cargosActivos.map(p => `<div onclick="cargosElegirActivo('${escJs(p.idPaciente)}')" style="padding:9px 11px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px;"><b>${artEsc(p.nombrePaciente)}</b>${p.edad ? ` <small style="color:var(--text-muted);">· ${p.edad} años</small>` : ''}<br><small style="color:var(--teal);">${artEsc(p.ubicacionTexto)}</small></div>`).join('')
+    : '<div style="padding:10px;color:var(--text-muted);font-size:13px;">No hay pacientes activos ahora. Usa el buscador.</div>';
+}
+
+function cargosBuscarPaciente() {
+  const q = (document.getElementById('cs_buscar').value || '').trim();
+  const cont = document.getElementById('cs_resultados');
+  if (q.length < 2) { cargosRenderActivos(); return; }
+  clearTimeout(cargosBuscarTimer);
+  cargosBuscarTimer = setTimeout(async () => {
+    const resp = await apiGet('buscarPacientesCobro', { q });
+    const lista = (resp && resp.ok) ? (resp.resultados || []) : [];
+    cont.innerHTML = lista.length
+      ? lista.map(p => `<div onclick="cargosElegirPaciente('${escJs(p.idPaciente)}','${escJs(p.nombrePaciente)}')" style="padding:9px 11px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px;"><b>${artEsc(p.nombrePaciente)}</b><br><small style="color:var(--text-muted);">${artEsc(p.idPaciente)}</small></div>`).join('')
+      : '<div style="padding:10px;color:var(--text-muted);font-size:13px;">Sin resultados.</div>';
+  }, 280);
+}
+
+function cargosElegirActivo(idPaciente) {
+  const p = cargosActivos.find(x => String(x.idPaciente) === String(idPaciente));
+  if (!p) return;
+  openModalCargos(p.idPaciente, p.nombrePaciente, p.origen);
+}
+function cargosElegirPaciente(idPaciente, nombre) { openModalCargos(idPaciente, nombre, 'PISO'); }
+
+function openModalCargos(idPaciente, nombre, origen) {
+  cargosCart = [];
+  cargosCtx = { idPaciente: idPaciente, nombrePaciente: nombre, origen: origen || 'PISO' };
+  const servicios = (catalogos.servicios || []);
+  if (!servicios.length) { showToast('No hay servicios en el catálogo (CAT_Servicios)', 'error'); return; }
+  const opciones = servicios.map(s => `<option value="${artEsc(s.ID_Servicio)}">${artEsc(s.Nombre)} · ${artEsc(s.Concepto)}</option>`).join('');
+  openModal('Cargar servicios · ' + artEsc(nombre), `
+    <div style="background:var(--teal-light);padding:8px 12px;border-radius:8px;margin-bottom:10px;font-size:12px;color:var(--navy);">Paciente: <b>${artEsc(nombre)}</b> · cada servicio se carga a su cuenta y cae al cobro por su concepto.</div>
+    <div class="form-grid">
+      <div class="full"><label>Servicio</label><select id="cs_serv" onchange="cargosServChange()"><option value="">— Seleccionar —</option>${opciones}</select></div>
+      <div><label>Cantidad</label><input type="number" id="cs_cant" step="any" min="0" value="1"></div>
+      <div><label>Precio unitario</label><input type="number" id="cs_precio" step="any" min="0" placeholder="0.00"></div>
+      <div id="cs_terceroWrap" style="display:none;"><label>Costo tercerizado</label><input type="number" id="cs_costo" step="any" min="0" placeholder="0.00"></div>
+      <div id="cs_provWrap" style="display:none;"><label>Proveedor</label><input type="text" id="cs_prov" placeholder="Quién lo hizo"></div>
+      <div style="display:flex;align-items:end;"><button type="button" class="btn btn-secondary btn-sm" onclick="cargosAgregar()">+ Agregar</button></div>
+    </div>
+    <div id="cs_cartBox" style="margin-top:10px;"></div>
+    <div class="form-actions">
+      <button type="button" class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+      <button type="button" class="btn btn-primary" onclick="submitCargos()">Registrar cargos</button>
+    </div>
+  `);
+  cargosRenderCart();
+}
+
+function cargosServSel() {
+  const id = document.getElementById('cs_serv').value;
+  return (catalogos.servicios || []).find(s => String(s.ID_Servicio) === String(id));
+}
+function cargosServChange() {
+  const s = cargosServSel();
+  const esTerc = s && String(s.Es_Tercerizado).toUpperCase() === 'SI';
+  document.getElementById('cs_terceroWrap').style.display = esTerc ? '' : 'none';
+  document.getElementById('cs_provWrap').style.display = esTerc ? '' : 'none';
+  document.getElementById('cs_precio').value = s ? (s.Precio_Estandar || '') : '';
+}
+
+function cargosAgregar() {
+  const s = cargosServSel();
+  if (!s) { showToast('Selecciona un servicio', 'error'); return; }
+  const cant = parseFloat(document.getElementById('cs_cant').value);
+  if (!cant || cant <= 0) { showToast('Cantidad inválida', 'error'); return; }
+  const precio = parseFloat(document.getElementById('cs_precio').value) || 0;
+  const esTerc = String(s.Es_Tercerizado).toUpperCase() === 'SI';
+  cargosCart.push({
+    idServicio: s.ID_Servicio, nombreServicio: s.Nombre, concepto: s.Concepto,
+    cantidad: cant, precioUnitario: precio,
+    costoTercerizado: esTerc ? (parseFloat(document.getElementById('cs_costo').value) || 0) : 0,
+    proveedor: esTerc ? (document.getElementById('cs_prov').value || '') : '',
+    importe: Math.round(precio * cant * 100) / 100
+  });
+  cargosRenderCart();
+  document.getElementById('cs_serv').value = '';
+  document.getElementById('cs_cant').value = '1';
+  cargosServChange();
+}
+
+function cargosQuitar(i) { cargosCart.splice(i, 1); cargosRenderCart(); }
+
+function cargosRenderCart() {
+  const box = document.getElementById('cs_cartBox');
+  if (!box) return;
+  if (!cargosCart.length) { box.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Carrito vacío.</div>'; return; }
+  let total = 0;
+  const filas = cargosCart.map((c, i) => {
+    total += c.importe;
+    return `<tr><td>${artEsc(c.nombreServicio)}<br><small style="color:var(--text-muted);">${artEsc(c.concepto)}</small></td><td>${c.cantidad}</td><td>${fmtMoney(c.precioUnitario)}</td><td>${fmtMoney(c.importe)}</td><td><span style="cursor:pointer;color:var(--danger);" onclick="cargosQuitar(${i})">✕</span></td></tr>`;
+  }).join('');
+  box.innerHTML = `<table style="width:100%;font-size:13px;"><thead><tr><th>Servicio</th><th>Cant.</th><th>P. unit.</th><th>Importe</th><th></th></tr></thead><tbody>${filas}</tbody></table><div style="text-align:right;font-weight:700;margin-top:6px;">Total: ${fmtMoney(total)}</div>`;
+}
+
+async function submitCargos() {
+  if (!cargosCart.length) { showToast('Agrega al menos un servicio', 'error'); return; }
+  const data = {
+    idPaciente: cargosCtx.idPaciente, nombrePaciente: cargosCtx.nombrePaciente,
+    origen: cargosCtx.origen,
+    items: cargosCart.map(c => ({ idServicio: c.idServicio, nombreServicio: c.nombreServicio,
+      concepto: c.concepto, cantidad: c.cantidad, precioUnitario: c.precioUnitario,
+      costoTercerizado: c.costoTercerizado, proveedor: c.proveedor })),
+    capturadoPor: currentUser.nombre
+  };
+  const resp = await apiPost('registrarCargosServicio', data);
+  if (resp && resp.ok) {
+    showToast(`✅ ${resp.lineas} cargo(s) · ${fmtMoney(resp.total)}`);
+    closeModal();
+  } else {
+    showToast('Error: ' + ((resp && resp.error) || 'no se pudo registrar'), 'error');
+  }
 }
 
 function remisionBuscarPaciente() {
