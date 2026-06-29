@@ -4088,15 +4088,17 @@ function renderArticulos() {
 
   const puedeSalida = puede('salida_articulo');
   const puedeEntrada = puede('entrada_articulo');
+  const puedeEditarArt = puede('editar_articulo');
   const rows = lista.map(a => {
     const col = CATEGORIA_COLOR[a.categoria] || '#8A8F98';
     const badgeCat = `<span style="background:${col};color:#fff;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700;">${CATEGORIA_LABEL[a.categoria]||a.categoria}</span>`;
     let acc = `<button class="btn btn-secondary btn-sm" onclick="openModalPreciosArticulo('${artEsc(a.idArticulo)}','${artEsc(a.nombre)}')">💲 Precios</button> `;
+    if (puedeEditarArt) acc += `<button class="btn btn-secondary btn-sm" onclick="openModalCodigoBarras('${escJs(a.idArticulo)}','${escJs(a.nombre)}','${escJs(a.codigoBarras||'')}')" title="${a.codigoBarras ? 'Código: ' + artEsc(a.codigoBarras) : 'Sin código de barras'}">🏷 ${a.codigoBarras ? 'Código ✓' : 'Código'}</button> `;
     if (puedeEntrada) acc += `<button class="btn btn-secondary btn-sm" onclick="openModalEntradaArticulo('${artEsc(a.idArticulo)}')">↓ Entrada</button> `;
     if (puedeSalida) acc += `<button class="btn btn-secondary btn-sm" onclick="openModalMovimientoArticulo('${artEsc(a.idArticulo)}','SALIDA')">↑ Salida</button> `;
     return `
     <tr style="${a.alerta ? 'background:var(--warn-bg);' : ''}">
-      <td><strong>${artEsc(a.codigo)}</strong></td>
+      <td><strong>${artEsc(a.codigo)}</strong>${a.codigoBarras ? `<br><small style="color:var(--text-muted);">🏷 ${artEsc(a.codigoBarras)}</small>` : ''}</td>
       <td>${artEsc(a.nombre)}${a.sustancia?`<br><small style="color:var(--text-muted);">${artEsc(a.sustancia)}</small>`:''}</td>
       <td>${badgeCat}</td>
       <td><strong style="font-size:16px;color:${a.alerta?'var(--danger)':'var(--navy)'};">${a.saldo}</strong> ${artEsc(a.unidad||'')}</td>
@@ -4123,6 +4125,7 @@ function openModalArticulo() {
           </select>
         </div>
         <div><label>Código (opcional)</label><input type="text" id="ar_codigo" placeholder="Se autogenera si lo dejas vacío"></div>
+        <div><label>Código de barras (escanear)</label><input type="text" id="ar_barras" placeholder="Escanea aquí o déjalo vacío" autocomplete="off"></div>
         <div class="full"><label>Nombre / descripción *</label><input type="text" id="ar_nombre" required></div>
         <div>
           <label>Unidad de medida *</label>
@@ -4177,6 +4180,7 @@ async function submitAltaArticulo() {
     nombre: nombre,
     unidad: document.getElementById('ar_unidad').value.trim(),
     stockMinimo: parseInt(document.getElementById('ar_min').value, 10) || 0,
+    codigoBarras: ((document.getElementById('ar_barras')||{}).value || '').trim(),
     sustanciaActiva: (document.getElementById('ar_sustancia')||{}).value || '',
     presentacion: (document.getElementById('ar_pres')||{}).value || '',
     concentracion: (document.getElementById('ar_conc')||{}).value || '',
@@ -4191,6 +4195,35 @@ async function submitAltaArticulo() {
   } else { showToast('Error: ' + resp.error, 'error'); }
 }
 
+// MODAL: ASIGNAR / ESCANEAR CÓDIGO DE BARRAS DE UN ARTÍCULO
+function openModalCodigoBarras(idArticulo, nombre, actual) {
+  openModal('Código de barras · ' + artEsc(nombre), `
+    <div style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">Pon el cursor en el campo y dispara el escáner (o tecléalo). Déjalo vacío para quitar el código.</div>
+    <div class="form-grid"><div class="full">
+      <label>Código de barras</label>
+      <input type="text" id="cb_codigo" value="${artEsc(actual || '')}" placeholder="Escanea aquí…" autocomplete="off"
+             onkeydown="if(event.key==='Enter'){event.preventDefault();submitCodigoBarras('${escJs(idArticulo)}');}">
+    </div></div>
+    <div class="form-actions">
+      <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button type="button" class="btn btn-accent" onclick="submitCodigoBarras('${escJs(idArticulo)}')">Guardar</button>
+    </div>
+  `);
+  setTimeout(() => { const el = document.getElementById('cb_codigo'); if (el) { el.focus(); el.select(); } }, 60);
+}
+
+async function submitCodigoBarras(idArticulo) {
+  const codigo = ((document.getElementById('cb_codigo') || {}).value || '').trim();
+  const resp = await apiPost('setCodigoBarras', { idArticulo: idArticulo, codigoBarras: codigo });
+  if (resp && resp.ok) {
+    showToast(codigo ? '✓ Código de barras guardado' : '✓ Código de barras eliminado');
+    closeModal();
+    loadArticulos();
+  } else {
+    showToast('Error: ' + ((resp && resp.error) || 'no se pudo guardar'), 'error');
+  }
+}
+
 // MODAL: ENTRADA DE ARTÍCULO (lote/caducidad/receta condicionales)
 function openModalEntradaArticulo(idArticulo) {
   const arts = (cache.articulos || []);
@@ -4202,6 +4235,11 @@ function openModalEntradaArticulo(idArticulo) {
         <div><label>Fecha de entrada</label><input type="date" id="ea_fecha" value="${todayISO()}" required></div>
         <div><label>Artículo *</label><select id="ea_art" required onchange="artEntradaToggle()"><option value="">— Seleccionar —</option>${opts}</select></div>
         <div><label>Almacén destino *</label><select id="ea_ubicacion" required>${ubicacionOpts('ALM_GENERAL')}</select></div>
+        <div class="full" id="ea_barrasWrap" style="display:none;">
+          <label>Código de barras del artículo</label>
+          <input type="text" id="ea_barras" placeholder="Escanea la caja para asignarlo…" autocomplete="off">
+          <small id="ea_barrasHint" style="font-size:11px;color:var(--text-muted);"></small>
+        </div>
         <div><label>Cantidad recibida *</label><input type="number" id="ea_cantidad" step="any" min="0" placeholder="Ej: 12" required></div>
         <div><label>Proveedor</label><input type="text" id="ea_proveedor"></div>
         <div class="full"><label>Referencia (orden de compra)</label><input type="text" id="ea_ref"></div>
@@ -4224,6 +4262,20 @@ function artEntradaToggle() {
   const id = document.getElementById('ea_art').value;
   const art = (cache.articulos || []).find(a => a.idArticulo === id);
   const cat = art ? art.categoria : '';
+  // Captura de código de barras del artículo seleccionado
+  const wrap = document.getElementById('ea_barrasWrap');
+  const barrasInput = document.getElementById('ea_barras');
+  const hint = document.getElementById('ea_barrasHint');
+  if (wrap && barrasInput) {
+    if (art) {
+      wrap.style.display = '';
+      barrasInput.value = art.codigoBarras || '';
+      if (hint) hint.textContent = art.codigoBarras ? 'Ya tiene código asignado. Puedes corregirlo.' : 'Sin código — escanéalo para asignarlo a este artículo.';
+    } else {
+      wrap.style.display = 'none';
+      barrasInput.value = '';
+    }
+  }
   const reqLote = artRequiereLote(cat);
   const reqReceta = (cat === 'MEDICAMENTO_CONTROLADO');
   document.getElementById('ea_campoLote').style.display = reqLote ? '' : 'none';
@@ -4260,7 +4312,15 @@ async function submitEntradaArticulo() {
     capturadoPor: currentUser.nombre
   };
   const resp = await apiPost('registrarEntradaArticulo', data);
-  if (resp.ok) { showToast('✓ Entrada registrada. Saldo: ' + resp.saldoNuevo); closeModal(); loadArticulos(); }
+  if (resp.ok) {
+    // Si se capturó/escaneó un código de barras nuevo, asignarlo al artículo.
+    const barras = ((document.getElementById('ea_barras') || {}).value || '').trim();
+    if (barras && barras !== (art.codigoBarras || '')) {
+      const r2 = await apiPost('setCodigoBarras', { idArticulo: id, codigoBarras: barras });
+      if (r2 && !r2.ok) showToast('Entrada OK, pero el código de barras no se guardó: ' + (r2.error || ''), 'warn');
+    }
+    showToast('✓ Entrada registrada. Saldo: ' + resp.saldoNuevo); closeModal(); loadArticulos();
+  }
   else { showToast('Error: ' + resp.error, 'error'); }
 }
 

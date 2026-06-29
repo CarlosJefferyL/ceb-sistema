@@ -224,6 +224,7 @@ function doGet(e) {
       case 'getPaquetesAdmin': result = getPaquetesAdmin(); break;
       case 'getPedidos':     result = getPedidos(e.parameter.estado, e.parameter.desde, e.parameter.hasta); break;
       case 'getPedido':      result = getPedido(e.parameter.idPedido); break;
+      case 'buscarArticuloPorBarras': result = buscarArticuloPorBarras(e.parameter.codigo); break;
       default:             result = { ok: false, error: 'Acción no reconocida: ' + action };
     }
     return jsonResponse(result);
@@ -291,6 +292,7 @@ function doPost(e) {
       case 'guardarPaquete':     result = guardarPaquete(payload.data); break;
       case 'guardarPlantillaBOM': result = guardarPlantillaBOM(payload.data); break;
       case 'crearPedido':        result = crearPedido(payload.data); break;
+      case 'setCodigoBarras':    result = setCodigoBarras(payload.data); break;
       case 'surtirPedido':       result = surtirPedido(payload.data); break;
       case 'cancelarPedido':     result = cancelarPedido(payload.data); break;
       default:                   result = { ok: false, error: 'Acción POST no reconocida: ' + action };
@@ -1732,7 +1734,7 @@ function getLibro(desde, hasta) {
 // saldos y lotes existentes siguen funcionando sin tocar esas hojas.
 // ============================================================
 var ARTICULOS_HEADERS = ['ID_Articulo','Codigo','Nombre','Categoria','Sustancia_Activa',
-  'Presentacion','Concentracion','Fraccion_LGS','Unidad','Stock_Minimo','Requiere_Lote','Activo','Notas'];
+  'Presentacion','Concentracion','Fraccion_LGS','Unidad','Stock_Minimo','Requiere_Lote','Activo','Notas','Codigo_Barras'];
 
 var CATEGORIAS_ARTICULO = ['INSUMO','MEDICAMENTO','MEDICAMENTO_CONTROLADO','OTROS'];
 
@@ -1868,6 +1870,7 @@ function getInventarioGeneral(categoria, ubicacion) {
     return {
       idArticulo: a.ID_Articulo,
       codigo: a.Codigo || a.ID_Articulo,
+      codigoBarras: a.Codigo_Barras || '',
       nombre: a.Nombre,
       categoria: cat,
       sustancia: a.Sustancia_Activa,
@@ -1948,12 +1951,77 @@ function altaArticulo(d) {
       'Stock_Minimo': d.stockMinimo || 0,
       'Requiere_Lote': categoriaRequiereLote_(cat) ? 'SI' : 'NO',
       'Activo': 'SI',
-      'Notas': d.notas || ''
+      'Notas': d.notas || '',
+      'Codigo_Barras': String(d.codigoBarras || '').trim()
     });
     return { ok: true, idArticulo: id, categoria: cat, requiereLote: categoriaRequiereLote_(cat) };
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * Asigna/actualiza el código de barras de un artículo. Garantiza unicidad:
+ * un mismo código de barras no puede apuntar a dos artículos distintos.
+ */
+function setCodigoBarras(d) {
+  if (!tienePermiso(d.rolUsuario, 'editar_articulo')) {
+    return errorSinPermiso(d.rolUsuario, 'editar_articulo');
+  }
+  if (!d.idArticulo) return { ok: false, error: 'Falta el artículo' };
+  var nuevo = String(d.codigoBarras == null ? '' : d.codigoBarras).trim();
+  ensureArticulosSheet_();
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    if (nuevo) {
+      var dup = sheetToObjects(SHEETS.ARTICULOS).filter(function (a) {
+        return String(a.ID_Articulo) !== String(d.idArticulo) && String(a.Codigo_Barras || '').trim() === nuevo;
+      })[0];
+      if (dup) return { ok: false, error: 'Ese código de barras ya está asignado a: ' + (dup.Nombre || dup.ID_Articulo) };
+    }
+    var sh = getSheet(SHEETS.ARTICULOS);
+    var data = sh.getDataRange().getValues();
+    var H = data[0];
+    var cId = H.indexOf('ID_Articulo');
+    var cBar = H.indexOf('Codigo_Barras');
+    if (cBar === -1) return { ok: false, error: 'No existe la columna Codigo_Barras en CAT_Articulos' };
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][cId]) === String(d.idArticulo)) {
+        sh.getRange(i + 1, cBar + 1).setValue(nuevo);
+        return { ok: true, idArticulo: d.idArticulo, codigoBarras: nuevo };
+      }
+    }
+    return { ok: false, error: 'Artículo no encontrado: ' + d.idArticulo };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Busca un artículo activo por código escaneado. Prioriza el código de barras
+ * exacto; si no, cae al código interno o al ID. Lo usan los flujos de escaneo.
+ */
+function buscarArticuloPorBarras(codigo) {
+  ensureArticulosSheet_();
+  var q = String(codigo == null ? '' : codigo).trim();
+  if (!q) return { ok: false, error: 'Código vacío' };
+  var arts = sheetToObjects(SHEETS.ARTICULOS).filter(function (a) { return esActivo(a.Activo); });
+  var hit = arts.filter(function (a) { return String(a.Codigo_Barras || '').trim() === q; })[0];
+  if (!hit) hit = arts.filter(function (a) {
+    return String(a.Codigo || '').trim() === q || String(a.ID_Articulo).trim() === q;
+  })[0];
+  if (!hit) return { ok: false, error: 'Código no reconocido: ' + q };
+  var cat = normCategoria_(hit.Categoria);
+  return { ok: true, articulo: {
+    idArticulo: hit.ID_Articulo,
+    codigo: hit.Codigo || hit.ID_Articulo,
+    codigoBarras: hit.Codigo_Barras || '',
+    nombre: hit.Nombre,
+    categoria: cat,
+    unidad: hit.Unidad,
+    requiereLote: categoriaRequiereLote_(cat)
+  } };
 }
 
 /**
