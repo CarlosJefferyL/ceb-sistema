@@ -2195,10 +2195,17 @@ function pedidoElegirActivo(idPaciente) {
 function pedidoElegirPaciente(idPaciente, nombre) { abrirCarritoPedido(idPaciente, nombre, '', '', ''); }
 
 // ---- Nuevo pedido: carrito de artículos ----
-function abrirCarritoPedido(idPaciente, nombre, origen, folioCirugia, ubicacionTexto) {
+async function abrirCarritoPedido(idPaciente, nombre, origen, folioCirugia, ubicacionTexto) {
   pedidoCart = [];
   pedidoCtx = { idPaciente: idPaciente, nombrePaciente: nombre, origen: origen || '', folioCirugia: folioCirugia || '', ubicacionTexto: ubicacionTexto || '' };
-  const arts = (catalogos.articulos || []);
+  let arts = (catalogos.articulos || []);
+  // El catálogo puede no estar aún en memoria (p. ej. se abrió Q.X. antes de que
+  // loadCatalogos() terminara tras el login): cargarlo bajo demanda.
+  if (!arts.length) {
+    showToast('Cargando catálogo de artículos…');
+    await loadCatalogos();
+    arts = (catalogos.articulos || []);
+  }
   if (!arts.length) { showToast('No hay artículos en el catálogo (CAT_Articulos)', 'error'); return; }
   const opciones = arts.slice()
     .sort((a, b) => (a.Nombre || '').localeCompare(b.Nombre || '', 'es', { sensitivity: 'base' }))
