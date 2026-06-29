@@ -756,6 +756,7 @@ textarea { resize: vertical; min-height: 70px; }
     <div class="nav-item" data-page="recetas"><span class="icon">℞</span>Recetas</div>
     <div class="nav-item" data-page="consumos"><span class="icon">◉</span>Consumos</div>
     <div class="nav-item" data-page="bom"><span class="icon">🧰</span>BOM quirúrgico <span id="bomBadge" style="display:none;margin-left:6px;background:#FFB300;color:#0F1923;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:700;"></span></div>
+    <div class="nav-item" data-page="pedidos"><span class="icon">📝</span>Pedidos <span id="pedidosBadge" style="display:none;margin-left:6px;background:#FFB300;color:#0F1923;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:700;"></span></div>
     <div class="nav-section-title">Atención médica</div>
     <div class="nav-item" data-page="consultas"><span class="icon">🩺</span>Consultas</div>
     <div class="nav-item" data-page="urgencias"><span class="icon">🚑</span>Urgencias</div>
@@ -1209,6 +1210,27 @@ textarea { resize: vertical; min-height: 70px; }
         </div>
       </div>
       <div class="card"><div id="bomTable">Cargando...</div></div>
+    </div>
+
+    <!-- PEDIDOS DE MATERIAL -->
+    <div id="page-pedidos" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Pedidos de material</h1>
+          <div class="subtitle">Enfermería solicita material por paciente · almacén surte</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <select id="pedidosFiltroEstado" onchange="renderPedidos()" style="font-size:13px;">
+            <option value="SOLICITADO">Solicitados (pendientes)</option>
+            <option value="SURTIDO">Surtidos</option>
+            <option value="CANCELADO">Cancelados</option>
+            <option value="TODOS">Todos</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="loadPedidos()">↻ Actualizar</button>
+          <button class="btn btn-primary btn-sm" data-accion="crear_pedido" onclick="openModalNuevoPedido()">+ Nuevo pedido</button>
+        </div>
+      </div>
+      <div class="card"><div id="pedidosTable">Cargando...</div></div>
     </div>
 
     <!-- LIBRO COFEPRIS -->
@@ -1676,6 +1698,7 @@ async function doLogin() {
       await loadCatalogos();
       loadDashboard();
       refrescarBadgeBOM();
+      refrescarBadgePedidos();
     } else {
       document.getElementById('loginError').style.display = 'block';
       document.getElementById('loginError').textContent = resp.error || 'Código inválido';
@@ -1720,7 +1743,8 @@ const PERMISOS = {
     catalogos:    ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','GESTORIA','DIRECTOR_MEDICO'],
     cobro:        ['ADMIN','DIRECTOR_MEDICO','CAJERO'],
     recibos:      ['ADMIN','DIRECTOR_MEDICO','CAJERO'],
-    ventas:       ['ADMIN','DIRECTOR_MEDICO','CAJERO']
+    ventas:       ['ADMIN','DIRECTOR_MEDICO','CAJERO'],
+    pedidos:      ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','DIRECTOR_MEDICO']
   },
   // ============ ACCIONES (botones de crear/modificar) ============
   actions: {
@@ -1766,7 +1790,10 @@ const PERMISOS = {
     'rechazar_bom':         ['ADMIN','DIRECTOR_MEDICO'],
     'asignar_bom':          ['ADMIN','DIRECTOR_MEDICO'],
     'entregar_bom':         ['ADMIN','ALMACEN'],
-    'editar_plantilla_bom': ['ADMIN','ALMACEN','DIRECTOR_MEDICO']
+    'editar_plantilla_bom': ['ADMIN','ALMACEN','DIRECTOR_MEDICO'],
+    'crear_pedido':         ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO'],
+    'surtir_pedido':        ['ADMIN','ALMACEN','DIRECTOR_MEDICO'],
+    'cancelar_pedido':      ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','DIRECTOR_MEDICO']
   }
 };
 
@@ -1888,6 +1915,7 @@ function loadPage(page) {
     case 'recetas': loadRecetas(); break;
     case 'consumos': loadConsumos(); break;
     case 'bom': loadBOM(); break;
+    case 'pedidos': loadPedidos(); break;
     case 'consultas': loadConsultas(); break;
     case 'urgencias': loadUrgencias(); break;
     case 'articulos': loadArticulos(); break;
@@ -2052,6 +2080,230 @@ async function refrescarBadgeBOM() {
     const resp = await apiGet('getBOMPendientes');
     if (resp && resp.ok) actualizarBadgeBOM(resp.total || 0);
   } catch (e) {}
+}
+
+// ============================================================
+// MÓDULO PEDIDOS (solicitudes de material de enfermería)
+// ============================================================
+let pedidosCache = [];        // lista completa de getPedidos
+let pedidoCart = [];          // carrito del modal "nuevo pedido"
+let pedidoCtx = {};           // paciente/contexto del pedido en captura
+let pedidosActivos = [];      // pacientes activos para el selector
+let pedidoBuscarTimer = null;
+const PEDIDO_ESTADO_COLOR = { SOLICITADO: '#FFB300', SURTIDO: '#00C896', CANCELADO: '#EF5350' };
+
+async function loadPedidos() {
+  const cont = document.getElementById('pedidosTable');
+  if (cont) cont.innerHTML = '<div class="loading"><div class="spinner"></div> Cargando pedidos...</div>';
+  const resp = await apiGet('getPedidos', { estado: 'TODOS' });
+  if (!resp || !resp.ok) { if (cont) cont.innerHTML = '<div style="color:var(--danger);padding:14px;">No se pudieron cargar los pedidos.</div>'; return; }
+  pedidosCache = resp.pedidos || [];
+  actualizarBadgePedidos();
+  renderPedidos();
+}
+
+function actualizarBadgePedidos() {
+  const n = pedidosCache.filter(p => p.estado === 'SOLICITADO').length;
+  const b = document.getElementById('pedidosBadge');
+  if (!b) return;
+  if (n > 0) { b.textContent = n; b.style.display = ''; } else { b.style.display = 'none'; }
+}
+
+async function refrescarBadgePedidos() {
+  try {
+    if (!currentUser || !puedeVerPagina('pedidos')) return;
+    const resp = await apiGet('getPedidos', { estado: 'SOLICITADO' });
+    if (resp && resp.ok) {
+      const b = document.getElementById('pedidosBadge');
+      const n = (resp.pedidos || []).length;
+      if (b) { if (n > 0) { b.textContent = n; b.style.display = ''; } else { b.style.display = 'none'; } }
+    }
+  } catch (e) {}
+}
+
+function renderPedidos() {
+  const cont = document.getElementById('pedidosTable');
+  if (!cont) return;
+  const filtro = (document.getElementById('pedidosFiltroEstado') || {}).value || 'SOLICITADO';
+  let lista = pedidosCache.slice();
+  if (filtro && filtro !== 'TODOS') lista = lista.filter(p => p.estado === filtro);
+  if (!lista.length) { cont.innerHTML = '<div class="empty-state"><div class="icon">📝</div>No hay pedidos en este estado.</div>'; return; }
+  const puedeSurtir = puede('surtir_pedido');
+  const puedeCancelar = puede('cancelar_pedido');
+  let html = '<div style="overflow-x:auto;"><table><thead><tr><th>Folio</th><th>Fecha</th><th>Paciente</th><th>Origen</th><th style="text-align:center;">Partidas</th><th>Estado</th><th>Solicitó</th><th style="text-align:right;">Acciones</th></tr></thead><tbody>';
+  lista.forEach(p => {
+    const color = PEDIDO_ESTADO_COLOR[p.estado] || '#8A8F98';
+    const badge = `<span style="background:${color};color:#0F1923;border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700;">${artEsc(p.estado)}</span>`;
+    let acc = `<button class="btn btn-secondary btn-sm" onclick="verPedido('${escJs(p.idPedido)}')">Ver</button> `;
+    if (p.estado === 'SOLICITADO' && puedeSurtir) acc += `<button class="btn btn-primary btn-sm" onclick="surtirPedidoFront('${escJs(p.idPedido)}')">Surtir</button> `;
+    if (p.estado === 'SOLICITADO' && puedeCancelar) acc += `<button class="btn btn-secondary btn-sm" onclick="cancelarPedidoFront('${escJs(p.idPedido)}')">Cancelar</button> `;
+    html += `<tr><td><strong>${artEsc(p.folio)}</strong></td><td>${artEsc(p.fecha)}</td><td>${artEsc(p.nombrePaciente)}</td><td>${artEsc(p.origen || '—')}</td><td style="text-align:center;">${p.partidas}</td><td>${badge}</td><td>${artEsc(p.solicitadoPor || '—')}</td><td style="text-align:right;white-space:nowrap;">${acc}</td></tr>`;
+  });
+  html += '</tbody></table></div>';
+  cont.innerHTML = html;
+}
+
+// ---- Nuevo pedido: elegir paciente ----
+function openModalNuevoPedido() {
+  pedidosActivos = [];
+  openModal('Nuevo pedido · elegir paciente', `
+    <div class="form-grid"><div class="full">
+      <label>Buscar paciente (nombre, CURP o folio)</label>
+      <input type="search" id="ped_buscar" oninput="pedidoBuscarPaciente()" placeholder="Mín. 2 letras — o elige de la lista" autocomplete="off">
+      <div id="ped_resultados" style="max-height:300px;overflow:auto;border:1px solid var(--border);border-radius:8px;margin-top:6px;"><div style="padding:10px;color:var(--text-muted);font-size:13px;">Cargando pacientes activos…</div></div>
+    </div></div>
+    <div class="form-actions"><button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button></div>
+  `);
+  cargarPedidoActivos();
+}
+
+async function cargarPedidoActivos() {
+  const resp = await apiGet('getPacientesActivos');
+  pedidosActivos = (resp && resp.ok) ? (resp.data || []) : [];
+  const buscar = document.getElementById('ped_buscar');
+  if (buscar && (buscar.value || '').trim().length >= 2) return;
+  pedidoRenderActivos();
+}
+
+function pedidoRenderActivos() {
+  const cont = document.getElementById('ped_resultados');
+  if (!cont) return;
+  cont.innerHTML = pedidosActivos.length
+    ? pedidosActivos.map(p => `<div onclick="pedidoElegirActivo('${escJs(p.idPaciente)}')" style="padding:9px 11px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px;"><b>${artEsc(p.nombrePaciente)}</b>${p.edad ? ` <small style="color:var(--text-muted);">· ${p.edad} años</small>` : ''}<br><small style="color:var(--teal);">${artEsc(p.ubicacionTexto)}</small></div>`).join('')
+    : '<div style="padding:10px;color:var(--text-muted);font-size:13px;">No hay pacientes activos ahora. Usa el buscador.</div>';
+}
+
+function pedidoBuscarPaciente() {
+  const q = (document.getElementById('ped_buscar').value || '').trim();
+  const cont = document.getElementById('ped_resultados');
+  if (q.length < 2) { pedidoRenderActivos(); return; }
+  clearTimeout(pedidoBuscarTimer);
+  pedidoBuscarTimer = setTimeout(async () => {
+    const resp = await apiGet('buscarPacientesCobro', { q });
+    const lista = (resp && resp.ok) ? (resp.resultados || []) : [];
+    cont.innerHTML = lista.length
+      ? lista.map(p => `<div onclick="pedidoElegirPaciente('${escJs(p.idPaciente)}','${escJs(p.nombrePaciente)}')" style="padding:9px 11px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px;"><b>${artEsc(p.nombrePaciente)}</b><br><small style="color:var(--text-muted);">${artEsc(p.idPaciente)}</small></div>`).join('')
+      : '<div style="padding:10px;color:var(--text-muted);font-size:13px;">Sin resultados. Verifica que el paciente esté dado de alta.</div>';
+  }, 280);
+}
+
+function pedidoElegirActivo(idPaciente) {
+  const p = pedidosActivos.find(x => String(x.idPaciente) === String(idPaciente));
+  if (!p) return;
+  abrirCarritoPedido(p.idPaciente, p.nombrePaciente, p.origen, p.folioCirugia, p.ubicacionTexto);
+}
+function pedidoElegirPaciente(idPaciente, nombre) { abrirCarritoPedido(idPaciente, nombre, '', '', ''); }
+
+// ---- Nuevo pedido: carrito de artículos ----
+function abrirCarritoPedido(idPaciente, nombre, origen, folioCirugia, ubicacionTexto) {
+  pedidoCart = [];
+  pedidoCtx = { idPaciente: idPaciente, nombrePaciente: nombre, origen: origen || '', folioCirugia: folioCirugia || '', ubicacionTexto: ubicacionTexto || '' };
+  const arts = (catalogos.articulos || []);
+  if (!arts.length) { showToast('No hay artículos en el catálogo (CAT_Articulos)', 'error'); return; }
+  const opciones = arts.slice()
+    .sort((a, b) => (a.Nombre || '').localeCompare(b.Nombre || '', 'es', { sensitivity: 'base' }))
+    .map(a => `<option value="${artEsc(a.ID_Articulo)}" data-codigo="${artEsc(a.Codigo || '')}" data-desc="${artEsc(a.Nombre || '')}" data-unidad="${artEsc(a.Unidad || '')}" data-cat="${artEsc(a.Categoria || '')}">${artEsc(a.Nombre || a.ID_Articulo)}${a.Unidad ? ' (' + artEsc(a.Unidad) + ')' : ''}</option>`).join('');
+  openModal('Pedido de material · ' + artEsc(nombre), `
+    <div style="background:var(--teal-light);padding:8px 12px;border-radius:8px;margin-bottom:10px;font-size:12px;color:var(--navy);">Paciente: <b>${artEsc(nombre)}</b>${ubicacionTexto ? ' · ' + artEsc(ubicacionTexto) : ''}. Captura el material que necesitas; el almacén lo surtirá.</div>
+    <div class="form-grid">
+      <div class="full"><label>Artículo</label><select id="ped_art" onchange="pedidoArtChange()"><option value="">— Seleccionar —</option>${opciones}</select></div>
+      <div><label>Cantidad</label><input type="number" id="ped_cant" step="any" min="0" value="1"></div>
+      <div><label>Unidad</label><input type="text" id="ped_unidad" placeholder="pza" readonly></div>
+      <div style="display:flex;align-items:end;"><button type="button" class="btn btn-secondary btn-sm" onclick="pedidoAgregar()">+ Agregar</button></div>
+    </div>
+    <div id="ped_cartBox" style="margin-top:10px;"></div>
+    <div class="form-grid" style="margin-top:8px;"><div class="full"><label>Observaciones (opcional)</label><input type="text" id="ped_obs" placeholder="Ej: urge para las 14:00 / sala 2"></div></div>
+    <div class="form-actions">
+      <button type="button" class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+      <button type="button" class="btn btn-primary" onclick="submitPedido()">Guardar pedido</button>
+    </div>
+  `);
+  pedidoRenderCart();
+}
+
+function pedidoArtSel() {
+  const sel = document.getElementById('ped_art');
+  if (!sel || !sel.value) return null;
+  return sel.options[sel.selectedIndex];
+}
+function pedidoArtChange() {
+  const opt = pedidoArtSel();
+  const u = document.getElementById('ped_unidad');
+  if (u) u.value = opt ? (opt.dataset.unidad || '') : '';
+}
+
+function pedidoAgregar() {
+  const opt = pedidoArtSel();
+  if (!opt) { showToast('Selecciona un artículo', 'error'); return; }
+  const cant = parseFloat(document.getElementById('ped_cant').value);
+  if (!cant || cant <= 0) { showToast('Captura la cantidad', 'error'); return; }
+  const idArticulo = opt.value;
+  if (pedidoCart.some(x => x.idArticulo === idArticulo)) { showToast('Ese artículo ya está en el pedido', 'warn'); return; }
+  pedidoCart.push({ idArticulo: idArticulo, codigo: opt.dataset.codigo || '', descripcion: opt.dataset.desc || '', categoria: opt.dataset.cat || '', unidad: opt.dataset.unidad || '', cantidad: cant });
+  document.getElementById('ped_art').value = '';
+  document.getElementById('ped_cant').value = '1';
+  document.getElementById('ped_unidad').value = '';
+  pedidoRenderCart();
+}
+
+function pedidoQuitar(i) { pedidoCart.splice(i, 1); pedidoRenderCart(); }
+
+function pedidoRenderCart() {
+  const box = document.getElementById('ped_cartBox');
+  if (!box) return;
+  if (!pedidoCart.length) { box.innerHTML = '<div class="empty-state" style="padding:14px;"><div class="icon">📝</div>Agrega artículos al pedido</div>'; return; }
+  const rows = pedidoCart.map((l, i) => `<tr><td>${artEsc(l.descripcion)}</td><td style="text-align:right;">${l.cantidad} ${artEsc(l.unidad || '')}</td><td>${artEsc(l.codigo || '—')}</td><td><button class="btn btn-secondary btn-sm" onclick="pedidoQuitar(${i})">×</button></td></tr>`).join('');
+  box.innerHTML = `<table><thead><tr><th>Artículo</th><th style="text-align:right;">Cant.</th><th>Código</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+async function submitPedido() {
+  if (!pedidoCart.length) { showToast('Agrega al menos un artículo', 'error'); return; }
+  const data = {
+    idPaciente: pedidoCtx.idPaciente, nombrePaciente: pedidoCtx.nombrePaciente,
+    origen: pedidoCtx.origen, folioCirugia: pedidoCtx.folioCirugia, ubicacionTexto: pedidoCtx.ubicacionTexto,
+    observaciones: (document.getElementById('ped_obs') || {}).value || '',
+    solicitadoPor: currentUser.nombre,
+    items: pedidoCart.map(l => ({ idArticulo: l.idArticulo, codigo: l.codigo, descripcion: l.descripcion, categoria: l.categoria, unidad: l.unidad, cantidad: l.cantidad }))
+  };
+  const resp = await apiPost('crearPedido', data);
+  if (resp && resp.ok) {
+    showToast(`✓ Pedido ${resp.idPedido} creado (${resp.partidas} partida${resp.partidas === 1 ? '' : 's'})`);
+    closeModal();
+    loadPedidos();
+  } else {
+    showToast('Error: ' + ((resp && resp.error) || 'no se pudo crear el pedido'), 'error');
+  }
+}
+
+// ---- Detalle / acciones de almacén ----
+async function verPedido(idPedido) {
+  const resp = await apiGet('getPedido', { idPedido: idPedido });
+  if (!resp || !resp.ok) { showToast('No se pudo cargar el pedido', 'error'); return; }
+  const c = resp.cabecera; const items = resp.items || [];
+  const rows = items.map(it => `<tr><td>${artEsc(it.Descripcion)}</td><td>${artEsc(it.Codigo || '—')}</td><td style="text-align:right;">${it.Cantidad_Solicitada} ${artEsc(it.Unidad || '')}</td></tr>`).join('');
+  openModal('Pedido ' + artEsc(c.Folio || c.ID_Pedido), `
+    <div style="font-size:13px;color:var(--navy);margin-bottom:8px;">
+      <b>${artEsc(c.Nombre_Paciente)}</b> · ${artEsc(c.Origen || '—')}${c.Ubicacion_Texto ? ' · ' + artEsc(c.Ubicacion_Texto) : ''}<br>
+      <small style="color:var(--text-muted);">Solicitó ${artEsc(c.Solicitado_Por || '—')} · ${artEsc(c.Timestamp_Solicitud || '')} · Estado ${artEsc(String(c.Estado || '').toUpperCase())}</small>
+      ${c.Observaciones ? `<div style="margin-top:6px;">📝 ${artEsc(c.Observaciones)}</div>` : ''}
+    </div>
+    <table><thead><tr><th>Artículo</th><th>Código</th><th style="text-align:right;">Cantidad</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="form-actions"><button type="button" class="btn btn-secondary" onclick="closeModal()">Cerrar</button></div>
+  `);
+}
+
+async function surtirPedidoFront(idPedido) {
+  if (!confirm('¿Marcar el pedido ' + idPedido + ' como surtido?\n\nNota: registra que almacén lo preparó. El descuento de inventario y el cobro siguen por la remisión hasta que se active el escaneo de código de barras.')) return;
+  const resp = await apiPost('surtirPedido', { idPedido: idPedido, realizadoPor: currentUser.nombre });
+  if (resp && resp.ok) { showToast('Pedido ' + idPedido + ' surtido'); loadPedidos(); }
+  else showToast('Error: ' + ((resp && resp.error) || 'no se pudo surtir'), 'error');
+}
+
+async function cancelarPedidoFront(idPedido) {
+  if (!confirm('¿Cancelar el pedido ' + idPedido + '?')) return;
+  const resp = await apiPost('cancelarPedido', { idPedido: idPedido });
+  if (resp && resp.ok) { showToast('Pedido ' + idPedido + ' cancelado'); loadPedidos(); }
+  else showToast('Error: ' + ((resp && resp.error) || 'no se pudo cancelar'), 'error');
 }
 
 // ============================================================

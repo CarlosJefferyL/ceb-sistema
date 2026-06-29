@@ -63,7 +63,10 @@ var SHEETS = {
   INSUMOS: 'CAT_Insumos',
   BOM_PLANTILLA: 'BOM_Plantilla_Items',
   BOM_CIRUGIA: 'BOM_Cirugia',
-  BOM_ITEMS: 'BOM_Items'
+  BOM_ITEMS: 'BOM_Items',
+  // ---- Módulo Pedidos (solicitudes de material de enfermería) ----
+  PEDIDOS: 'Pedidos',
+  PEDIDO_ITEMS: 'Pedido_Items'
 };
 
 // Encabezados de la hoja de médicos de consulta externa (creada bajo demanda).
@@ -128,7 +131,11 @@ var PERMISOS_ACCIONES = {
   'rechazar_bom':         ['ADMIN','DIRECTOR_MEDICO'],
   'asignar_bom':          ['ADMIN','DIRECTOR_MEDICO'],
   'entregar_bom':         ['ADMIN','ALMACEN'],
-  'editar_plantilla_bom': ['ADMIN','ALMACEN','DIRECTOR_MEDICO']
+  'editar_plantilla_bom': ['ADMIN','ALMACEN','DIRECTOR_MEDICO'],
+  // ---- Módulo Pedidos (enfermería pide, almacén surte) ----
+  'crear_pedido':         ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO'],
+  'surtir_pedido':        ['ADMIN','ALMACEN','DIRECTOR_MEDICO'],
+  'cancelar_pedido':      ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','DIRECTOR_MEDICO']
 };
 
 // JEFE_ENFERMERIA se conserva como rol legado (equivale a "ambos" flujos) para no
@@ -215,6 +222,8 @@ function doGet(e) {
       case 'getBOMPendientes': result = getBOMPendientes(); break;
       case 'getBOMPlantilla': result = getBOMPlantilla(e.parameter.clavePaquete); break;
       case 'getPaquetesAdmin': result = getPaquetesAdmin(); break;
+      case 'getPedidos':     result = getPedidos(e.parameter.estado, e.parameter.desde, e.parameter.hasta); break;
+      case 'getPedido':      result = getPedido(e.parameter.idPedido); break;
       default:             result = { ok: false, error: 'Acción no reconocida: ' + action };
     }
     return jsonResponse(result);
@@ -281,6 +290,9 @@ function doPost(e) {
       case 'entregarBOM':        result = entregarBOM(payload.data); break;
       case 'guardarPaquete':     result = guardarPaquete(payload.data); break;
       case 'guardarPlantillaBOM': result = guardarPlantillaBOM(payload.data); break;
+      case 'crearPedido':        result = crearPedido(payload.data); break;
+      case 'surtirPedido':       result = surtirPedido(payload.data); break;
+      case 'cancelarPedido':     result = cancelarPedido(payload.data); break;
       default:                   result = { ok: false, error: 'Acción POST no reconocida: ' + action };
     }
     return jsonResponse(result);
@@ -6476,6 +6488,193 @@ function guardarPlantillaBOM(d) {
       });
     });
     return { ok: true, clave: clave, partidas: n };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ============================================================
+// MÓDULO PEDIDOS — solicitudes de material de enfermería
+// ------------------------------------------------------------
+// Flujo: enfermería arma un pedido por paciente (cabecera + partidas) ->
+// almacén lo ve y lo surte. Estados: SOLICITADO -> SURTIDO (o CANCELADO).
+// NOTA: en esta etapa "surtir" solo registra quién/cuándo preparó el pedido;
+// el descuento de inventario y el cobro siguen por la remisión hasta que se
+// integre el escaneo de código de barras (siguiente etapa de la minuta).
+// ============================================================
+var PEDIDOS_HEADERS = ['ID_Pedido','Folio','Fecha','ID_Paciente','Nombre_Paciente','Origen',
+  'Folio_Cirugia','Ubicacion_Texto','Estado','Solicitado_Por','Timestamp_Solicitud',
+  'Observaciones','Surtido_Por','Timestamp_Surtido'];
+var PEDIDO_ITEMS_HEADERS = ['ID_Pedido_Item','ID_Pedido','ID_Articulo','Codigo','Descripcion',
+  'Categoria','Unidad','Cantidad_Solicitada','Cantidad_Surtida','Estado_Item'];
+
+function ensurePedidosSheets_() {
+  ensureSheetConHeaders_(SHEETS.PEDIDOS, PEDIDOS_HEADERS);
+  ensureSheetConHeaders_(SHEETS.PEDIDO_ITEMS, PEDIDO_ITEMS_HEADERS);
+}
+
+/** Siguiente folio PED-#### (escanea el máximo existente). */
+function siguienteFolioPedido_() {
+  var num = 0;
+  sheetToObjects(SHEETS.PEDIDOS).forEach(function (p) {
+    var m = String(p.ID_Pedido || '').match(/^PED-(\d+)$/);
+    if (m) num = Math.max(num, parseInt(m[1], 10) || 0);
+  });
+  return 'PED-' + String(num + 1).padStart(4, '0');
+}
+
+/** Crea un pedido (cabecera + partidas). Lo usa enfermería. */
+function crearPedido(d) {
+  if (!tienePermiso(d.rolUsuario, 'crear_pedido')) {
+    return errorSinPermiso(d.rolUsuario, 'crear_pedido');
+  }
+  if (!d.idPaciente) return { ok: false, error: 'Falta el paciente del pedido' };
+  var items = Array.isArray(d.items) ? d.items.filter(function (it) {
+    return it && it.idArticulo && (parseFloat(it.cantidad) || 0) > 0;
+  }) : [];
+  if (!items.length) return { ok: false, error: 'Agrega al menos un artículo con cantidad' };
+
+  ensurePedidosSheets_();
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    var id = siguienteFolioPedido_();
+    appendRowByHeader(SHEETS.PEDIDOS, {
+      ID_Pedido: id,
+      Folio: id,
+      Fecha: todayStr(),
+      ID_Paciente: d.idPaciente,
+      Nombre_Paciente: d.nombrePaciente || '',
+      Origen: d.origen || '',
+      Folio_Cirugia: d.folioCirugia || '',
+      Ubicacion_Texto: d.ubicacionTexto || '',
+      Estado: 'SOLICITADO',
+      Solicitado_Por: d.solicitadoPor || d.rolUsuario || '',
+      Timestamp_Solicitud: nowTs(),
+      Observaciones: d.observaciones || '',
+      Surtido_Por: '',
+      Timestamp_Surtido: ''
+    });
+    var n = 0;
+    items.forEach(function (it) {
+      n++;
+      appendRowByHeader(SHEETS.PEDIDO_ITEMS, {
+        ID_Pedido_Item: id + '-' + String(n).padStart(3, '0'),
+        ID_Pedido: id,
+        ID_Articulo: it.idArticulo,
+        Codigo: it.codigo || '',
+        Descripcion: it.descripcion || '',
+        Categoria: it.categoria || '',
+        Unidad: it.unidad || '',
+        Cantidad_Solicitada: parseFloat(it.cantidad) || 0,
+        Cantidad_Surtida: '',
+        Estado_Item: 'SOLICITADO'
+      });
+    });
+    return { ok: true, idPedido: id, partidas: n };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Lista de pedidos (cabecera + nº de partidas), filtrable por estado/fechas. */
+function getPedidos(estado, desde, hasta) {
+  ensurePedidosSheets_();
+  var items = sheetToObjects(SHEETS.PEDIDO_ITEMS);
+  var conteo = {};
+  items.forEach(function (it) {
+    var k = String(it.ID_Pedido);
+    conteo[k] = (conteo[k] || 0) + 1;
+  });
+  var filtroEstado = estado ? String(estado).toUpperCase() : '';
+  var lista = sheetToObjects(SHEETS.PEDIDOS).map(function (p) {
+    return {
+      idPedido: p.ID_Pedido,
+      folio: p.Folio || p.ID_Pedido,
+      fecha: dateOnly(p.Fecha),
+      idPaciente: p.ID_Paciente,
+      nombrePaciente: p.Nombre_Paciente,
+      origen: p.Origen,
+      folioCirugia: p.Folio_Cirugia,
+      ubicacionTexto: p.Ubicacion_Texto,
+      estado: String(p.Estado || 'SOLICITADO').toUpperCase(),
+      solicitadoPor: p.Solicitado_Por,
+      timestampSolicitud: p.Timestamp_Solicitud,
+      surtidoPor: p.Surtido_Por,
+      observaciones: p.Observaciones,
+      partidas: conteo[String(p.ID_Pedido)] || 0
+    };
+  }).filter(function (p) {
+    if (filtroEstado && filtroEstado !== 'TODOS' && p.estado !== filtroEstado) return false;
+    if (desde && String(p.fecha) < String(desde)) return false;
+    if (hasta && String(p.fecha) > String(hasta)) return false;
+    return true;
+  });
+  // Más recientes primero
+  lista.sort(function (a, b) { return String(b.timestampSolicitud).localeCompare(String(a.timestampSolicitud)); });
+  return { ok: true, pedidos: lista };
+}
+
+/** Detalle de un pedido (cabecera + partidas). */
+function getPedido(idPedido) {
+  ensurePedidosSheets_();
+  var cab = sheetToObjects(SHEETS.PEDIDOS).filter(function (p) { return String(p.ID_Pedido) === String(idPedido); })[0];
+  if (!cab) return { ok: false, error: 'Pedido no encontrado: ' + idPedido };
+  var items = sheetToObjects(SHEETS.PEDIDO_ITEMS).filter(function (it) { return String(it.ID_Pedido) === String(idPedido); });
+  return { ok: true, cabecera: cab, items: items };
+}
+
+/** Cambia el estado de un pedido a un valor de columna en la hoja Pedidos. */
+function setEstadoPedido_(idPedido, nuevoEstado, usuario) {
+  var sh = getSheet(SHEETS.PEDIDOS);
+  var data = sh.getDataRange().getValues();
+  var H = data[0];
+  var cId = H.indexOf('ID_Pedido'), cEst = H.indexOf('Estado'),
+      cSurtPor = H.indexOf('Surtido_Por'), cSurtTs = H.indexOf('Timestamp_Surtido');
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][cId]) === String(idPedido)) {
+      sh.getRange(i + 1, cEst + 1).setValue(nuevoEstado);
+      if (nuevoEstado === 'SURTIDO') {
+        if (cSurtPor !== -1) sh.getRange(i + 1, cSurtPor + 1).setValue(usuario || '');
+        if (cSurtTs !== -1) sh.getRange(i + 1, cSurtTs + 1).setValue(nowTs());
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Marca un pedido como surtido (registro de quién/cuándo lo preparó). */
+function surtirPedido(d) {
+  if (!tienePermiso(d.rolUsuario, 'surtir_pedido')) {
+    return errorSinPermiso(d.rolUsuario, 'surtir_pedido');
+  }
+  if (!d.idPedido) return { ok: false, error: 'Falta el pedido' };
+  ensurePedidosSheets_();
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    var ok = setEstadoPedido_(d.idPedido, 'SURTIDO', d.realizadoPor || d.rolUsuario || '');
+    if (!ok) return { ok: false, error: 'Pedido no encontrado: ' + d.idPedido };
+    return { ok: true, idPedido: d.idPedido, estado: 'SURTIDO' };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Cancela un pedido. */
+function cancelarPedido(d) {
+  if (!tienePermiso(d.rolUsuario, 'cancelar_pedido')) {
+    return errorSinPermiso(d.rolUsuario, 'cancelar_pedido');
+  }
+  if (!d.idPedido) return { ok: false, error: 'Falta el pedido' };
+  ensurePedidosSheets_();
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    var ok = setEstadoPedido_(d.idPedido, 'CANCELADO', d.rolUsuario || '');
+    if (!ok) return { ok: false, error: 'Pedido no encontrado: ' + d.idPedido };
+    return { ok: true, idPedido: d.idPedido, estado: 'CANCELADO' };
   } finally {
     lock.releaseLock();
   }
