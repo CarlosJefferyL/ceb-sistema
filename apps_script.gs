@@ -6750,9 +6750,52 @@ function cancelarPedido(d) {
 }
 
 /**
+ * Lotes ABIERTOS con saldo de un artículo en un almacén, ordenados PEPS
+ * (primeras entradas primeras salidas): por Fecha_Entrada asc, luego captura/ID.
+ */
+function lotesDisponiblesFIFO_(idArticulo, ubicacion) {
+  var ubi = ubicacion || UBICACION_DEFAULT;
+  var rows = sheetToObjects(SHEETS.LOTES).filter(function (l) {
+    if (String(l.ID_Medicamento) !== String(idArticulo)) return false;
+    if (String(l.Estado) !== 'ABIERTA') return false;
+    if ((l.Ubicacion || UBICACION_DEFAULT) !== ubi) return false;
+    var inicial = parseFloat(l.Cantidad_Inicial) || 0;
+    var consumida = parseFloat(l.Cantidad_Consumida) || 0;
+    var saldo = (l.Saldo === '' || l.Saldo == null) ? (inicial - consumida) : parseFloat(l.Saldo);
+    l.__saldo = saldo;
+    return saldo > 0;
+  });
+  rows.sort(function (a, b) {
+    var fa = String(a.Fecha_Entrada || a.Timestamp_Captura || '');
+    var fb = String(b.Fecha_Entrada || b.Timestamp_Captura || '');
+    if (fa !== fb) return fa < fb ? -1 : 1;
+    return String(a.ID_Lote).localeCompare(String(b.ID_Lote));
+  });
+  return rows;
+}
+
+/**
+ * Reparte una cantidad entre lotes por PEPS. Devuelve {ok, asignaciones:[{idLote,cantidad}]}
+ * o {ok:false, faltante} si el saldo por lote no alcanza en ese almacén.
+ */
+function asignarLotesFIFO_(idArticulo, cantidad, ubicacion) {
+  var disp = lotesDisponiblesFIFO_(idArticulo, ubicacion);
+  var restante = cantidad;
+  var asign = [];
+  for (var i = 0; i < disp.length && restante > 0.0001; i++) {
+    var tomar = Math.min(restante, disp[i].__saldo);
+    if (tomar > 0) { asign.push({ idLote: disp[i].ID_Lote, cantidad: tomar }); restante -= tomar; }
+  }
+  if (restante > 0.0001) return { ok: false, faltante: restante };
+  return { ok: true, asignaciones: asign };
+}
+
+/**
  * Surte un pedido validado por escáner: descuenta del inventario y lo carga a
  * la cuenta del paciente (reutiliza registrarRemision), luego marca el pedido y
- * sus partidas como surtidas. d.items = [{idArticulo, cantidad, ubicacion, idLote, unidad}].
+ * sus partidas como surtidas. d.items = [{idArticulo, cantidad, ubicacion, unidad}].
+ * El lote NO se captura al surtir: para artículos con lote se asigna automático
+ * por PEPS (FIFO) sobre el almacén elegido, partiendo en varios lotes si hace falta.
  */
 function surtirPedidoConEscaneo(d) {
   if (!tienePermiso(d.rolUsuario, 'surtir_pedido')) {
@@ -6765,7 +6808,29 @@ function surtirPedidoConEscaneo(d) {
   }) : [];
   if (!items.length) return { ok: false, error: 'No hay artículos surtidos para descontar' };
 
-  // 1) Descuento de inventario + cobro a la cuenta del paciente (NO sostener lock:
+  // 1) Resolver lotes por PEPS: los artículos con lote se parten en uno o varios
+  //    renglones (uno por lote) tomando primero el de entrada más antigua.
+  var remItems = [];
+  for (var x = 0; x < items.length; x++) {
+    var it = items[x];
+    var art = getArticuloRaw_(it.idArticulo);
+    if (!art) return { ok: false, error: 'Artículo no encontrado: ' + it.idArticulo };
+    var cant = parseFloat(it.cantidad) || 0;
+    var ubic = it.ubicacion || UBICACION_DEFAULT;
+    if (categoriaRequiereLote_(normCategoria_(art.Categoria))) {
+      var fifo = asignarLotesFIFO_(it.idArticulo, cant, ubic);
+      if (!fifo.ok) {
+        return { ok: false, error: 'Saldo por lote insuficiente de "' + (art.Nombre || it.idArticulo) + '" en ese almacén (faltan ' + fifo.faltante + ' ' + (it.unidad || '') + ')' };
+      }
+      fifo.asignaciones.forEach(function (a) {
+        remItems.push({ idArticulo: it.idArticulo, cantidad: a.cantidad, ubicacion: ubic, idLote: a.idLote, unidad: it.unidad || '' });
+      });
+    } else {
+      remItems.push({ idArticulo: it.idArticulo, cantidad: cant, ubicacion: ubic, idLote: '', unidad: it.unidad || '' });
+    }
+  }
+
+  // 2) Descuento de inventario + cobro a la cuenta del paciente (NO sostener lock:
   //    registrarRemision toma su propio ScriptLock).
   var rem = registrarRemision({
     rolUsuario: d.rolUsuario,
@@ -6775,14 +6840,12 @@ function surtirPedidoConEscaneo(d) {
     folioCirugia: d.folioCirugia || '',
     idMedico: d.idMedico || '',
     nombreMedico: d.nombreMedico || '',
-    items: items.map(function (it) {
-      return { idArticulo: it.idArticulo, cantidad: parseFloat(it.cantidad) || 0, ubicacion: it.ubicacion, idLote: it.idLote || '', unidad: it.unidad || '' };
-    }),
+    items: remItems,
     capturadoPor: d.realizadoPor || d.rolUsuario || ''
   });
   if (!rem.ok) return rem;
 
-  // 2) Marcar el pedido y sus partidas como surtidas.
+  // 3) Marcar el pedido y sus partidas como surtidas.
   ensurePedidosSheets_();
   var lock = LockService.getScriptLock();
   lock.waitLock(15000);

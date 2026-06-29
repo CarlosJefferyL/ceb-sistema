@@ -2329,15 +2329,15 @@ async function abrirSurtidoEscaner(idPedido) {
     return {
       idArticulo: it.ID_Articulo, codigo: it.Codigo || '', descripcion: it.Descripcion || '',
       categoria: cat, unidad: it.Unidad || '', solicitada: parseFloat(it.Cantidad_Solicitada) || 0,
-      surtida: 0, requiereLote: artRequiereLote(cat), idLote: '', lotes: []
+      surtida: 0
     };
   });
   const hayControlado = surtidoItems.some(x => x.categoria === 'MEDICAMENTO_CONTROLADO');
   const medOpts = (catalogos.medicos || []).map(m => `<option value="${m.ID_Medico}">${artEsc(m.Nombre_Completo)}</option>`).join('');
   openModal('Surtir con escáner · ' + artEsc(c.Nombre_Paciente), `
-    <div style="background:var(--teal-light);padding:8px 12px;border-radius:8px;margin-bottom:10px;font-size:12px;color:var(--navy);">Escanea cada artículo del pedido. El sistema valida que pertenezca al pedido; al confirmar <b>descuenta del almacén</b> y lo <b>carga a la cuenta</b> de ${artEsc(c.Nombre_Paciente)}.</div>
+    <div style="background:var(--teal-light);padding:8px 12px;border-radius:8px;margin-bottom:10px;font-size:12px;color:var(--navy);">Escanea cada artículo del pedido. El sistema valida que pertenezca al pedido; al confirmar <b>descuenta del almacén</b> (lote por <b>PEPS</b>) y lo <b>carga a la cuenta</b> de ${artEsc(c.Nombre_Paciente)}.</div>
     <div class="form-grid">
-      <div><label>Almacén de salida</label><select id="su_ubic" onchange="surtidoReloadLotes()">${ubicacionOpts('ALM_GENERAL')}</select></div>
+      <div><label>Almacén de salida</label><select id="su_ubic">${ubicacionOpts('ALM_GENERAL')}</select></div>
       ${hayControlado ? `<div><label>Médico (para controlados)</label><select id="su_medico"><option value="">— Seleccionar —</option>${medOpts}</select></div>` : ''}
     </div>
     <div style="margin:10px 0;">
@@ -2350,26 +2350,9 @@ async function abrirSurtidoEscaner(idPedido) {
       <button type="button" class="btn btn-primary" onclick="confirmarSurtido()">Surtir, descontar y cobrar</button>
     </div>
   `);
-  await surtidoReloadLotes();
   renderSurtidoItems();
   setTimeout(() => { const el = document.getElementById('su_scan'); if (el) el.focus(); }, 60);
 }
-
-async function surtidoReloadLotes() {
-  const ubic = (document.getElementById('su_ubic') || {}).value || 'ALM_GENERAL';
-  for (const it of surtidoItems) {
-    if (!it.requiereLote) continue;
-    const resp = await apiGet('getLotes', { estado: 'TODAS', idMedicamento: it.idArticulo });
-    let lotes = (resp && resp.ok) ? (resp.data || []).filter(l => l.saldo > 0 && (l.ubicacion || 'ALM_GENERAL') === ubic) : [];
-    // FEFO: caducidad más próxima primero
-    lotes.sort((a, b) => String(a.fechaCaducidad || '').localeCompare(String(b.fechaCaducidad || '')));
-    it.lotes = lotes;
-    if (!it.idLote || !lotes.some(l => l.idLote === it.idLote)) it.idLote = lotes.length ? lotes[0].idLote : '';
-  }
-  renderSurtidoItems();
-}
-
-function surtidoSetLote(i, idLote) { if (surtidoItems[i]) surtidoItems[i].idLote = idLote; }
 
 function surtidoAjustar(i, delta) {
   const it = surtidoItems[i]; if (!it) return;
@@ -2384,22 +2367,15 @@ function renderSurtidoItems() {
     const estado = it.surtida === 0
       ? '<span style="color:var(--text-muted);">pendiente</span>'
       : (completo ? '<span style="color:var(--success);font-weight:700;">✓ completo</span>' : `<span style="color:#B45309;font-weight:700;">${it.surtida}/${it.solicitada}</span>`);
-    let loteCell = '—';
-    if (it.requiereLote) {
-      loteCell = it.lotes.length
-        ? `<select onchange="surtidoSetLote(${i}, this.value)" style="font-size:12px;">${it.lotes.map(l => `<option value="${artEsc(l.idLote)}" ${l.idLote === it.idLote ? 'selected' : ''}>L:${artEsc(l.loteFabricante || 's/n')} · s${l.saldo}${l.fechaCaducidad ? ' · ' + formatDateShort(l.fechaCaducidad) : ''}</option>`).join('')}</select>`
-        : '<small style="color:var(--danger);">sin caja en este almacén</small>';
-    }
     return `<tr style="${completo ? 'background:#ECFDF5;' : ''}">
       <td>${artEsc(it.descripcion)}${it.codigo ? `<br><small style="color:var(--text-muted);">${artEsc(it.codigo)}</small>` : ''}</td>
       <td style="text-align:center;">${it.solicitada} ${artEsc(it.unidad || '')}</td>
       <td style="text-align:center;font-weight:700;font-size:15px;">${it.surtida}</td>
-      <td>${loteCell}</td>
       <td style="text-align:center;">${estado}</td>
       <td style="text-align:center;"><button class="btn btn-secondary btn-sm" onclick="surtidoAjustar(${i},-1)" title="Quitar uno">−</button></td>
     </tr>`;
   }).join('');
-  cont.innerHTML = `<table><thead><tr><th>Artículo</th><th>Solicitado</th><th>Surtido</th><th>Lote</th><th>Estado</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+  cont.innerHTML = `<table><thead><tr><th>Artículo</th><th>Solicitado</th><th>Surtido</th><th>Estado</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 async function escanearItemPedido() {
@@ -2421,9 +2397,6 @@ async function escanearItemPedido() {
 async function confirmarSurtido() {
   const surt = surtidoItems.filter(it => it.surtida > 0);
   if (!surt.length) { showToast('Escanea al menos un artículo', 'error'); return; }
-  for (const it of surt) {
-    if (it.requiereLote && !it.idLote) { showToast('Falta elegir lote para ' + it.descripcion, 'error'); return; }
-  }
   const incompletos = surtidoItems.filter(it => it.surtida < it.solicitada).length;
   if (incompletos && !confirm(`Hay ${incompletos} artículo(s) sin completar.\n¿Surtir solo lo escaneado, descontar y cobrar?`)) return;
   const ubic = (document.getElementById('su_ubic') || {}).value || 'ALM_GENERAL';
@@ -2435,7 +2408,7 @@ async function confirmarSurtido() {
     idMedico: medSel ? medSel.value : '',
     nombreMedico: (medSel && medSel.selectedIndex > 0) ? medSel.options[medSel.selectedIndex].text : '',
     realizadoPor: currentUser.nombre,
-    items: surt.map(it => ({ idArticulo: it.idArticulo, cantidad: it.surtida, ubicacion: ubic, idLote: it.requiereLote ? it.idLote : '', unidad: it.unidad }))
+    items: surt.map(it => ({ idArticulo: it.idArticulo, cantidad: it.surtida, ubicacion: ubic, unidad: it.unidad }))
   };
   const resp = await apiPost('surtirPedidoConEscaneo', data);
   if (resp && resp.ok) {
