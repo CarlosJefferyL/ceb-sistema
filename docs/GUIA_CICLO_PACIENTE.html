@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ciclo de vida del paciente · Clínica Estar Bien</title>
+<style>
+  :root{
+    --navy:#16315c; --navy2:#1f4480; --teal:#0f9b8e; --teal-light:#e6f5f3;
+    --bg:#f5f7fa; --card:#ffffff; --border:#e2e8f0; --text:#1f2937;
+    --muted:#64748b; --amber:#b45309; --amber-bg:#fef3c7; --green:#15803d;
+    --green-bg:#dcfce7; --red:#b91c1c; --purple:#6d28d9; --purple-bg:#ede9fe;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.55;font-size:15px}
+  .wrap{max-width:920px;margin:0 auto;padding:32px 20px 80px}
+  header.top{background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;
+    border-radius:16px;padding:30px 32px;margin-bottom:10px}
+  header.top h1{margin:0 0 6px;font-size:26px}
+  header.top p{margin:0;opacity:.9;font-size:14px}
+  .legend{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 26px}
+  .badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;
+    font-weight:600;white-space:nowrap}
+  .b-prog{background:#e0e7ff;color:#3730a3}
+  .b-receta{background:var(--teal-light);color:#0b6b61}
+  .b-real{background:var(--amber-bg);color:var(--amber)}
+  .b-term{background:var(--green-bg);color:var(--green)}
+  .b-bom{background:var(--purple-bg);color:var(--purple)}
+  .b-hosp{background:#e0f2fe;color:#075985}
+  .b-caja{background:#fae8ff;color:#86198f}
+  .roles{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 0}
+  .role{font-size:11px;background:#eef2f7;color:var(--muted);border:1px solid var(--border);
+    padding:2px 8px;border-radius:6px}
+  .timeline{position:relative;margin-top:8px;padding-left:46px}
+  .timeline::before{content:"";position:absolute;left:18px;top:6px;bottom:6px;width:3px;
+    background:linear-gradient(var(--teal),var(--navy2))}
+  .step{position:relative;margin-bottom:22px}
+  .step .dot{position:absolute;left:-39px;top:0;width:36px;height:36px;border-radius:50%;
+    background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;
+    font-weight:700;font-size:15px;box-shadow:0 0 0 4px var(--bg)}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;
+    padding:16px 18px;box-shadow:0 1px 2px rgba(16,49,92,.04)}
+  .card h3{margin:0 0 4px;font-size:17px;color:var(--navy)}
+  .card .who{font-size:12px;color:var(--muted);margin-bottom:8px}
+  .card p{margin:8px 0}
+  .sys{background:var(--teal-light);border-left:3px solid var(--teal);border-radius:6px;
+    padding:8px 12px;font-size:13px;margin-top:10px}
+  .sys b{color:#0b6b61}
+  .arrow-state{font-size:12px;color:var(--muted);margin-top:8px}
+  .arrow-state .badge{margin:0 2px}
+  .bombox{background:#faf5ff;border:1px dashed var(--purple);border-radius:10px;
+    padding:14px 16px;margin:6px 0 2px}
+  .bombox h4{margin:0 0 8px;color:var(--purple);font-size:14px}
+  .bomflow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px}
+  .bomflow .badge{background:#fff;border:1px solid var(--purple);color:var(--purple)}
+  .bomflow .sep{color:var(--purple);font-weight:700}
+  .note{font-size:13px;color:var(--muted);margin-top:6px}
+  .callout{background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:12px 16px;
+    margin:22px 0;font-size:14px}
+  .callout b{color:var(--amber)}
+  h2.section{color:var(--navy);border-bottom:2px solid var(--border);padding-bottom:6px;
+    margin:34px 0 14px;font-size:20px}
+  table.sm{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+  table.sm th,table.sm td{border:1px solid var(--border);padding:7px 10px;text-align:left}
+  table.sm th{background:var(--navy);color:#fff;font-weight:600}
+  table.sm tr:nth-child(even){background:#f8fafc}
+  footer{margin-top:40px;color:var(--muted);font-size:12px;text-align:center}
+  @media print{body{background:#fff}.wrap{max-width:100%}header.top{background:var(--navy)!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <h1>🏥 Ciclo de vida del paciente</h1>
+    <p>Clínica Estar Bien · de la programación de la cirugía hasta el cierre de la cuenta en caja</p>
+  </header>
+
+  <div class="legend">
+    <span class="badge b-prog">PROGRAMADA</span>
+    <span class="badge b-receta">RECETA_VINCULADA</span>
+    <span class="badge b-real">REALIZADA</span>
+    <span class="badge b-term">TERMINADA</span>
+    <span class="badge b-bom">BOM</span>
+    <span class="badge b-hosp">Hospitalización</span>
+    <span class="badge b-caja">Caja</span>
+  </div>
+
+  <p>Esta guía sigue el camino típico (“flujo feliz”) de un paciente quirúrgico. A la
+  derecha de cada paso verás <b>en qué estado</b> queda la cirugía y <b>qué hace el
+  sistema</b> por debajo (inventario, Libro COFEPRIS, cuenta del paciente).</p>
+
+  <h2 class="section">El recorrido completo</h2>
+
+  <div class="timeline">
+
+    <!-- 1 -->
+    <div class="step">
+      <div class="dot">1</div>
+      <div class="card">
+        <h3>Se programa la cirugía (aún sin paciente del catálogo)</h3>
+        <div class="who">👤 Programación Q.X. / Recepción</div>
+        <p>Se agenda la cirugía en un quirófano y horario. El paciente puede entrar como
+        <b>texto libre</b> (todavía no está dado de alta en el sistema). Quedan registrados
+        tipo de cirugía, cirujano, ayudantes y el tiempo quirúrgico estimado (TQX).</p>
+        <div class="sys">⚙️ <b>El sistema</b> crea automáticamente el <b>BOM</b> de la
+        cirugía (lista de materiales/medicamentos) en estado <b>SOLICITADO</b>.</div>
+        <div class="arrow-state">Estado de la cirugía → <span class="badge b-prog">PROGRAMADA</span></div>
+      </div>
+    </div>
+
+    <!-- 2 -->
+    <div class="step">
+      <div class="dot">2</div>
+      <div class="card">
+        <h3>Se da de alta al paciente y se vincula a la cirugía</h3>
+        <div class="who">👤 Recepción</div>
+        <p>Recepción da de <b>alta al paciente</b> en el catálogo (nombre, CURP, contacto,
+        tipo de cliente, etc.). Luego, en el detalle de la cirugía, con el botón
+        <b>“👤 Asignar paciente registrado”</b> se liga ese paciente del catálogo a la
+        cirugía que se había programado con texto libre.</p>
+        <div class="sys">⚙️ A partir de aquí la cirugía ya tiene un <b>ID de paciente real</b>.
+        Esto es <b>requisito</b> para poder terminarla más adelante.</div>
+        <div class="arrow-state">Estado → sigue <span class="badge b-prog">PROGRAMADA</span> (ahora con paciente)</div>
+      </div>
+    </div>
+
+    <!-- 3 BOM -->
+    <div class="step">
+      <div class="dot">3</div>
+      <div class="card">
+        <h3>El BOM se propone, se autoriza y se surte</h3>
+        <div class="who">👤 Almacén · Dirección médica</div>
+        <p>El BOM creado en el paso 1 recorre su propio flujo de aprobación antes de que
+        almacén entregue el material al quirófano:</p>
+        <div class="bombox">
+          <h4>Flujo del BOM</h4>
+          <div class="bomflow">
+            <span class="badge">SOLICITADO</span><span class="sep">→</span>
+            <span class="badge">PROPUESTO</span><span class="sep">→</span>
+            <span class="badge">AUTORIZADO</span><span class="sep">→</span>
+            <span class="badge">ENTREGADO</span>
+          </div>
+          <div class="note">• <b>Propuesto:</b> almacén asigna el paquete de materiales y lo propone.<br>
+          • <b>Autorizado:</b> el director médico (o admin) lo aprueba.<br>
+          • <b>Entregado:</b> almacén surte el material para la cirugía.</div>
+        </div>
+        <div class="note">Nota: la entrega del BOM <b>no</b> descuenta inventario por sí
+        sola; el descuento real ocurre cuando se registran los consumos / se concilia el BOM (paso 5–6).</div>
+      </div>
+    </div>
+
+    <!-- 4 receta -->
+    <div class="step">
+      <div class="dot">4</div>
+      <div class="card">
+        <h3>Se vincula la receta física</h3>
+        <div class="who">👤 Quirófano / Enfermería</div>
+        <p>Se liga el folio de la <b>receta física</b> (papel COFEPRIS) a la cirugía. Esto
+        habilita el registro ordenado de los controlados.</p>
+        <div class="arrow-state">Estado → <span class="badge b-receta">RECETA_VINCULADA</span></div>
+      </div>
+    </div>
+
+    <!-- 5 remision -->
+    <div class="step">
+      <div class="dot">5</div>
+      <div class="card">
+        <h3>Se remisionan / registran los consumos del quirófano</h3>
+        <div class="who">👤 Quirófano · Enfermería · Almacén</div>
+        <p>Se registra lo realmente usado: medicamentos (de su lote) e insumos. Puede ser
+        con <b>“🧾 Nueva remisión”</b> o conciliando el BOM al cerrar. Cada consumo se carga
+        a la <b>cuenta del paciente</b> a precio de venta.</p>
+        <div class="sys">⚙️ <b>El sistema</b>: descuenta del <b>almacén/lote</b>, deja la
+        traza en <b>Consumos</b>, asienta la <b>SALIDA en el Libro COFEPRIS</b> (solo
+        controlados) y agrega la línea cobrable en <b>Remision_Items</b>.</div>
+        <div class="arrow-state">Al registrar el primer consumo, estado → <span class="badge b-real">REALIZADA</span></div>
+      </div>
+    </div>
+
+    <!-- 6 terminar -->
+    <div class="step">
+      <div class="dot">6</div>
+      <div class="card">
+        <h3>Se cierra (termina) la cirugía</h3>
+        <div class="who">👤 Quirófano (permiso «terminar cirugía»)</div>
+        <p>Con <b>“✓ Cirugía terminada”</b> se da por concluida. Al cerrar se puede
+        <b>conciliar el BOM</b> (ajustar lo realmente usado; lo no usado se queda en almacén).</p>
+        <div class="sys">⚙️ Requiere que la cirugía <b>tenga paciente registrado</b> (paso 2).
+        Si no hubo consumos, el sistema <b>avisa</b> y pide confirmar.</div>
+        <div class="arrow-state">Estado → <span class="badge b-term">TERMINADA</span></div>
+      </div>
+    </div>
+
+    <!-- 7 hospitalizar -->
+    <div class="step">
+      <div class="dot">7</div>
+      <div class="card">
+        <h3>Se pasa al paciente a un cuarto (hospitalización)</h3>
+        <div class="who">👤 Recepción / Enfermería de piso</div>
+        <p>Las cirugías <b>REALIZADAS</b> (de las últimas 48 h, que aún no tienen cama)
+        aparecen en <b>“pacientes por hospitalizar”</b>. Se asigna una habitación y el
+        paciente queda <b>hospitalizado al instante</b>.</p>
+        <div class="sys">⚙️ El cuarto pasa a <b>ocupado</b> en el tablero de habitaciones y
+        la hospitalización queda <b>ACTIVA</b>, ligada a la cirugía.</div>
+        <div class="arrow-state">Cirugía sigue <span class="badge b-term">TERMINADA</span> · paciente <span class="badge b-hosp">HOSPITALIZADO</span></div>
+      </div>
+    </div>
+
+    <!-- 8 consumos piso -->
+    <div class="step">
+      <div class="dot">8</div>
+      <div class="card">
+        <h3>En el cuarto sigue consumiendo</h3>
+        <div class="who">👤 Enfermería de piso</div>
+        <p>Durante la estancia se siguen cargando consumos a su cuenta. Desde el detalle del
+        cuarto, el botón <b>“🧾 Remisión”</b> abre la remisión con <b>origen PISO</b>.</p>
+        <div class="sys">⚙️ Igual que en quirófano: descuenta inventario/lote, traza en
+        Consumos y Libro COFEPRIS, y suma a <b>Remision_Items</b> del paciente.</div>
+      </div>
+    </div>
+
+    <!-- 9 egreso -->
+    <div class="step">
+      <div class="dot">9</div>
+      <div class="card">
+        <h3>Egreso (alta del cuarto)</h3>
+        <div class="who">👤 Enfermería de piso / Recepción</div>
+        <p>Al dar de alta se <b>egresa</b> al paciente de la habitación. El sistema ofrece
+        <b>“¿Ir a Cobro de caja para cerrar su cuenta?”</b>.</p>
+        <div class="sys">⚙️ El cuarto se libera; la hospitalización deja de estar activa.</div>
+      </div>
+    </div>
+
+    <!-- 10 cobro -->
+    <div class="step">
+      <div class="dot">10</div>
+      <div class="card">
+        <h3>Se totaliza la cuenta en Caja</h3>
+        <div class="who">👤 Caja / Dirección médica</div>
+        <p>En <b>Cobro de caja</b> se busca al paciente y se arma su cuenta. El campo
+        <b>“Materiales y medicamento”</b> se <b>autollena</b> con la suma de todas sus
+        remisiones. Se capturan los demás conceptos (hospitalización, equipo, honorarios…),
+        depósitos y el pago final; la comisión de tarjeta se suma si aplica.</p>
+        <div class="sys">⚙️ Con <b>💾 Registrar cobro</b> se guarda la cuenta; con
+        <b>🔒 Cerrar cuenta</b> se bloquean nuevos consumos (🔓 Reabrir es solo de admin).</div>
+        <div class="arrow-state">Cuenta → <span class="badge b-caja">CERRADA</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="callout">
+    🚧 <b>En camino (Fase 2):</b> hoy solo <b>Materiales y medicamento</b> cae solo al
+    cobro. Se está construyendo el motor para que <b>equipo, laboratorio, imagen e
+    hospitalización</b> también se “remisionen” durante la estancia y el cobro se arme
+    completo por sí solo — incluyendo el modelo de <b>paquetes</b> (precio fijo + cobro de
+    lo que se pase del presupuesto).
+  </div>
+
+  <h2 class="section">Resumen: estados de la cirugía</h2>
+  <table class="sm">
+    <thead><tr><th>Estado</th><th>Qué significa</th><th>Cómo se llega</th></tr></thead>
+    <tbody>
+      <tr><td><span class="badge b-prog">PROGRAMADA</span></td><td>Agendada; con o sin paciente del catálogo.</td><td>Al programar la cirugía (paso 1).</td></tr>
+      <tr><td><span class="badge b-receta">RECETA_VINCULADA</span></td><td>Tiene ligada la receta física.</td><td>Al vincular la receta (paso 4).</td></tr>
+      <tr><td><span class="badge b-real">REALIZADA</span></td><td>Ya tiene consumos registrados; lista para hospitalizar.</td><td>Al registrar el primer consumo (paso 5).</td></tr>
+      <tr><td><span class="badge b-term">TERMINADA</span></td><td>Cerrada formalmente (requiere paciente registrado).</td><td>Con “✓ Cirugía terminada” (paso 6).</td></tr>
+      <tr><td><span style="background:#fee2e2;color:#b91c1c" class="badge">CANCELADA</span></td><td>Cancelada; no permite consumos ni terminar.</td><td>Acción “✕ Cancelar” (reversible con “↻ Reabrir”).</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="section">Quién hace qué (resumen)</h2>
+  <table class="sm">
+    <thead><tr><th>Paso</th><th>Rol principal</th></tr></thead>
+    <tbody>
+      <tr><td>Programar cirugía</td><td>Programación Q.X. / Recepción</td></tr>
+      <tr><td>Alta + asignar paciente</td><td>Recepción</td></tr>
+      <tr><td>Proponer / entregar BOM</td><td>Almacén</td></tr>
+      <tr><td>Autorizar BOM</td><td>Director médico (o admin)</td></tr>
+      <tr><td>Vincular receta / consumos</td><td>Quirófano · Enfermería · Almacén</td></tr>
+      <tr><td>Terminar cirugía</td><td>Quirófano</td></tr>
+      <tr><td>Hospitalizar / consumos de piso</td><td>Recepción · Enfermería de piso</td></tr>
+      <tr><td>Cobro y cierre de cuenta</td><td>Caja · Dirección médica</td></tr>
+    </tbody>
+  </table>
+
+  <footer>
+    Clínica Estar Bien · Guía del ciclo de vida del paciente · generada 2026-06-28
+  </footer>
+
+</div>
+</body>
+</html>
