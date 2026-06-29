@@ -6973,6 +6973,11 @@ function openModalEntrada() {
         📦 Cada entrada registra <strong>una caja cerrada</strong>. La caja queda ligada a la receta que la respalda y se irá descontando por cirugía hasta agotarse.
       </div>
       <div class="form-grid">
+        <div class="full" id="ea_ocWrap" style="display:none;background:var(--teal-light);padding:10px 12px;border-radius:8px;">
+          <label>¿Recibir una orden de compra? (opcional)</label>
+          <select id="ea_oc" onchange="entradaDesdeOC()"><option value="">— Entrada manual —</option></select>
+          <small style="font-size:11px;color:var(--text-muted);display:block;margin-top:2px;">Elige una OC pendiente para recibirla; podrás ajustar artículo, cantidades y precios.</small>
+        </div>
         <div><label>Fecha de entrada</label><input type="date" id="en_fecha" value="${todayISO()}" required></div>
         <div><label>Medicamento</label><select id="en_med" required><option value="">— Seleccionar —</option>${medOpts}</select></div>
         <div><label>Unidades en la caja *</label><input type="number" id="en_cantidad" step="1" min="1" placeholder="Ej: 10" required></div>
@@ -6988,6 +6993,7 @@ function openModalEntrada() {
       </div>
     </form>
   `);
+  cargarOCPendientesSelect();
 }
 
 async function registrarEntrada() {
