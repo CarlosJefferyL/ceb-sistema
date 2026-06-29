@@ -96,6 +96,19 @@ Datos útiles que ya existen: artículo **FENODID** (med. controlado con saldo e
 
 ---
 
+## 7. Cargos de servicios → cobro valorado (F2a)
+
+**Semilla de datos (una vez, en el Google Sheet):**
+- `CAT_Tarifas_Cuarto`: una fila por tipo de cuarto con su `Tarifa_Dia` y `Activo=SI` (PRIVADA, SALA_GENERAL, TERAPIA_INTENSIVA, URGENCIAS).
+- `CAT_Servicios`: una fila por servicio cobrable con `ID_Servicio`, `Nombre`, `Concepto` (una de las claves del cobro: Laparoscopio, Laboratorio, Imagen, Oxigeno, Hora_Extra, etc.), `Precio_Estandar`, `Es_Tercerizado` (SI/NO), `Activo=SI`. **No** crees servicios con `Concepto=Hospitalizacion` (reservado al cálculo automático).
+
+**Pruebas:**
+22. [ ] **Consumos → 🧰 Cargar servicios**: abre el selector de pacientes activos; elige uno.
+23. [ ] Agrega un servicio normal (ej. Laboratorio) con cantidad y precio; agrega uno **tercerizado** (aparecen campos de **costo** y **proveedor**). Registra.
+24. [ ] **Cobro de caja** → selecciona al paciente: los campos del cobro (Laboratorio, etc.) se **prellenan sumados** por concepto; **Hospitalización** = días de estancia × tarifa del cuarto.
+25. [ ] Cada campo prellenado es **editable**; el **Total Cuenta** refleja todo. Re-seleccionar al paciente **refresca**.
+26. [ ] En la hoja `Cargos_Paciente`: el cargo tercerizado guardó `Costo_Tercerizado`. Un rol sin `registrar_consumo` no ve el botón "Cargar servicios".
+
 ## Hallazgos / correcciones pendientes
 > Anota aquí lo que haya que arreglar (paso, qué esperabas, qué pasó, mensaje de error).
 
