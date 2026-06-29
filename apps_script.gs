@@ -5853,7 +5853,33 @@ function getDatosPacienteParaCobro(idPaciente) {
   // auto-alimentar el campo Materiales_Medicamentos de la cuenta.
   var materialesRemision = totalRemisionMateriales_(pac.ID_Paciente);
 
-  return { ok: true, paciente: paciente, cirugias: cirugias, cuentaExistente: cuentaExistente, materialesRemision: materialesRemision };
+  // F2a: cargos de servicios agregados por concepto
+  ensureCargosSheets_();
+  var cargosPac = sheetToObjects(SHEETS.CARGOS).filter(function(c){
+    return String(c.ID_Paciente) === String(pac.ID_Paciente);
+  });
+  var cargosPorConcepto = totalesCargosPorConcepto_(cargosPac);
+
+  // F2a: hospitalización = días × tarifa de cuarto
+  var tarifasCuarto = sheetToObjects(SHEETS.TARIFAS_CUARTO).filter(function(t){ return esActivo(t.Activo); });
+  var tipoCuarto = hosp ? (hosp.Tipo_Habitacion || '') : '';
+  var diasEstancia = 0;
+  if (fechaIngreso) {
+    var fIng = new Date(String(fechaIngreso).substring(0,10) + 'T00:00:00');
+    var fFin = fechaEgreso ? new Date(String(fechaEgreso).substring(0,10) + 'T00:00:00') : new Date();
+    fFin.setHours(0,0,0,0);
+    diasEstancia = Math.max(0, Math.floor((fFin - fIng) / 86400000));
+  }
+  var hospitalizacionCalculada = calcularHospitalizacion_(diasEstancia, tipoCuarto, tarifasCuarto);
+
+  var totalCargos = 0;
+  Object.keys(cargosPorConcepto).forEach(function(k){ totalCargos += cargosPorConcepto[k]; });
+  var totalConsumoValorado = ocRound_(materialesRemision + totalCargos + hospitalizacionCalculada);
+
+  return { ok: true, paciente: paciente, cirugias: cirugias, cuentaExistente: cuentaExistente,
+           materialesRemision: materialesRemision, cargosPorConcepto: cargosPorConcepto,
+           hospitalizacionCalculada: hospitalizacionCalculada, diasEstancia: diasEstancia,
+           totalConsumoValorado: totalConsumoValorado };
 }
 
 function leerCuentaCajaPorExpediente(expediente) {
