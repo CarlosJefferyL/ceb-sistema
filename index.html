@@ -1536,6 +1536,7 @@ textarea { resize: vertical; min-height: 70px; }
           <span style="flex:1;"></span>
           <span style="font-size:13px;color:var(--text-muted);">Comisión calculada: <strong id="cj_comisionTotal">$0.00</strong></span>
           <button class="btn btn-primary" data-accion="cobro_caja" onclick="guardarCobro()">💾 Registrar cobro</button>
+          <button class="btn btn-accent" data-accion="devolucion_material" onclick="devolucionDesdeCobro()" title="Devolver material y acreditar la cuenta">↩ Devolución</button>
           <button class="btn btn-accent" data-accion="cobro_caja" onclick="cerrarCuentaPacienteFront()" title="Cierra la cuenta: ya no acepta más consumos">🔒 Cerrar cuenta</button>
           <button class="btn btn-secondary admin-only" onclick="reabrirCuentaPacienteFront()" title="Reabrir cuenta cerrada">🔓 Reabrir</button>
         </div>
@@ -6315,7 +6316,9 @@ function renderListaConsultas(lista, searchValue, contId, origenRemision) {
       (c.Nombre_Medico||'').toLowerCase().includes(search)
     );
   }
-  const conAcc = !!origenRemision && puede('registrar_consumo');
+  const puedeRem = !!origenRemision && puede('registrar_consumo');
+  const puedeDev = !!origenRemision && puede('devolucion_material');
+  const conAcc = puedeRem || puedeDev;
   const html = rows.map(c => `
     <tr>
       <td>${c.Folio||'—'}</td>
@@ -6325,7 +6328,7 @@ function renderListaConsultas(lista, searchValue, contId, origenRemision) {
       <td>${c.Motivo||'—'}</td>
       <td>${c.Indicaciones||'—'}</td>
       <td><small>${c.Capturado_Por||'—'}</small></td>
-      ${conAcc ? `<td>${c.ID_Paciente ? `<button class="btn btn-accent btn-sm" onclick="openModalRemision('${escJs(c.ID_Paciente)}','${escJs(c.Nombre_Paciente)}','${origenRemision}','')">🧾 Remisión</button>` : '<small style="color:var(--text-muted);">sin paciente</small>'}</td>` : ''}
+      ${conAcc ? `<td style="white-space:nowrap;">${c.ID_Paciente ? `${puedeRem ? `<button class="btn btn-accent btn-sm" onclick="openModalRemision('${escJs(c.ID_Paciente)}','${escJs(c.Nombre_Paciente)}','${origenRemision}','')">🧾 Remisión</button> ` : ''}${puedeDev ? `<button class="btn btn-accent btn-sm" onclick="abrirDevolucionEscaner('${escJs(c.ID_Paciente)}','${escJs(c.Nombre_Paciente)}')">↩ Devolución</button>` : ''}` : '<small style="color:var(--text-muted);">sin paciente</small>'}</td>` : ''}
     </tr>
   `).join('');
   document.getElementById(contId).innerHTML = rows.length
@@ -9218,6 +9221,12 @@ async function reabrirCuentaPacienteFront() {
   if (!idPaciente) { showToast('Primero selecciona un paciente', 'error'); return; }
   const resp = await apiPost('reabrirCuentaCobro', { idPaciente });
   if (resp.ok) showToast('🔓 Cuenta reabierta'); else showToast('Error: ' + resp.error, 'error');
+}
+// Devolución desde Cobro con el paciente ya cargado en la cuenta
+function devolucionDesdeCobro() {
+  const idPaciente = cjVal('cj_idPaciente');
+  if (!idPaciente) { showToast('Primero selecciona un paciente', 'error'); return; }
+  abrirDevolucionEscaner(idPaciente, cjVal('cj_nombre') || '');
 }
 // F5: ir directo a Cobro de caja con el paciente cargado (desde el egreso)
 function irACobroPaciente(idPaciente) {
