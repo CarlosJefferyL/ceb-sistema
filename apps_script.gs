@@ -54,6 +54,10 @@ var SHEETS = {
   RECIBOS: 'Recibos',
   BENEFICIARIOS: 'CAT_Beneficiarios',
   CAJA: 'Caja',
+  // ---- Módulo F2a: tarifas + cargos de servicios ----
+  SERVICIOS: 'CAT_Servicios',
+  CARGOS: 'Cargos_Paciente',
+  TARIFAS_CUARTO: 'CAT_Tarifas_Cuarto',
   // ---- Módulo BOM (Bill of Materials quirúrgico) ----
   PAQUETES: 'CAT_Paquetes',
   INSUMOS: 'CAT_Insumos',
@@ -204,6 +208,8 @@ function doGet(e) {
       case 'buscarPacientesCobro': result = buscarPacientesCobro(e.parameter.q); break;
       case 'getDatosPacienteParaCobro': result = getDatosPacienteParaCobro(e.parameter.idPaciente); break;
       case 'getPacientesActivos': result = getPacientesActivos(); break;
+      case 'getCatalogoServicios': result = getCatalogoServicios(); break;
+      case 'getCargosPaciente': result = getCargosPaciente(e.parameter.idPaciente); break;
       case 'getIngresos':    result = getIngresos(e.parameter.desde, e.parameter.hasta); break;
       case 'getBOM':         result = getBOM(e.parameter.folioCirugia); break;
       case 'getBOMPendientes': result = getBOMPendientes(); break;
@@ -447,6 +453,7 @@ function getCatalogos() {
   ensureComprasSheets_();  // proveedores y órdenes de compra
   ensureUbicacionesSheet_(); // almacenes (multi-ubicación) + columnas Ubicacion
   ensureRemisionSheet_();    // líneas de remisión (cuenta del paciente)
+  ensureCargosSheets_();      // F2a: servicios, cargos y tarifas de cuarto
   return {
     ok: true,
     medicamentos: sheetToObjects(SHEETS.MEDICAMENTOS).filter(function(m){return esActivo(m.Activo);}),
@@ -462,6 +469,8 @@ function getCatalogos() {
     pacientes:    sheetToObjects(SHEETS.PACIENTES).filter(function(p){return p.Estatus!=='Suspendido';}),
     paquetes:     sheetToObjects(SHEETS.PAQUETES).filter(function(p){return esActivo(p.Activo);}),
     insumos:      sheetToObjects(SHEETS.INSUMOS).filter(function(i){return esActivo(i.Activo);}),
+    servicios:    sheetToObjects(SHEETS.SERVICIOS).filter(function(s){return esActivo(s.Activo);}),
+    tarifasCuarto: sheetToObjects(SHEETS.TARIFAS_CUARTO).filter(function(t){return esActivo(t.Activo);}),
     config: {
       nombreClinica: getConfig('NombreClinica'),
       direccion: getConfig('DireccionClinica'),
@@ -2225,6 +2234,35 @@ var REMISION_ITEMS_HEADERS = ['ID_Remision_Item','Fecha','ID_Paciente','Nombre_P
 
 function ensureRemisionSheet_() {
   ensureSheetConHeaders_(SHEETS.REMISION_ITEMS, REMISION_ITEMS_HEADERS);
+}
+
+var CAT_SERVICIOS_HEADERS = ['ID_Servicio','Nombre','Concepto','Precio_Estandar','Es_Tercerizado','Unidad','Activo'];
+var CARGOS_HEADERS = ['ID_Cargo','Fecha','Hora','ID_Paciente','Nombre_Paciente','ID_Servicio',
+  'Nombre_Servicio','Concepto','Cantidad','Precio_Unitario','Costo_Tercerizado','Importe',
+  'Proveedor','Origen','Estado','Capturado_Por','Timestamp_Captura'];
+var TARIFAS_CUARTO_HEADERS = ['Tipo_Cuarto','Tarifa_Dia','Activo'];
+
+function ensureCargosSheets_() {
+  ensureSheetConHeaders_(SHEETS.SERVICIOS, CAT_SERVICIOS_HEADERS);
+  ensureSheetConHeaders_(SHEETS.CARGOS, CARGOS_HEADERS);
+  ensureSheetConHeaders_(SHEETS.TARIFAS_CUARTO, TARIFAS_CUARTO_HEADERS);
+}
+
+/** Catálogo de servicios activos (para el frontend). */
+function getCatalogoServicios() {
+  ensureCargosSheets_();
+  return { ok: true, data: sheetToObjects(SHEETS.SERVICIOS).filter(function(s){ return esActivo(s.Activo); }) };
+}
+
+/** Cargos ACTIVO de un paciente + total. */
+function getCargosPaciente(idPaciente) {
+  ensureCargosSheets_();
+  var rows = sheetToObjects(SHEETS.CARGOS).filter(function(c){
+    return String(c.ID_Paciente) === String(idPaciente) && String(c.Estado) !== 'CANCELADO';
+  });
+  var total = 0;
+  rows.forEach(function(c){ total += num_(c.Importe); });
+  return { ok: true, data: rows, total: ocRound_(total) };
 }
 
 /** Precio de compra más reciente de un artículo (0 si no hay). */
