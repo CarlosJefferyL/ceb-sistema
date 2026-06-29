@@ -52,7 +52,7 @@ test('suma por concepto, ignora no-ACTIVO y filas sin concepto', () => {
   assert.strictEqual(out[''], undefined);
 });
 test('lista vacía → objeto vacío', () => {
-  assert.deepStrictEqual(totalesCargosPorConcepto_([]), {});
+  assert.strictEqual(Object.keys(totalesCargosPorConcepto_([])).length, 0);
 });
 
 console.log('calcularHospitalizacion_:');

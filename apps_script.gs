@@ -2257,7 +2257,7 @@ function totalRemisionMateriales_(idPaciente) {
  * PURA: recibe el arreglo de cargos ya leído. Devuelve { Concepto: total }.
  */
 function totalesCargosPorConcepto_(cargos) {
-  var acc = new (this.constructor)();
+  var acc = {};
   (cargos || []).forEach(function(c) {
     if (String(c.Estado) === 'CANCELADO') return;
     var concepto = String(c.Concepto || '').trim();
