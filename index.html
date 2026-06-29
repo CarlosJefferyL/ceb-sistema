@@ -5064,27 +5064,30 @@ async function openModalRecibirOC(folioOC) {
   const o = resp.data;
   const pendientes = o.items.filter(it => (Number(it.cantidad)||0) - (Number(it.cantidadRecibida)||0) > 0.0001);
   if (!pendientes.length) { cont.innerHTML = '<div class="empty-state"><div class="icon">✓</div>Todas las partidas ya fueron recibidas.</div>'; return; }
+  const arts = (catalogos.articulos || []).slice().sort((a, b) => (a.Nombre || '').localeCompare(b.Nombre || '', 'es', { sensitivity: 'base' }));
+  const artOpts = (selId) => '<option value="">— Selecciona artículo —</option>' +
+    arts.map(a => `<option value="${artEsc(a.ID_Articulo)}" ${String(a.ID_Articulo) === String(selId) ? 'selected' : ''}>${artEsc(a.Codigo || a.ID_Articulo)} · ${artEsc(a.Nombre || '')}</option>`).join('');
   const rows = pendientes.map(it => {
     const porRecibir = (Number(it.cantidad)||0) - (Number(it.cantidadRecibida)||0);
-    const cat = ocCategoriaArticulo(it.idArticulo);
-    const reqLote = artRequiereLote(cat);
-    const reqReceta = (cat === 'MEDICAMENTO_CONTROLADO');
     return `
-    <div class="card" style="margin-bottom:10px;" data-iditem="${artEsc(it.idOCItem)}" data-reqlote="${reqLote?1:0}" data-reqreceta="${reqReceta?1:0}">
-      <div style="font-weight:600;color:var(--navy);">${artEsc(it.codigo||'')} · ${artEsc(it.descripcion||'')}</div>
-      <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Por recibir: ${porRecibir} ${artEsc(it.unidad||'')}${reqReceta?' · 🔒 controlado':(reqLote?' · 💊 requiere lote':'')}</div>
+    <div class="card" style="margin-bottom:10px;" data-iditem="${artEsc(it.idOCItem)}">
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">Pedido: <b>${artEsc(it.descripcion||'(sin artículo)')}</b> · ${porRecibir} ${artEsc(it.unidad||'')} por recibir</div>
       <div class="form-grid">
-        <div><label>Cantidad a recibir</label><input type="number" step="any" min="0" max="${porRecibir}" value="${porRecibir}" class="rc_cant"></div>
+        <div class="full"><label>Artículo recibido <small style="color:var(--text-muted);font-weight:400;">(cámbialo si el proveedor mandó otro)</small></label>
+          <select class="rc_art" onchange="rcArtChange(this)">${artOpts(it.idArticulo)}</select>
+          <small class="rc_hint" style="font-size:11px;color:var(--text-muted);"></small>
+        </div>
+        <div><label>Cantidad a recibir <small style="color:var(--text-muted);font-weight:400;">(puede ser más o menos)</small></label><input type="number" step="any" min="0" value="${porRecibir}" class="rc_cant"></div>
         <div><label>Precio unitario</label><input type="number" step="any" min="0" value="${Number(it.precioUnitario)||0}" class="rc_precio" title="Ajústalo si cambió respecto a la orden"></div>
-        ${reqLote?`<div><label>Lote fabricante *</label><input type="text" class="rc_lote"></div>
-        <div><label>Caducidad *</label><input type="date" class="rc_cad"></div>`:''}
-        ${reqReceta?`<div><label>Folio receta *</label><input type="text" class="rc_receta"></div>`:''}
+        <div class="rc_loteWrap" style="display:none;"><label>Lote fabricante *</label><input type="text" class="rc_lote"></div>
+        <div class="rc_cadWrap" style="display:none;"><label>Caducidad *</label><input type="date" class="rc_cad"></div>
+        <div class="rc_recetaWrap" style="display:none;"><label>Folio receta *</label><input type="text" class="rc_receta"></div>
       </div>
     </div>`;
   }).join('');
   cont.innerHTML = `
     <div style="background:var(--teal-light);padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:12px;color:var(--navy);">
-      Proveedor <strong>${artEsc(o.nombreProveedor||'')}</strong>. Al confirmar, las cantidades entran a inventario. Medicamentos y controlados exigen lote y caducidad (receta si es controlado).
+      Proveedor <strong>${artEsc(o.nombreProveedor||'')}</strong>. Ajusta artículo, cantidad y precio según lo que realmente llegó (deja la cantidad en 0 para no recibir esa partida). Al confirmar, lo recibido entra a inventario. Medicamentos y controlados exigen lote y caducidad (receta si es controlado).
     </div>
     <form onsubmit="event.preventDefault();submitRecibirOC('${artEsc(folioOC)}')">
       ${rows}
@@ -5094,6 +5097,23 @@ async function openModalRecibirOC(folioOC) {
         <button type="submit" class="btn btn-accent">Confirmar recepción</button>
       </div>
     </form>`;
+  // Inicializar el toggle de lote/receta según el artículo de cada partida
+  document.querySelectorAll('#ocRecibir .rc_art').forEach(sel => rcArtChange(sel));
+}
+
+// Ajusta los campos de lote/caducidad/receta de una partida según el artículo elegido
+function rcArtChange(sel) {
+  const card = sel.closest('[data-iditem]'); if (!card) return;
+  const id = sel.value;
+  const cat = id ? ocCategoriaArticulo(id) : '';
+  const reqLote = artRequiereLote(cat);
+  const reqReceta = (cat === 'MEDICAMENTO_CONTROLADO');
+  const loteW = card.querySelector('.rc_loteWrap'), cadW = card.querySelector('.rc_cadWrap'), recW = card.querySelector('.rc_recetaWrap');
+  if (loteW) loteW.style.display = reqLote ? '' : 'none';
+  if (cadW) cadW.style.display = reqLote ? '' : 'none';
+  if (recW) recW.style.display = reqReceta ? '' : 'none';
+  const hint = card.querySelector('.rc_hint');
+  if (hint) hint.textContent = reqReceta ? '🔒 controlado: lote, caducidad y receta obligatorios' : (reqLote ? '💊 requiere lote y caducidad' : (id ? 'insumo / otro: sin lote' : ''));
 }
 
 async function submitRecibirOC(folioOC) {
@@ -5102,15 +5122,18 @@ async function submitRecibirOC(folioOC) {
   for (const b of bloques) {
     const cant = parseFloat((b.querySelector('.rc_cant')||{}).value);
     if (!cant || cant <= 0) continue;
-    const reqLote = b.dataset.reqlote === '1';
-    const reqReceta = b.dataset.reqreceta === '1';
+    const idArticulo = (b.querySelector('.rc_art')||{}).value || '';
+    if (!idArticulo) { showToast('Selecciona el artículo recibido en una partida', 'error'); return; }
+    const cat = ocCategoriaArticulo(idArticulo);
+    const reqLote = artRequiereLote(cat);
+    const reqReceta = (cat === 'MEDICAMENTO_CONTROLADO');
     const lote = (b.querySelector('.rc_lote')||{}).value || '';
     const cad = (b.querySelector('.rc_cad')||{}).value || '';
     const receta = (b.querySelector('.rc_receta')||{}).value || '';
     const precio = parseFloat((b.querySelector('.rc_precio')||{}).value);
     if (reqLote && (!lote.trim() || !cad)) { showToast('Falta lote o caducidad en una partida', 'error'); return; }
     if (reqReceta && !receta.trim()) { showToast('Falta folio de receta en una partida controlada', 'error'); return; }
-    items.push({ idOCItem: b.dataset.iditem, cantidadRecibida: cant, precioUnitario: (isNaN(precio) ? null : precio), loteFabricante: lote.trim(), fechaCaducidad: cad, folioReceta: receta.trim() });
+    items.push({ idOCItem: b.dataset.iditem, idArticulo, cantidadRecibida: cant, precioUnitario: (isNaN(precio) ? null : precio), loteFabricante: lote.trim(), fechaCaducidad: cad, folioReceta: receta.trim() });
   }
   if (!items.length) { showToast('Captura al menos una cantidad a recibir', 'error'); return; }
   const data = { folioOC, items, fecha: document.getElementById('rc_fecha').value, capturadoPor: currentUser.nombre };

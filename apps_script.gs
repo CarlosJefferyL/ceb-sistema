@@ -3469,19 +3469,17 @@ function recibirOrdenCompra(d) {
     var r = recibos[i];
     var itOC = itemPorId[String(r.idOCItem)];
     if (!itOC) return { ok: false, error: 'Partida no encontrada en la OC: ' + r.idOCItem };
-    if (!itOC.ID_Articulo) return { ok: false, error: 'La partida "' + (itOC.Descripcion||r.idOCItem) + '" no está ligada a un artículo del catálogo; edítala antes de recibir' };
-    var art = getArticuloRaw_(itOC.ID_Articulo);
-    if (!art) return { ok: false, error: 'Artículo no encontrado: ' + itOC.ID_Articulo };
-    var pedido = num_(itOC.Cantidad);
-    var yaRecibido = num_(itOC.Cantidad_Recibida);
+    // El proveedor puede mandar OTRO producto: se permite sustituir el artículo de la partida.
+    var idArt = (r.idArticulo && String(r.idArticulo).trim()) ? String(r.idArticulo).trim() : String(itOC.ID_Articulo || '').trim();
+    if (!idArt) return { ok: false, error: 'Selecciona el artículo recibido en la partida "' + (itOC.Descripcion || r.idOCItem) + '"' };
+    var art = getArticuloRaw_(idArt);
+    if (!art) return { ok: false, error: 'Artículo no encontrado: ' + idArt };
     var cant = num_(r.cantidadRecibida);
-    if (yaRecibido + cant > pedido + 0.0001) {
-      return { ok: false, error: 'La partida "' + (art.Nombre||'') + '" excede lo pedido (pedido ' + pedido + ', ya recibido ' + yaRecibido + ', intentas ' + cant + ')' };
-    }
+    // Se permite recibir de MÁS o de MENOS de lo pedido (el proveedor cambia cantidades).
     var entradaData = {
-      idArticulo: itOC.ID_Articulo,
+      idArticulo: idArt,
       cantidad: cant,
-      unidad: itOC.Unidad,
+      unidad: art.Unidad || itOC.Unidad,
       loteFabricante: r.loteFabricante || '',
       fechaCaducidad: r.fechaCaducidad || '',
       folioReceta: r.folioReceta || '',
@@ -3493,7 +3491,12 @@ function recibirOrdenCompra(d) {
     };
     var verr = validarRequisitosEntrada_(art, entradaData);
     if (verr) return verr;
-    preparados.push({ art: art, cant: cant, entradaData: entradaData, itOC: itOC, precioUnitario: (r.precioUnitario != null && r.precioUnitario !== '') ? num_(r.precioUnitario) : null });
+    var cambioArt = (String(idArt) !== String(itOC.ID_Articulo || ''));
+    preparados.push({
+      art: art, cant: cant, entradaData: entradaData, itOC: itOC,
+      precioUnitario: (r.precioUnitario != null && r.precioUnitario !== '') ? num_(r.precioUnitario) : null,
+      nuevoArticulo: cambioArt ? { idArticulo: idArt, codigo: art.Codigo || idArt, descripcion: art.Nombre || '', unidad: art.Unidad || '' } : null
+    });
   }
 
   // 2) Escritura bajo lock (entradas + actualización de partidas)
@@ -3513,10 +3516,11 @@ function recibirOrdenCompra(d) {
     var IH = itData[0];
     var icol = {};
     IH.forEach(function(h, i){ icol[h] = i; });
-    var recibidoPorId = {}, precioPorId = {};
+    var recibidoPorId = {}, precioPorId = {}, nuevoArtPorId = {};
     preparados.forEach(function(p){
       recibidoPorId[String(p.itOC.ID_OC_Item)] = p.cant;
       if (p.precioUnitario != null && p.precioUnitario > 0) precioPorId[String(p.itOC.ID_OC_Item)] = p.precioUnitario;
+      if (p.nuevoArticulo) nuevoArtPorId[String(p.itOC.ID_OC_Item)] = p.nuevoArticulo;
     });
 
     var todoCompleto = true, precioCambio = false;
@@ -3530,13 +3534,23 @@ function recibirOrdenCompra(d) {
       if (add > 0) {
         itSh.getRange(i + 1, icol['Cantidad_Recibida'] + 1).setValue(nuevo);
         itSh.getRange(i + 1, icol['Estado_Item'] + 1).setValue(nuevo >= pedido - 0.0001 ? 'RECIBIDO' : 'PARCIAL');
+        // Sustitución de artículo: el proveedor mandó otro producto -> actualizar la partida
+        var artIdLinea = String(itData[i][icol['ID_Articulo']]);
+        if (nuevoArtPorId.hasOwnProperty(idIt)) {
+          var na = nuevoArtPorId[idIt];
+          artIdLinea = na.idArticulo;
+          if (icol['ID_Articulo'] != null) itSh.getRange(i + 1, icol['ID_Articulo'] + 1).setValue(na.idArticulo);
+          if (icol['Codigo'] != null) itSh.getRange(i + 1, icol['Codigo'] + 1).setValue(na.codigo);
+          if (icol['Descripcion'] != null) itSh.getRange(i + 1, icol['Descripcion'] + 1).setValue(na.descripcion);
+          if (icol['Unidad'] != null) itSh.getRange(i + 1, icol['Unidad'] + 1).setValue(na.unidad);
+        }
         // Precio ajustado en la recepción: actualiza la partida y registra el costo
         if (precioPorId.hasOwnProperty(idIt)) {
           var nuevoPrecio = precioPorId[idIt];
           var descLinea = (icol['Descuento'] != null) ? num_(itData[i][icol['Descuento']]) : 0;
           if (icol['Precio_Unitario'] != null) itSh.getRange(i + 1, icol['Precio_Unitario'] + 1).setValue(nuevoPrecio);
           if (icol['Importe'] != null) itSh.getRange(i + 1, icol['Importe'] + 1).setValue(ocImportePartida_({ cantidad: pedido, precioUnitario: nuevoPrecio, descuento: descLinea }));
-          registrarPrecioCompra_(String(itData[i][icol['ID_Articulo']]), String(itData[i][icol['Descripcion']]), oc.ID_Proveedor, oc.Nombre_Proveedor, nuevoPrecio);
+          registrarPrecioCompra_(artIdLinea, (nuevoArtPorId[idIt] ? nuevoArtPorId[idIt].descripcion : String(itData[i][icol['Descripcion']])), oc.ID_Proveedor, oc.Nombre_Proveedor, nuevoPrecio);
           precioCambio = true;
         }
       }
