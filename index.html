@@ -2795,6 +2795,11 @@ async function verDetalleProgramacion(folio) {
       acciones += `<button class="btn btn-accent btn-sm" onclick="closeModal();abrirCarritoPedido('${escJs(c.ID_Paciente)}','${escJs(c.Nombre_Paciente)}','QUIROFANO','${escJs(folio)}','Quirófano')">📝 Hacer pedido</button> `;
     }
 
+    // Devolución de material con el paciente de la cirugía ya fijado
+    if (puede('devolucion_material') && c.ID_Paciente) {
+      acciones += `<button class="btn btn-accent btn-sm" onclick="closeModal();abrirDevolucionEscaner('${escJs(c.ID_Paciente)}','${escJs(c.Nombre_Paciente)}')">↩ Devolución</button> `;
+    }
+
     // ¿La cirugía tiene paciente registrado del catálogo?
     const tienePacienteRegistrado = !!(c.ID_Paciente && String(c.ID_Paciente).trim());
 
@@ -7400,6 +7405,9 @@ function verDetalleHab(idHabitacion) {
       ` : ''}
       ${puede('crear_pedido') && hosp.idPaciente ? `
         <button class="btn btn-accent btn-sm" onclick="closeModal();abrirCarritoPedido('${escJs(hosp.idPaciente)}','${escJs(hosp.nombrePaciente)}','PISO','${escJs(hosp.folioCirugiaRelacionada || '')}','${escJs(tipoLabel + ' ' + h.numero)}')">📝 Hacer pedido</button>
+      ` : ''}
+      ${puede('devolucion_material') && hosp.idPaciente ? `
+        <button class="btn btn-accent btn-sm" onclick="closeModal();abrirDevolucionEscaner('${escJs(hosp.idPaciente)}','${escJs(hosp.nombrePaciente)}')">↩ Devolución</button>
       ` : ''}
       ${puedeGestionar ? `
         <button class="btn btn-secondary btn-sm" onclick="openModalMover('${hosp.id}','${hosp.nombrePaciente}','${h.idHabitacion}')">↔ Mover</button>
