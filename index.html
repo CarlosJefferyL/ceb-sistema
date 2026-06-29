@@ -1122,7 +1122,7 @@ textarea { resize: vertical; min-height: 70px; }
           <h1>Entradas de Inventario</h1>
           <div class="subtitle">Recepciones del proveedor</div>
         </div>
-        <button class="btn btn-primary" data-accion="nueva_entrada" onclick="openModalEntrada()">+ Nueva entrada</button>
+        <button class="btn btn-primary" data-accion="nueva_entrada" onclick="openModalEntradaArticulo()">+ Nueva entrada</button>
       </div>
       <div class="card">
         <div class="card-title">¿Cómo registrar una entrada?</div>
@@ -4480,9 +4480,16 @@ async function submitCodigoBarras(idArticulo) {
 }
 
 // MODAL: ENTRADA DE ARTÍCULO (lote/caducidad/receta condicionales)
-function openModalEntradaArticulo(idArticulo) {
-  const arts = (cache.articulos || []);
-  if (!arts.length) { showToast('Primero carga el catálogo de artículos', 'error'); return; }
+async function openModalEntradaArticulo(idArticulo) {
+  let arts = (cache.articulos || []);
+  // Cargar el catálogo bajo demanda (p. ej. si se entra desde la página Entradas)
+  if (!arts.length) {
+    showToast('Cargando catálogo de artículos…');
+    const resp = await apiGet('getInventarioGeneral', {});
+    cache.articulos = (resp && resp.ok) ? (resp.data || []) : [];
+    arts = cache.articulos;
+  }
+  if (!arts.length) { showToast('No hay artículos en el catálogo', 'error'); return; }
   const opts = arts.map(a => `<option value="${artEsc(a.idArticulo)}" ${a.idArticulo===idArticulo?'selected':''}>${artEsc(a.codigo)} · ${artEsc(a.nombre)}</option>`).join('');
   openModal('Entrada de almacén', `
     <form onsubmit="event.preventDefault();submitEntradaArticulo()">
