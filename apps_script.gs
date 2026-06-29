@@ -128,7 +128,7 @@ var PERMISOS_ACCIONES = {
   'rechazar_bom':         ['ADMIN','DIRECTOR_MEDICO'],
   'asignar_bom':          ['ADMIN','DIRECTOR_MEDICO'],
   'entregar_bom':         ['ADMIN','ALMACEN'],
-  'editar_plantilla_bom': ['ADMIN','ALMACEN','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA']
+  'editar_plantilla_bom': ['ADMIN','ALMACEN','DIRECTOR_MEDICO']
 };
 
 // JEFE_ENFERMERIA se conserva como rol legado (equivale a "ambos" flujos) para no
