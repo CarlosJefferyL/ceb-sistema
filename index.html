@@ -1270,8 +1270,18 @@ textarea { resize: vertical; min-height: 70px; }
         </div>
         <div id="medicamentosTable">—</div>
       </div>
+      <div class="card">
+        <div class="card-title">
+          Paquetes de BOM
+          <button class="btn btn-accent btn-sm" data-accion="editar_plantilla_bom" onclick="openModalPaquete()">+ Nuevo paquete</button>
+        </div>
+        <div style="padding:12px 16px;background:var(--teal-light);border-radius:8px;margin-bottom:12px;font-size:12px;color:var(--navy);">
+          💡 Cada paquete agrupa el material/medicamentos estándar de una cirugía. Es lo que se asigna al BOM en <strong>Programación Q.X.</strong> Define aquí los paquetes y sus partidas.
+        </div>
+        <div id="paquetesBOMTable">—</div>
+      </div>
       <p style="color:var(--text-muted);font-size:13px;font-style:italic;">
-        Para editar o desactivar registros, accede al Google Sheet en las pestañas correspondientes.
+        Para editar o desactivar otros registros, accede al Google Sheet en las pestañas correspondientes.
       </p>
     </div>
 
@@ -1961,6 +1971,20 @@ async function bomAsignarPaquetes(folioCirugia) {
   const det = await apiGet('getBOM', { folioCirugia: folioCirugia });
   const yaPaq = (det && det.ok && det.cabecera && det.cabecera.Paquetes)
     ? String(det.cabecera.Paquetes).split(',').map(s => s.trim()).filter(Boolean) : [];
+  // Sin paquetes en el catálogo no hay nada que asignar: guiar a crearlos.
+  if (!(catalogos.paquetes || []).length) {
+    openModal('Asignar paquete de BOM — cirugía ' + bomEsc(folioCirugia), `
+      <div style="padding:8px 0 4px;font-size:13px;">
+        <p style="color:var(--text-muted);">No hay paquetes de BOM definidos todavía, por eso el selector aparece vacío.</p>
+        <p style="color:var(--text-muted);">Crea los paquetes (y sus materiales) en <strong>Catálogos → Paquetes de BOM</strong> y luego vuelve a asignar.</p>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+        ${puede('editar_plantilla_bom') ? '<button class="btn btn-accent" onclick="closeModal();irAPaquetesBOM()">Ir a Paquetes de BOM</button>' : ''}
+      </div>
+    `);
+    return;
+  }
   const opts = (catalogos.paquetes || []).map(p => {
     const sel = yaPaq.indexOf(p.Clave_Paquete) !== -1 ? ' selected' : '';
     const esp = p.Especialidad ? ' — ' + bomEsc(p.Especialidad) : '';
@@ -5021,6 +5045,219 @@ async function loadCatalogosPage() {
   if (cirCont) {
     cirCont.innerHTML = '<p style="color:var(--text-muted);font-size:13px;text-align:center;padding:20px;">Escribe en el buscador para ver cirugías.</p>';
   }
+
+  // Paquetes de BOM
+  loadPaquetesBOM();
+}
+
+// ============================================================
+// PAQUETES DE BOM (catálogo + plantilla de partidas)
+// ============================================================
+let paquetesAdmin = [];        // lista cruda de getPaquetesAdmin
+let itemsPaqueteBuffer = [];   // partidas en edición dentro del modal
+
+async function loadPaquetesBOM() {
+  const cont = document.getElementById('paquetesBOMTable');
+  if (!cont) return;
+  cont.innerHTML = '<div class="loading"><div class="spinner"></div> Cargando paquetes...</div>';
+  const resp = await apiGet('getPaquetesAdmin');
+  if (!resp || !resp.ok) { cont.innerHTML = '<div style="color:var(--danger);padding:12px;">No se pudieron cargar los paquetes.</div>'; return; }
+  paquetesAdmin = (resp.paquetes || []).slice().sort((a, b) =>
+    (a.Nombre_Paquete || a.Clave_Paquete || '').localeCompare(b.Nombre_Paquete || b.Clave_Paquete || '', 'es', { sensitivity: 'base' }));
+  renderPaquetesBOM();
+}
+
+function renderPaquetesBOM() {
+  const cont = document.getElementById('paquetesBOMTable');
+  if (!cont) return;
+  if (!paquetesAdmin.length) {
+    cont.innerHTML = '<div class="empty-state"><div class="icon">🧰</div>No hay paquetes de BOM. Crea el primero con “+ Nuevo paquete”.</div>';
+    return;
+  }
+  const puedeEditar = puede('editar_plantilla_bom');
+  const filas = paquetesAdmin.map(p => {
+    const estado = p.Activo
+      ? '<span style="background:var(--teal-light);color:var(--navy);border-radius:10px;padding:1px 8px;font-size:11px;font-weight:600;">Activo</span>'
+      : '<span style="background:#F1F1F1;color:#8A8F98;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:600;">Inactivo</span>';
+    const accion = puedeEditar
+      ? `<button class="btn btn-secondary btn-sm" onclick="openModalPaquete('${bomEsc(p.Clave_Paquete)}')">Editar</button>`
+      : '';
+    return `<tr>
+      <td><strong>${bomEsc(p.Clave_Paquete)}</strong></td>
+      <td>${bomEsc(p.Nombre_Paquete || '—')}</td>
+      <td>${bomEsc(p.Especialidad || '—')}</td>
+      <td style="text-align:center;">${p.items}</td>
+      <td>${estado}</td>
+      <td style="text-align:right;">${accion}</td>
+    </tr>`;
+  }).join('');
+  cont.innerHTML = `<div style="overflow-x:auto;"><table><thead><tr>
+    <th>Clave</th><th>Nombre</th><th>Especialidad</th><th style="text-align:center;">Partidas</th><th>Estado</th><th></th>
+    </tr></thead><tbody>${filas}</tbody></table></div>`;
+}
+
+// Tipo_Item a partir de la categoría del artículo (informativo).
+function tipoDesdeCategoria(cat) {
+  cat = String(cat || '').toUpperCase();
+  if (cat.indexOf('MEDICAMENTO') !== -1) return 'MEDICAMENTO';
+  if (cat === 'INSUMO') return 'INSUMO';
+  return 'MATERIAL';
+}
+
+// Modal: crear o editar un paquete de BOM (cabecera + partidas).
+function openModalPaquete(clave) {
+  clave = clave || '';
+  const existente = clave
+    ? paquetesAdmin.find(p => String(p.Clave_Paquete).trim().toUpperCase() === clave.trim().toUpperCase())
+    : null;
+  itemsPaqueteBuffer = [];
+
+  const artOpts = (catalogos.articulos || [])
+    .slice()
+    .sort((a, b) => (a.Nombre || '').localeCompare(b.Nombre || '', 'es', { sensitivity: 'base' }))
+    .map(a => `<option value="${bomEsc(a.ID_Articulo)}" data-codigo="${bomEsc(a.Codigo || a.ID_Articulo)}" data-desc="${bomEsc(a.Nombre || '')}" data-unidad="${bomEsc(a.Unidad || '')}" data-cat="${bomEsc(a.Categoria || '')}">${bomEsc(a.Nombre || a.ID_Articulo)}${a.Unidad ? ' (' + bomEsc(a.Unidad) + ')' : ''}</option>`)
+    .join('');
+
+  openModal(existente ? ('Editar paquete — ' + bomEsc(existente.Clave_Paquete)) : 'Nuevo paquete de BOM', `
+    <form onsubmit="event.preventDefault();guardarPaqueteCompleto()">
+      <div class="form-grid">
+        <div><label>Clave *</label><input type="text" id="paq_clave" value="${bomEsc(clave)}" ${existente ? 'readonly' : ''} placeholder="Ej: LAP-COLE" style="text-transform:uppercase;" required></div>
+        <div><label>Nombre *</label><input type="text" id="paq_nombre" value="${existente ? bomEsc(existente.Nombre_Paquete || '') : ''}" placeholder="Ej: Colecistectomía laparoscópica" required></div>
+        <div><label>Especialidad</label><input type="text" id="paq_especialidad" value="${existente ? bomEsc(existente.Especialidad || '') : ''}" placeholder="Ej: Cirugía general"></div>
+        <div><label>Estado</label><select id="paq_activo"><option value="SI">Activo</option><option value="NO" ${existente && !existente.Activo ? 'selected' : ''}>Inactivo</option></select></div>
+      </div>
+
+      <div class="full" style="border:1px solid var(--border);border-radius:8px;padding:14px;background:#FAFBFC;margin-top:12px;">
+        <strong style="color:var(--navy);font-size:13px;">Partidas del paquete</strong>
+        <small style="display:block;color:var(--text-muted);font-size:11px;margin:2px 0 10px;">Elige un artículo del inventario (autocompleta código y unidad) o captura una partida en texto libre.</small>
+        <div style="display:grid;grid-template-columns:1fr 80px 80px auto;gap:8px;align-items:end;">
+          <div><label style="font-size:11px;">Artículo</label>
+            <select id="paq_item_art" onchange="paqItemArtChange()"><option value="">— Texto libre —</option>${artOpts}</select>
+          </div>
+          <div><label style="font-size:11px;">Cantidad</label><input type="number" id="paq_item_cant" min="0" step="any" value="1"></div>
+          <div><label style="font-size:11px;">Unidad</label><input type="text" id="paq_item_unidad" placeholder="pza"></div>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="agregarItemPaquete()">+ Agregar</button>
+        </div>
+        <div id="paq_item_libre_box" style="margin-top:8px;display:none;">
+          <label style="font-size:11px;">Descripción (texto libre)</label>
+          <input type="text" id="paq_item_desc" placeholder="Descripción del material o medicamento">
+        </div>
+        <div id="paq_items_lista" style="margin-top:12px;"></div>
+      </div>
+
+      <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;">
+        <button type="button" class="btn btn-secondary" onclick="intentarCerrarModal()">Cancelar</button>
+        <button type="submit" class="btn btn-accent">Guardar paquete</button>
+      </div>
+    </form>
+  `);
+
+  paqItemArtChange();
+  renderItemsPaquete();
+
+  // Cargar las partidas existentes al editar.
+  if (existente) {
+    apiGet('getBOMPlantilla', { clavePaquete: existente.Clave_Paquete }).then(resp => {
+      if (resp && resp.ok) {
+        itemsPaqueteBuffer = (resp.items || []).map(r => ({
+          tipo: r.Tipo_Item || '', codigo: r.Codigo || '', descripcion: r.Descripcion || '',
+          cantidad: r.Cantidad_S || '', unidad: r.Unidad || ''
+        }));
+        renderItemsPaquete();
+      }
+    });
+  }
+}
+
+// Al cambiar el selector de artículo: mostrar/ocultar el texto libre y autollenar la unidad.
+function paqItemArtChange() {
+  const sel = document.getElementById('paq_item_art');
+  if (!sel) return;
+  const box = document.getElementById('paq_item_libre_box');
+  const unidad = document.getElementById('paq_item_unidad');
+  const esLibre = !sel.value;
+  if (box) box.style.display = esLibre ? 'block' : 'none';
+  if (!esLibre && unidad) {
+    const opt = sel.options[sel.selectedIndex];
+    unidad.value = (opt && opt.dataset.unidad) || '';
+  }
+}
+
+function agregarItemPaquete() {
+  const sel = document.getElementById('paq_item_art');
+  const cant = parseFloat(document.getElementById('paq_item_cant').value);
+  const unidad = (document.getElementById('paq_item_unidad').value || '').trim();
+  if (!cant || cant <= 0) { showToast('La cantidad debe ser mayor a 0', 'error'); return; }
+
+  let item;
+  if (sel.value) {
+    const opt = sel.options[sel.selectedIndex];
+    item = {
+      tipo: tipoDesdeCategoria(opt.dataset.cat),
+      codigo: opt.dataset.codigo || '',
+      descripcion: opt.dataset.desc || '',
+      cantidad: cant,
+      unidad: unidad || opt.dataset.unidad || ''
+    };
+    if (item.codigo && itemsPaqueteBuffer.some(x => x.codigo === item.codigo)) {
+      showToast('Ese artículo ya está en la lista', 'warn'); return;
+    }
+  } else {
+    const desc = (document.getElementById('paq_item_desc').value || '').trim();
+    if (!desc) { showToast('Escribe la descripción del material', 'error'); return; }
+    item = { tipo: 'MATERIAL', codigo: '', descripcion: desc, cantidad: cant, unidad: unidad };
+  }
+
+  itemsPaqueteBuffer.push(item);
+  document.getElementById('paq_item_cant').value = '1';
+  document.getElementById('paq_item_unidad').value = '';
+  const descEl = document.getElementById('paq_item_desc'); if (descEl) descEl.value = '';
+  sel.value = '';
+  paqItemArtChange();
+  renderItemsPaquete();
+}
+
+function quitarItemPaquete(idx) {
+  itemsPaqueteBuffer.splice(idx, 1);
+  renderItemsPaquete();
+}
+
+function renderItemsPaquete() {
+  const cont = document.getElementById('paq_items_lista');
+  if (!cont) return;
+  if (!itemsPaqueteBuffer.length) {
+    cont.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px 0;">Aún no hay partidas. Agrega material o medicamentos arriba.</div>';
+    return;
+  }
+  cont.innerHTML = '<table><thead><tr><th>Tipo</th><th>Código</th><th>Descripción</th><th style="text-align:right;">Cant.</th><th>Unidad</th><th></th></tr></thead><tbody>' +
+    itemsPaqueteBuffer.map((it, i) => `<tr>
+      <td>${bomEsc(it.tipo || '—')}</td>
+      <td>${bomEsc(it.codigo || '—')}</td>
+      <td>${bomEsc(it.descripcion)}</td>
+      <td style="text-align:right;">${bomEsc(it.cantidad)}</td>
+      <td>${bomEsc(it.unidad || '')}</td>
+      <td style="text-align:right;"><button type="button" class="btn btn-secondary btn-sm" onclick="quitarItemPaquete(${i})">×</button></td>
+    </tr>`).join('') + '</tbody></table>';
+}
+
+async function guardarPaqueteCompleto() {
+  const clave = (document.getElementById('paq_clave').value || '').trim().toUpperCase();
+  const nombre = (document.getElementById('paq_nombre').value || '').trim();
+  const especialidad = (document.getElementById('paq_especialidad').value || '').trim();
+  const activo = document.getElementById('paq_activo').value;
+  if (!clave) { showToast('La clave es obligatoria', 'error'); return; }
+  if (!nombre) { showToast('El nombre es obligatorio', 'error'); return; }
+
+  const resp1 = await apiPost('guardarPaquete', { clave, nombre, especialidad, activo });
+  if (!resp1 || !resp1.ok) { showToast((resp1 && resp1.error) || 'No se pudo guardar el paquete', 'error'); return; }
+
+  const resp2 = await apiPost('guardarPlantillaBOM', { clave, items: itemsPaqueteBuffer });
+  if (!resp2 || !resp2.ok) { showToast((resp2 && resp2.error) || 'Paquete guardado, pero falló guardar las partidas', 'error'); return; }
+
+  showToast('Paquete ' + clave + ' guardado (' + (resp2.partidas || 0) + ' partidas)');
+  closeModal();
+  await loadCatalogos();   // refresca catalogos.paquetes para los selectores de Programación Q.X.
+  loadPaquetesBOM();
 }
 
 // ============================================================
@@ -7806,6 +8043,22 @@ function irACatalogos(seccion) {
       ? 'Da de alta el médico que falta y luego regresa a Programar cirugía.'
       : 'Da de alta el tipo de cirugía que falta y luego regresa a Programar cirugía.';
     showToast(mensaje, 'warn');
+  }, 300);
+}
+
+// Navega a Catálogos y enfoca la sección de Paquetes de BOM (sin confirmación:
+// se invoca desde modales ya cerrados, no desde un formulario con captura).
+function irAPaquetesBOM() {
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const navCatalogo = document.querySelector('[data-page="catalogos"]');
+  if (navCatalogo) navCatalogo.classList.add('active');
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-catalogos').classList.add('active');
+  loadCatalogosPage();
+  setTimeout(() => {
+    const card = document.getElementById('paquetesBOMTable');
+    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    showToast('Crea aquí los paquetes de BOM y sus materiales.', 'warn');
   }, 300);
 }
 

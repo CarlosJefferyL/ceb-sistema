@@ -214,6 +214,7 @@ function doGet(e) {
       case 'getBOM':         result = getBOM(e.parameter.folioCirugia); break;
       case 'getBOMPendientes': result = getBOMPendientes(); break;
       case 'getBOMPlantilla': result = getBOMPlantilla(e.parameter.clavePaquete); break;
+      case 'getPaquetesAdmin': result = getPaquetesAdmin(); break;
       default:             result = { ok: false, error: 'Acción no reconocida: ' + action };
     }
     return jsonResponse(result);
@@ -278,6 +279,8 @@ function doPost(e) {
       case 'autorizarBOM':       result = autorizarBOM(payload.data); break;
       case 'rechazarBOM':        result = rechazarBOM(payload.data); break;
       case 'entregarBOM':        result = entregarBOM(payload.data); break;
+      case 'guardarPaquete':     result = guardarPaquete(payload.data); break;
+      case 'guardarPlantillaBOM': result = guardarPlantillaBOM(payload.data); break;
       default:                   result = { ok: false, error: 'Acción POST no reconocida: ' + action };
     }
     return jsonResponse(result);
@@ -6361,6 +6364,121 @@ function getBOMPlantilla(clavePaquete) {
     return String(r.Clave_Paquete) === String(clavePaquete) && esActivo(r.Activo);
   });
   return { ok: true, items: rows };
+}
+
+/**
+ * Administración de paquetes de BOM: devuelve TODOS los paquetes (activos e
+ * inactivos) con el conteo de partidas activas de cada uno. Lo usa la pantalla
+ * de Catálogos para listar y editar los paquetes.
+ */
+function getPaquetesAdmin() {
+  ensureBOMSheets_();
+  var plantilla = sheetToObjects(SHEETS.BOM_PLANTILLA);
+  var conteo = {};
+  plantilla.forEach(function (r) {
+    if (!esActivo(r.Activo)) return;
+    var k = String(r.Clave_Paquete).trim().toUpperCase();
+    conteo[k] = (conteo[k] || 0) + 1;
+  });
+  var lista = sheetToObjects(SHEETS.PAQUETES).map(function (p) {
+    var k = String(p.Clave_Paquete).trim().toUpperCase();
+    return {
+      Clave_Paquete: p.Clave_Paquete,
+      Nombre_Paquete: p.Nombre_Paquete,
+      Especialidad: p.Especialidad,
+      Activo: esActivo(p.Activo),
+      items: conteo[k] || 0
+    };
+  });
+  return { ok: true, paquetes: lista };
+}
+
+/**
+ * Crea o actualiza la cabecera de un paquete de BOM (hoja CAT_Paquetes).
+ * La clave es la llave: si ya existe se actualiza nombre/especialidad/activo,
+ * si no, se agrega una fila nueva.
+ */
+function guardarPaquete(d) {
+  if (!tienePermiso(d.rolUsuario, 'editar_plantilla_bom')) {
+    return errorSinPermiso(d.rolUsuario, 'editar_plantilla_bom');
+  }
+  var clave = String(d.clave || '').trim().toUpperCase();
+  if (!clave) return { ok: false, error: 'La clave del paquete es obligatoria' };
+  if (!d.nombre || !String(d.nombre).trim()) return { ok: false, error: 'El nombre del paquete es obligatorio' };
+  ensureBOMSheets_();
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    var sh = getSheet(SHEETS.PAQUETES);
+    var data = sh.getDataRange().getValues();
+    var H = data[0];
+    var cClave = H.indexOf('Clave_Paquete'), cNom = H.indexOf('Nombre_Paquete'),
+        cEsp = H.indexOf('Especialidad'), cAct = H.indexOf('Activo');
+    var activoStr = (d.activo === false || String(d.activo).toUpperCase() === 'NO') ? 'NO' : 'SI';
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][cClave]).trim().toUpperCase() === clave) {
+        sh.getRange(i + 1, cNom + 1).setValue(String(d.nombre).trim());
+        if (cEsp !== -1) sh.getRange(i + 1, cEsp + 1).setValue(d.especialidad || '');
+        if (cAct !== -1) sh.getRange(i + 1, cAct + 1).setValue(activoStr);
+        return { ok: true, clave: clave, creado: false };
+      }
+    }
+    appendRowByHeader(SHEETS.PAQUETES, {
+      Clave_Paquete: clave,
+      Nombre_Paquete: String(d.nombre).trim(),
+      Especialidad: d.especialidad || '',
+      Activo: activoStr
+    });
+    return { ok: true, clave: clave, creado: true };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Reemplaza las partidas de plantilla (materiales/medicamentos) de un paquete.
+ * Borra las filas existentes de esa clave en BOM_Plantilla_Items y vuelve a
+ * escribir las que llegan en d.items, numerando el Orden. Solo guarda partidas
+ * con descripción.
+ */
+function guardarPlantillaBOM(d) {
+  if (!tienePermiso(d.rolUsuario, 'editar_plantilla_bom')) {
+    return errorSinPermiso(d.rolUsuario, 'editar_plantilla_bom');
+  }
+  var clave = String(d.clave || '').trim().toUpperCase();
+  if (!clave) return { ok: false, error: 'Falta la clave del paquete' };
+  var items = Array.isArray(d.items) ? d.items : [];
+  ensureBOMSheets_();
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = getSheet(SHEETS.BOM_PLANTILLA);
+    var data = sh.getDataRange().getValues();
+    var cClave = data[0].indexOf('Clave_Paquete');
+    // Borrar de abajo hacia arriba las partidas previas de esta clave.
+    for (var i = data.length - 1; i >= 1; i--) {
+      if (String(data[i][cClave]).trim().toUpperCase() === clave) sh.deleteRow(i + 1);
+    }
+    var n = 0;
+    items.forEach(function (it) {
+      var desc = String(it.descripcion != null ? it.descripcion : (it.Descripcion || '')).trim();
+      if (!desc) return;
+      n++;
+      appendRowByHeader(SHEETS.BOM_PLANTILLA, {
+        Clave_Paquete: clave,
+        Tipo_Item: it.tipo || it.Tipo_Item || '',
+        Codigo: it.codigo || it.Codigo || '',
+        Descripcion: desc,
+        Cantidad_S: it.cantidad != null ? it.cantidad : (it.Cantidad_S || ''),
+        Unidad: it.unidad || it.Unidad || '',
+        Orden: n,
+        Activo: 'SI'
+      });
+    });
+    return { ok: true, clave: clave, partidas: n };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /**
