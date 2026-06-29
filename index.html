@@ -8380,6 +8380,7 @@ async function seleccionarPacienteCobro(idPaciente) {
     cargarCobroEnFormulario(resp.cuentaExistente);
     pintarPacienteSeleccionado(resp.paciente);
     aplicarMaterialesRemision(resp.materialesRemision);
+    aplicarCargosConcepto(resp.cargosPorConcepto, resp.hospitalizacionCalculada);
     if ((resp.cuentaExistente.estado || '').toUpperCase() === 'CERRADA') {
       showToast('🔒 Cuenta CERRADA: no acepta más consumos (reábrela si necesitas ajustar)', 'warn');
     } else {
@@ -8429,6 +8430,7 @@ async function seleccionarPacienteCobro(idPaciente) {
   }
 
   aplicarMaterialesRemision(resp.materialesRemision);
+  aplicarCargosConcepto(resp.cargosPorConcepto, resp.hospitalizacionCalculada);
   recalcularCobro();
   const msg = (resp.cirugias && resp.cirugias.length)
     ? 'Paciente cargado con ' + resp.cirugias.length + ' cirugía(s). Captura los montos del cobro.'
@@ -8443,6 +8445,30 @@ function aplicarMaterialesRemision(total) {
   cjSetVal('cj_materiales', moneyOrBlank(total));
   recalcularCobro();
   showToast('Materiales y medicamentos: ' + fmtMoney(total) + ' (desde remisión)');
+}
+
+// F2a: mapa concepto → campo del formulario de cobro
+const CONCEPTO_CAMPO_COBRO = {
+  Hospitalizacion:'cj_hospitalizacion', Consulta_Externa:'cj_consultaExterna',
+  Hora_Extra:'cj_horaExtra', Dia_Extra:'cj_diaExtra', Oxigeno:'cj_oxigeno',
+  Paquete_Globular:'cj_paqueteGlobular', Noche_Terapia:'cj_nocheTerapia',
+  Bomba_Infusion:'cj_bombaInfusion', Fluoroscopio:'cj_fluoroscopio',
+  Laparoscopio:'cj_laparoscopio', Artroscopio:'cj_artroscopio', Ligasure:'cj_ligasure',
+  Ambulancia:'cj_ambulancia', Monitor:'cj_monitor', Ventilador:'cj_ventilador',
+  Laboratorio:'cj_laboratorio', Imagen:'cj_imagen', Anestesia_Mixta:'cj_anestesiaMixta'
+};
+
+// F2a: aplica los cargos por concepto + hospitalización calculada a los campos del cobro
+function aplicarCargosConcepto(cargosPorConcepto, hospitalizacionCalculada) {
+  const mapa = cargosPorConcepto || {};
+  Object.keys(mapa).forEach(concepto => {
+    const campo = CONCEPTO_CAMPO_COBRO[concepto];
+    if (campo && mapa[concepto] > 0) cjSetVal(campo, moneyOrBlank(mapa[concepto]));
+  });
+  if (hospitalizacionCalculada && hospitalizacionCalculada > 0) {
+    cjSetVal('cj_hospitalizacion', moneyOrBlank(hospitalizacionCalculada));
+  }
+  recalcularCobro();
 }
 
 function pintarPacienteSeleccionado(p) {
