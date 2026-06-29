@@ -111,30 +111,16 @@
       </div>
     </div>
 
-    <!-- 2 -->
+    <!-- 2 BOM -->
     <div class="step">
       <div class="dot">2</div>
       <div class="card">
-        <h3>Se da de alta al paciente y se vincula a la cirugía</h3>
-        <div class="who">👤 Recepción</div>
-        <p>Recepción da de <b>alta al paciente</b> en el catálogo (nombre, CURP, contacto,
-        tipo de cliente, etc.). Luego, en el detalle de la cirugía, con el botón
-        <b>“👤 Asignar paciente registrado”</b> se liga ese paciente del catálogo a la
-        cirugía que se había programado con texto libre.</p>
-        <div class="sys">⚙️ A partir de aquí la cirugía ya tiene un <b>ID de paciente real</b>.
-        Esto es <b>requisito</b> para poder terminarla más adelante.</div>
-        <div class="arrow-state">Estado → sigue <span class="badge b-prog">PROGRAMADA</span> (ahora con paciente)</div>
-      </div>
-    </div>
-
-    <!-- 3 BOM -->
-    <div class="step">
-      <div class="dot">3</div>
-      <div class="card">
         <h3>El BOM se propone, se autoriza y se surte</h3>
         <div class="who">👤 Almacén · Dirección médica</div>
-        <p>El BOM creado en el paso 1 recorre su propio flujo de aprobación antes de que
-        almacén entregue el material al quirófano:</p>
+        <p>El BOM creado en el paso 1 recorre su propio flujo de aprobación. Corre <b>en
+        paralelo</b>: la <b>propuesta y autorización suelen ocurrir antes del alta del
+        paciente</b> (a veces antes, a veces al mismo tiempo) y <b>no requieren</b> que el
+        paciente esté todavía en el catálogo.</p>
         <div class="bombox">
           <h4>Flujo del BOM</h4>
           <div class="bomflow">
@@ -152,14 +138,33 @@
       </div>
     </div>
 
+    <!-- 3 alta -->
+    <div class="step">
+      <div class="dot">3</div>
+      <div class="card">
+        <h3>Se da de alta al paciente y se vincula a la cirugía</h3>
+        <div class="who">👤 Recepción</div>
+        <p>Recepción da de <b>alta al paciente</b> en el catálogo (nombre, CURP, contacto,
+        tipo de cliente, etc.). Luego, en el detalle de la cirugía, con el botón
+        <b>“👤 Asignar paciente registrado”</b> se liga ese paciente del catálogo a la
+        cirugía que se había programado con texto libre.</p>
+        <div class="sys">⚙️ A partir de aquí la cirugía ya tiene un <b>ID de paciente real</b>.
+        Esto es <b>requisito</b> para poder terminarla más adelante.</div>
+        <div class="arrow-state">Estado → sigue <span class="badge b-prog">PROGRAMADA</span> (ahora con paciente)</div>
+      </div>
+    </div>
+
     <!-- 4 receta -->
     <div class="step">
       <div class="dot">4</div>
       <div class="card">
         <h3>Se vincula la receta física</h3>
         <div class="who">👤 Quirófano / Enfermería</div>
-        <p>Se liga el folio de la <b>receta física</b> (papel COFEPRIS) a la cirugía. Esto
-        habilita el registro ordenado de los controlados.</p>
+        <p>Se liga el folio de la <b>receta física</b> (papel COFEPRIS) a la cirugía.
+        <b>Importante:</b> el manejo <b>por paquete</b> aplica <b>solo a los medicamentos
+        controlados (COFEPRIS)</b> — la unidad es el paquete, no la pieza suelta (ej.
+        <b>1 paquete = 6 cajas × 5 ampolletas = 30 piezas</b>). Los insumos y medicamentos
+        no controlados no llevan este conteo por paquete.</p>
         <div class="arrow-state">Estado → <span class="badge b-receta">RECETA_VINCULADA</span></div>
       </div>
     </div>
@@ -188,7 +193,7 @@
         <div class="who">👤 Quirófano (permiso «terminar cirugía»)</div>
         <p>Con <b>“✓ Cirugía terminada”</b> se da por concluida. Al cerrar se puede
         <b>conciliar el BOM</b> (ajustar lo realmente usado; lo no usado se queda en almacén).</p>
-        <div class="sys">⚙️ Requiere que la cirugía <b>tenga paciente registrado</b> (paso 2).
+        <div class="sys">⚙️ Requiere que la cirugía <b>tenga paciente registrado</b> (paso 3).
         Si no hubo consumos, el sistema <b>avisa</b> y pide confirmar.</div>
         <div class="arrow-state">Estado → <span class="badge b-term">TERMINADA</span></div>
       </div>
