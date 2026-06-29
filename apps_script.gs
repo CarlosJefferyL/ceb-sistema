@@ -3415,6 +3415,35 @@ function cambiarEstadoOC(d) {
  * Valida lote/caducidad/receta por categoría antes de escribir nada.
  * Recalcula el estado de la OC (RECIBIDA_PARCIAL / RECIBIDA).
  */
+/** Registra un nuevo precio de compra (historial). El más reciente define el costo. */
+function registrarPrecioCompra_(idArticulo, nombreArticulo, idProveedor, nombreProveedor, precio) {
+  if (!idArticulo || !(num_(precio) > 0)) return;
+  ensureComprasSheets_();
+  var num = 0;
+  sheetToObjects(SHEETS.PRECIOS_COMPRA).forEach(function (p) {
+    var m = String(p.ID_Precio || '').match(/^PRC-?(\d+)$/);
+    if (m) num = Math.max(num, parseInt(m[1], 10) || 0);
+  });
+  appendRowByHeader(SHEETS.PRECIOS_COMPRA, {
+    'ID_Precio': 'PRC-' + String(num + 1).padStart(4, '0'),
+    'ID_Articulo': idArticulo, 'Nombre_Articulo': nombreArticulo || '',
+    'ID_Proveedor': idProveedor || '', 'Nombre_Proveedor': nombreProveedor || '',
+    'Precio': num_(precio), 'Descuento': 0, 'Moneda': 'MXN',
+    'Fecha_Actualizacion': todayStr()
+  });
+}
+
+/** Recalcula Subtotal/IVA/Total de una OC desde sus partidas. */
+function recalcularTotalesOC_(folioOC) {
+  var subtotal = 0;
+  sheetToObjects(SHEETS.OC_ITEMS).forEach(function (it) {
+    if (String(it.Folio_OC) === String(folioOC)) subtotal += num_(it.Importe);
+  });
+  subtotal = ocRound_(subtotal);
+  var iva = ocRound_(subtotal * OC_IVA_TASA);
+  setOCCampos_(folioOC, { 'Subtotal': subtotal, 'IVA': iva, 'Total': ocRound_(subtotal + iva) });
+}
+
 function recibirOrdenCompra(d) {
   if (!tienePermiso(d.rolUsuario, 'recibir_oc')) {
     return errorSinPermiso(d.rolUsuario, 'recibir_oc');
@@ -3464,7 +3493,7 @@ function recibirOrdenCompra(d) {
     };
     var verr = validarRequisitosEntrada_(art, entradaData);
     if (verr) return verr;
-    preparados.push({ art: art, cant: cant, entradaData: entradaData, itOC: itOC });
+    preparados.push({ art: art, cant: cant, entradaData: entradaData, itOC: itOC, precioUnitario: (r.precioUnitario != null && r.precioUnitario !== '') ? num_(r.precioUnitario) : null });
   }
 
   // 2) Escritura bajo lock (entradas + actualización de partidas)
@@ -3484,10 +3513,13 @@ function recibirOrdenCompra(d) {
     var IH = itData[0];
     var icol = {};
     IH.forEach(function(h, i){ icol[h] = i; });
-    var recibidoPorId = {};
-    preparados.forEach(function(p){ recibidoPorId[String(p.itOC.ID_OC_Item)] = p.cant; });
+    var recibidoPorId = {}, precioPorId = {};
+    preparados.forEach(function(p){
+      recibidoPorId[String(p.itOC.ID_OC_Item)] = p.cant;
+      if (p.precioUnitario != null && p.precioUnitario > 0) precioPorId[String(p.itOC.ID_OC_Item)] = p.precioUnitario;
+    });
 
-    var todoCompleto = true;
+    var todoCompleto = true, precioCambio = false;
     for (var i = 1; i < itData.length; i++) {
       if (String(itData[i][icol['Folio_OC']]) !== String(d.folioOC)) continue;
       var idIt = String(itData[i][icol['ID_OC_Item']]);
@@ -3498,6 +3530,15 @@ function recibirOrdenCompra(d) {
       if (add > 0) {
         itSh.getRange(i + 1, icol['Cantidad_Recibida'] + 1).setValue(nuevo);
         itSh.getRange(i + 1, icol['Estado_Item'] + 1).setValue(nuevo >= pedido - 0.0001 ? 'RECIBIDO' : 'PARCIAL');
+        // Precio ajustado en la recepción: actualiza la partida y registra el costo
+        if (precioPorId.hasOwnProperty(idIt)) {
+          var nuevoPrecio = precioPorId[idIt];
+          var descLinea = (icol['Descuento'] != null) ? num_(itData[i][icol['Descuento']]) : 0;
+          if (icol['Precio_Unitario'] != null) itSh.getRange(i + 1, icol['Precio_Unitario'] + 1).setValue(nuevoPrecio);
+          if (icol['Importe'] != null) itSh.getRange(i + 1, icol['Importe'] + 1).setValue(ocImportePartida_({ cantidad: pedido, precioUnitario: nuevoPrecio, descuento: descLinea }));
+          registrarPrecioCompra_(String(itData[i][icol['ID_Articulo']]), String(itData[i][icol['Descripcion']]), oc.ID_Proveedor, oc.Nombre_Proveedor, nuevoPrecio);
+          precioCambio = true;
+        }
       }
       if (nuevo < pedido - 0.0001) todoCompleto = false;
     }
@@ -3508,6 +3549,7 @@ function recibirOrdenCompra(d) {
       'Recibido_Por': d.capturadoPor || '',
       'Timestamp_Recepcion': nowTs()
     });
+    if (precioCambio) recalcularTotalesOC_(d.folioOC);
 
     return { ok: true, folioOC: d.folioOC, estado: nuevoEstado, entradas: entradas };
   } finally {

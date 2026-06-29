@@ -4487,6 +4487,11 @@ function openModalEntradaArticulo(idArticulo) {
   openModal('Entrada de almacén', `
     <form onsubmit="event.preventDefault();submitEntradaArticulo()">
       <div class="form-grid">
+        <div class="full" id="ea_ocWrap" style="display:none;background:var(--teal-light);padding:10px 12px;border-radius:8px;">
+          <label>¿Recibir una orden de compra? (opcional)</label>
+          <select id="ea_oc" onchange="entradaDesdeOC()"><option value="">— Entrada manual —</option></select>
+          <small style="font-size:11px;color:var(--text-muted);display:block;margin-top:2px;">Elige una OC pendiente para recibirla; podrás ajustar cantidades y precios.</small>
+        </div>
         <div><label>Fecha de entrada</label><input type="date" id="ea_fecha" value="${todayISO()}" required></div>
         <div><label>Artículo *</label><select id="ea_art" required onchange="artEntradaToggle()"><option value="">— Seleccionar —</option>${opts}</select></div>
         <div><label>Almacén destino *</label><select id="ea_ubicacion" required>${ubicacionOpts('ALM_GENERAL')}</select></div>
@@ -4511,6 +4516,29 @@ function openModalEntradaArticulo(idArticulo) {
     </form>
   `);
   if (idArticulo) artEntradaToggle();
+  cargarOCPendientesSelect();
+}
+
+// Carga el desplegable de órdenes de compra pendientes de entrada (solo si puede recibir OC)
+async function cargarOCPendientesSelect() {
+  const wrap = document.getElementById('ea_ocWrap');
+  const sel = document.getElementById('ea_oc');
+  if (!wrap || !sel) return;
+  if (!puede('recibir_oc')) { wrap.style.display = 'none'; return; }
+  const resp = await apiGet('getOrdenesCompra', {});
+  const ocs = (resp && resp.ok) ? (resp.data || []).filter(o => o.estado !== 'CANCELADA' && o.estado !== 'RECIBIDA') : [];
+  if (!ocs.length) { wrap.style.display = 'none'; return; }
+  sel.innerHTML = '<option value="">— Entrada manual —</option>' +
+    ocs.map(o => `<option value="${artEsc(o.folioOC)}">${artEsc(o.folioOC)} · ${artEsc(o.nombreProveedor || '')} · ${artEsc(o.estado)}</option>`).join('');
+  wrap.style.display = '';
+}
+
+// Al elegir una OC en la entrada, abre el recibir (con cantidades/precios editables)
+function entradaDesdeOC() {
+  const folio = (document.getElementById('ea_oc') || {}).value;
+  if (!folio) return;
+  closeModal();
+  openModalRecibirOC(folio);
 }
 
 function artEntradaToggle() {
@@ -5047,6 +5075,7 @@ async function openModalRecibirOC(folioOC) {
       <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Por recibir: ${porRecibir} ${artEsc(it.unidad||'')}${reqReceta?' · 🔒 controlado':(reqLote?' · 💊 requiere lote':'')}</div>
       <div class="form-grid">
         <div><label>Cantidad a recibir</label><input type="number" step="any" min="0" max="${porRecibir}" value="${porRecibir}" class="rc_cant"></div>
+        <div><label>Precio unitario</label><input type="number" step="any" min="0" value="${Number(it.precioUnitario)||0}" class="rc_precio" title="Ajústalo si cambió respecto a la orden"></div>
         ${reqLote?`<div><label>Lote fabricante *</label><input type="text" class="rc_lote"></div>
         <div><label>Caducidad *</label><input type="date" class="rc_cad"></div>`:''}
         ${reqReceta?`<div><label>Folio receta *</label><input type="text" class="rc_receta"></div>`:''}
@@ -5078,9 +5107,10 @@ async function submitRecibirOC(folioOC) {
     const lote = (b.querySelector('.rc_lote')||{}).value || '';
     const cad = (b.querySelector('.rc_cad')||{}).value || '';
     const receta = (b.querySelector('.rc_receta')||{}).value || '';
+    const precio = parseFloat((b.querySelector('.rc_precio')||{}).value);
     if (reqLote && (!lote.trim() || !cad)) { showToast('Falta lote o caducidad en una partida', 'error'); return; }
     if (reqReceta && !receta.trim()) { showToast('Falta folio de receta en una partida controlada', 'error'); return; }
-    items.push({ idOCItem: b.dataset.iditem, cantidadRecibida: cant, loteFabricante: lote.trim(), fechaCaducidad: cad, folioReceta: receta.trim() });
+    items.push({ idOCItem: b.dataset.iditem, cantidadRecibida: cant, precioUnitario: (isNaN(precio) ? null : precio), loteFabricante: lote.trim(), fechaCaducidad: cad, folioReceta: receta.trim() });
   }
   if (!items.length) { showToast('Captura al menos una cantidad a recibir', 'error'); return; }
   const data = { folioOC, items, fecha: document.getElementById('rc_fecha').value, capturadoPor: currentUser.nombre };
