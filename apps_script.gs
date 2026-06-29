@@ -2253,6 +2253,35 @@ function totalRemisionMateriales_(idPaciente) {
 }
 
 /**
+ * Suma los importes de cargos de servicios por Concepto (solo ACTIVO).
+ * PURA: recibe el arreglo de cargos ya leído. Devuelve { Concepto: total }.
+ */
+function totalesCargosPorConcepto_(cargos) {
+  var acc = new (this.constructor)();
+  (cargos || []).forEach(function(c) {
+    if (String(c.Estado) === 'CANCELADO') return;
+    var concepto = String(c.Concepto || '').trim();
+    if (!concepto) return;
+    acc[concepto] = ocRound_((acc[concepto] || 0) + num_(c.Importe));
+  });
+  return acc;
+}
+
+/**
+ * Importe de hospitalización = días × tarifa del tipo de cuarto.
+ * PURA: recibe días, tipo y el arreglo de tarifas. 0 si no hay tarifa.
+ */
+function calcularHospitalizacion_(dias, tipoCuarto, tarifasCuarto) {
+  var d = num_(dias);
+  if (d <= 0) return 0;
+  var tarifa = 0;
+  (tarifasCuarto || []).forEach(function(t) {
+    if (String(t.Tipo_Cuarto) === String(tipoCuarto)) tarifa = num_(t.Tarifa_Dia);
+  });
+  return ocRound_(d * tarifa);
+}
+
+/**
  * Une varias listas de pacientes activos y deduplica por idPaciente.
  * El origen del paciente duplicado gana por prioridad QUIROFANO > PISO > URGENCIAS;
  * las etiquetas de ubicación se concatenan. Función PURA (sin SpreadsheetApp).
