@@ -238,6 +238,7 @@ function doPost(e) {
       case 'registrarMovimientoArticulo': result = registrarMovimientoArticulo(payload.data); break;
       case 'registrarTraspaso':  result = registrarTraspaso(payload.data); break;
       case 'registrarRemision':  result = registrarRemision(payload.data); break;
+      case 'registrarCargosServicio': result = registrarCargosServicio(payload.data); break;
       case 'registrarUsoBOM':    result = registrarUsoBOM(payload.data); break;
       case 'migrarArticulos':    result = migrarArticulos(payload.data); break;
       case 'altaProveedor':      result = altaProveedor(payload.data); break;
@@ -2263,6 +2264,59 @@ function getCargosPaciente(idPaciente) {
   var total = 0;
   rows.forEach(function(c){ total += num_(c.Importe); });
   return { ok: true, data: rows, total: ocRound_(total) };
+}
+
+/**
+ * Registra N cargos de servicios a la cuenta de un paciente.
+ * Espeja registrarRemision pero NO toca inventario ni Libro COFEPRIS.
+ * d: { idPaciente, nombrePaciente, origen, items:[{idServicio, nombreServicio,
+ *      concepto, cantidad, precioUnitario, costoTercerizado, proveedor}],
+ *      capturadoPor, rolUsuario }
+ */
+function registrarCargosServicio(d) {
+  if (!tienePermiso(d.rolUsuario, 'registrar_consumo')) {
+    return errorSinPermiso(d.rolUsuario, 'registrar_consumo');
+  }
+  var items = d.items || [];
+  if (!items.length) return { ok: false, error: 'No hay servicios a registrar' };
+  if (!d.idPaciente) return { ok: false, error: 'Paciente requerido' };
+  if (cuentaCerrada_(d.idPaciente)) {
+    return { ok: false, error: 'La cuenta del paciente está CERRADA. Reábrela en Cobro de caja para agregar cargos.' };
+  }
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    ensureCargosSheets_();
+    var fecha = d.fecha || todayStr();
+    var hora = d.hora || Utilities.formatDate(new Date(), getConfig('ZonaHoraria') || 'America/Chihuahua', 'HH:mm');
+    var origen = d.origen || 'PISO';
+    var base = new Date().getTime();
+    var creados = 0, total = 0;
+
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      if (!it.concepto) return { ok: false, error: 'Falta el concepto de cobro del servicio ' + (it.nombreServicio || it.idServicio || '') };
+      var cantidad = parseFloat(it.cantidad);
+      if (!cantidad || cantidad <= 0) return { ok: false, error: 'Cantidad inválida para ' + (it.nombreServicio || it.idServicio || '') };
+      var precio = num_(it.precioUnitario);
+      var importe = ocRound_(precio * cantidad);
+      total += importe;
+      appendRowByHeader(SHEETS.CARGOS, {
+        'ID_Cargo': 'CGO-' + base + '-' + i, 'Fecha': fecha, 'Hora': "'" + hora,
+        'ID_Paciente': d.idPaciente, 'Nombre_Paciente': d.nombrePaciente || '',
+        'ID_Servicio': it.idServicio || '', 'Nombre_Servicio': it.nombreServicio || '',
+        'Concepto': it.concepto, 'Cantidad': cantidad, 'Precio_Unitario': precio,
+        'Costo_Tercerizado': num_(it.costoTercerizado), 'Importe': importe,
+        'Proveedor': it.proveedor || '', 'Origen': origen, 'Estado': 'ACTIVO',
+        'Capturado_Por': d.capturadoPor || '', 'Timestamp_Captura': nowTs()
+      });
+      creados++;
+    }
+    return { ok: true, lineas: creados, total: ocRound_(total) };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /** Precio de compra más reciente de un artículo (0 si no hay). */
