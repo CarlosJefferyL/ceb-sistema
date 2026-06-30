@@ -55,6 +55,7 @@ var SHEETS = {
   RECIBOS: 'Recibos',
   BENEFICIARIOS: 'CAT_Beneficiarios',
   CAJA: 'Caja',
+  TIPOS_CLIENTE: 'CAT_Tipos_Cliente',
   // ---- Módulo F2a: tarifas + cargos de servicios ----
   SERVICIOS: 'CAT_Servicios',
   CARGOS: 'Cargos_Paciente',
@@ -137,7 +138,8 @@ var PERMISOS_ACCIONES = {
   'crear_pedido':         ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO'],
   'surtir_pedido':        ['ADMIN','ALMACEN','DIRECTOR_MEDICO'],
   'cancelar_pedido':      ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],
-  'devolucion_material':  ['ADMIN','ALMACEN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO']
+  'devolucion_material':  ['ADMIN','ALMACEN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO'],
+  'editar_tipo_cliente':  ['ADMIN']
 };
 
 // JEFE_ENFERMERIA se conserva como rol legado (equivale a "ambos" flujos) para no
@@ -229,6 +231,7 @@ function doGet(e) {
       case 'buscarArticuloPorBarras': result = buscarArticuloPorBarras(e.parameter.codigo); break;
       case 'getCodigosBarras': result = getCodigosBarras(e.parameter.idArticulo); break;
       case 'getMaterialDevolverPaciente': result = getMaterialDevolverPaciente(e.parameter.idPaciente); break;
+      case 'getTiposClienteAdmin': result = getTiposClienteAdmin(); break;
       default:             result = { ok: false, error: 'Acción no reconocida: ' + action };
     }
     return jsonResponse(result);
@@ -303,6 +306,7 @@ function doPost(e) {
       case 'surtirPedidoConEscaneo': result = surtirPedidoConEscaneo(payload.data); break;
       case 'cancelarPedido':     result = cancelarPedido(payload.data); break;
       case 'registrarDevolucion': result = registrarDevolucion(payload.data); break;
+      case 'guardarTipoCliente':  result = guardarTipoCliente(payload.data); break;
       default:                   result = { ok: false, error: 'Acción POST no reconocida: ' + action };
     }
     return jsonResponse(result);
@@ -497,6 +501,7 @@ function getCatalogos() {
     insumos:      sheetToObjects(SHEETS.INSUMOS).filter(function(i){return esActivo(i.Activo);}),
     servicios:    sheetToObjects(SHEETS.SERVICIOS).filter(function(s){return esActivo(s.Activo);}),
     tarifasCuarto: sheetToObjects(SHEETS.TARIFAS_CUARTO).filter(function(t){return esActivo(t.Activo);}),
+    tiposCliente: getTiposCliente().data,
     config: {
       nombreClinica: getConfig('NombreClinica'),
       direccion: getConfig('DireccionClinica'),
@@ -505,6 +510,76 @@ function getCatalogos() {
       licencia: getConfig('LicenciaSanitaria')
     }
   };
+}
+
+// ============================================================
+// CATÁLOGO: TIPOS DE CLIENTE (administrable, solo ADMIN)
+// ============================================================
+var TIPOS_CLIENTE_HEADERS = ['ID_Tipo','Nombre','Activo'];
+
+/** Garantiza la hoja CAT_Tipos_Cliente; la siembra con los tipos base si está vacía. */
+function ensureTiposClienteSheet_() {
+  ensureSheetConHeaders_(SHEETS.TIPOS_CLIENTE, TIPOS_CLIENTE_HEADERS);
+  if (!sheetToObjects(SHEETS.TIPOS_CLIENTE).length) {
+    ['Particular', 'Clínica', 'Urgencias'].forEach(function (n, i) {
+      appendRowByHeader(SHEETS.TIPOS_CLIENTE, { 'ID_Tipo': 'TC-' + String(i + 1).padStart(3, '0'), 'Nombre': n, 'Activo': 'SI' });
+    });
+  }
+}
+
+/** Nombres de tipos de cliente activos (para los selects de alta/cobro). */
+function getTiposCliente() {
+  ensureTiposClienteSheet_();
+  var data = sheetToObjects(SHEETS.TIPOS_CLIENTE)
+    .filter(function (t) { return esActivo(t.Activo); })
+    .map(function (t) { return String(t.Nombre || '').trim(); })
+    .filter(function (n) { return n; });
+  return { ok: true, data: data };
+}
+
+/** Todos los tipos de cliente (activos e inactivos) para la pantalla de administración. */
+function getTiposClienteAdmin() {
+  ensureTiposClienteSheet_();
+  var data = sheetToObjects(SHEETS.TIPOS_CLIENTE).map(function (t) {
+    return { id: t.ID_Tipo, nombre: t.Nombre, activo: esActivo(t.Activo) };
+  });
+  return { ok: true, data: data };
+}
+
+/** Crea o actualiza un tipo de cliente (solo ADMIN). */
+function guardarTipoCliente(d) {
+  if (!tienePermiso(d.rolUsuario, 'editar_tipo_cliente')) {
+    return errorSinPermiso(d.rolUsuario, 'editar_tipo_cliente');
+  }
+  var nombre = String(d.nombre || '').trim();
+  if (!nombre) return { ok: false, error: 'El nombre del tipo de cliente es obligatorio' };
+  ensureTiposClienteSheet_();
+  var activoStr = (d.activo === false || String(d.activo).toUpperCase() === 'NO') ? 'NO' : 'SI';
+  var norm = function (s) { return String(s || '').trim().toLowerCase(); };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    var sh = getSheet(SHEETS.TIPOS_CLIENTE);
+    var data = sh.getDataRange().getValues();
+    var H = data[0];
+    var cId = H.indexOf('ID_Tipo'), cNom = H.indexOf('Nombre'), cAct = H.indexOf('Activo');
+    if (d.id) {
+      var fila = -1;
+      for (var i = 1; i < data.length; i++) { if (String(data[i][cId]) === String(d.id)) { fila = i; break; } }
+      if (fila === -1) return { ok: false, error: 'Tipo de cliente no encontrado: ' + d.id };
+      for (var k = 1; k < data.length; k++) { if (k !== fila && norm(data[k][cNom]) === norm(nombre)) return { ok: false, error: 'Ya existe un tipo de cliente "' + nombre + '"' }; }
+      sh.getRange(fila + 1, cNom + 1).setValue(nombre);
+      if (cAct !== -1) sh.getRange(fila + 1, cAct + 1).setValue(activoStr);
+      return { ok: true, id: d.id, creado: false };
+    }
+    for (var j = 1; j < data.length; j++) { if (norm(data[j][cNom]) === norm(nombre)) return { ok: false, error: 'Ya existe un tipo de cliente "' + nombre + '"' }; }
+    var num = 0;
+    sheetToObjects(SHEETS.TIPOS_CLIENTE).forEach(function (t) { var m = String(t.ID_Tipo || '').match(/^TC-?(\d+)$/); if (m) num = Math.max(num, parseInt(m[1], 10) || 0); });
+    appendRowByHeader(SHEETS.TIPOS_CLIENTE, { 'ID_Tipo': 'TC-' + String(num + 1).padStart(3, '0'), 'Nombre': nombre, 'Activo': activoStr });
+    return { ok: true, creado: true };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // ============================================================

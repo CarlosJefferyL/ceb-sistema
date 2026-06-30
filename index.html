@@ -1303,6 +1303,16 @@ textarea { resize: vertical; min-height: 70px; }
         </div>
         <div id="paquetesBOMTable">—</div>
       </div>
+      <div class="card" data-accion="editar_tipo_cliente">
+        <div class="card-title">
+          Tipos de cliente
+          <button class="btn btn-accent btn-sm" onclick="openModalTipoCliente()">+ Nuevo tipo</button>
+        </div>
+        <div style="padding:12px 16px;background:var(--teal-light);border-radius:8px;margin-bottom:12px;font-size:12px;color:var(--navy);">
+          💡 Estos tipos aparecen al dar de alta un paciente y en Cobro de caja. Las aseguradoras se agregan solas a la lista.
+        </div>
+        <div id="tiposClienteTable">—</div>
+      </div>
       <p style="color:var(--text-muted);font-size:13px;font-style:italic;">
         Para editar o desactivar otros registros, accede al Google Sheet en las pestañas correspondientes.
       </p>
@@ -1796,7 +1806,8 @@ const PERMISOS = {
     'crear_pedido':         ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO'],
     'surtir_pedido':        ['ADMIN','ALMACEN','DIRECTOR_MEDICO'],
     'cancelar_pedido':      ['ADMIN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','ALMACEN','DIRECTOR_MEDICO'],
-    'devolucion_material':  ['ADMIN','ALMACEN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO']
+    'devolucion_material':  ['ADMIN','ALMACEN','JEFE_ENFERMERIA','JEFE_ENFERMERIA_QUIROFANO','JEFE_ENFERMERIA_PISO','ENFERMERIA','DIRECTOR_MEDICO'],
+    'editar_tipo_cliente':  ['ADMIN']
   }
 };
 
@@ -5722,6 +5733,71 @@ async function loadCatalogosPage() {
 
   // Paquetes de BOM
   loadPaquetesBOM();
+  // Tipos de cliente
+  loadTiposClienteAdmin();
+}
+
+// ============================================================
+// CATÁLOGO: TIPOS DE CLIENTE (administración, solo ADMIN)
+// ============================================================
+let tiposClienteCache = [];
+
+async function loadTiposClienteAdmin() {
+  const cont = document.getElementById('tiposClienteTable');
+  if (!cont) return;
+  cont.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  const resp = await apiGet('getTiposClienteAdmin');
+  tiposClienteCache = (resp && resp.ok) ? (resp.data || []) : [];
+  renderTiposClienteAdmin();
+}
+
+function renderTiposClienteAdmin() {
+  const cont = document.getElementById('tiposClienteTable');
+  if (!cont) return;
+  if (!tiposClienteCache.length) { cont.innerHTML = '<div class="empty-state">Sin tipos de cliente.</div>'; return; }
+  const puedeEditar = puede('editar_tipo_cliente');
+  const filas = tiposClienteCache.map(t => {
+    const estado = t.activo
+      ? '<span style="background:var(--teal-light);color:var(--navy);border-radius:10px;padding:1px 8px;font-size:11px;font-weight:600;">Activo</span>'
+      : '<span style="background:#F1F1F1;color:#8A8F98;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:600;">Inactivo</span>';
+    const accion = puedeEditar
+      ? `<button class="btn btn-secondary btn-sm" onclick="openModalTipoCliente('${escJs(t.id)}','${escJs(t.nombre)}',${t.activo})">Editar</button>`
+      : '';
+    return `<tr><td><strong>${artEsc(t.nombre)}</strong></td><td>${estado}</td><td style="text-align:right;">${accion}</td></tr>`;
+  }).join('');
+  cont.innerHTML = `<div style="overflow-x:auto;"><table><thead><tr><th>Nombre</th><th>Estado</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>`;
+}
+
+function openModalTipoCliente(id, nombre, activo) {
+  const editar = !!id;
+  openModal(editar ? 'Editar tipo de cliente' : 'Nuevo tipo de cliente', `
+    <form onsubmit="event.preventDefault();guardarTipoClienteFront('${escJs(id || '')}')">
+      <div class="form-grid">
+        <div class="full"><label>Nombre *</label><input type="text" id="tc_nombre" value="${editar ? artEsc(nombre || '') : ''}" placeholder="Ej: Empleado, Convenio X" required></div>
+        <div><label>Estado</label><select id="tc_activo"><option value="SI">Activo</option><option value="NO" ${editar && activo === false ? 'selected' : ''}>Inactivo</option></select></div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button type="submit" class="btn btn-accent">Guardar</button>
+      </div>
+    </form>
+  `);
+  setTimeout(() => { const el = document.getElementById('tc_nombre'); if (el) el.focus(); }, 60);
+}
+
+async function guardarTipoClienteFront(id) {
+  const nombre = ((document.getElementById('tc_nombre') || {}).value || '').trim();
+  if (!nombre) { showToast('El nombre es obligatorio', 'error'); return; }
+  const activo = (document.getElementById('tc_activo') || {}).value;
+  const resp = await apiPost('guardarTipoCliente', { id: id || '', nombre, activo });
+  if (resp && resp.ok) {
+    showToast('✓ Tipo de cliente guardado');
+    closeModal();
+    await loadCatalogos();   // refresca catalogos.tiposCliente para alta/cobro
+    loadTiposClienteAdmin();
+  } else {
+    showToast('Error: ' + ((resp && resp.error) || 'no se pudo guardar'), 'error');
+  }
 }
 
 // ============================================================
@@ -8877,7 +8953,10 @@ function llenarCatalogosCobro() {
 // Lista homologada de "Tipo de Cliente" usada en Alta de Paciente y Cobro de Caja.
 // Base + aseguradoras del catálogo, sin duplicados (ignora mayúsculas y acentos).
 function construirTiposCliente() {
-  const base = ['Particular', 'Clínica', 'Urgencias'];
+  // Base administrable (catálogo CAT_Tipos_Cliente) + aseguradoras, sin duplicados.
+  const base = (catalogos.tiposCliente && catalogos.tiposCliente.length)
+    ? catalogos.tiposCliente.slice()
+    : ['Particular', 'Clínica', 'Urgencias'];
   const norm = s => String(s || '').toLowerCase().trim()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const vistos = new Set(base.map(norm));
