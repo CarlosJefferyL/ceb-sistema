@@ -5077,50 +5077,56 @@ async function openModalRecibirOC(folioOC) {
   const rows = pendientes.map(it => {
     const porRecibir = (Number(it.cantidad)||0) - (Number(it.cantidadRecibida)||0);
     return `
-    <div class="card" style="margin-bottom:10px;" data-iditem="${artEsc(it.idOCItem)}">
-      <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">Pedido: <b>${artEsc(it.descripcion||'(sin artículo)')}</b> · ${porRecibir} ${artEsc(it.unidad||'')} por recibir</div>
-      <div class="form-grid">
-        <div class="full"><label>Artículo recibido <small style="color:var(--text-muted);font-weight:400;">(cámbialo si el proveedor mandó otro)</small></label>
-          <select class="rc_art" onchange="rcArtChange(this)">${artOpts(it.idArticulo)}</select>
-          <small class="rc_hint" style="font-size:11px;color:var(--text-muted);"></small>
-        </div>
-        <div><label>Cantidad a recibir <small style="color:var(--text-muted);font-weight:400;">(puede ser más o menos)</small></label><input type="number" step="any" min="0" value="${porRecibir}" class="rc_cant"></div>
-        <div><label>Precio unitario</label><input type="number" step="any" min="0" value="${Number(it.precioUnitario)||0}" class="rc_precio" title="Ajústalo si cambió respecto a la orden"></div>
-        <div class="rc_loteWrap" style="display:none;"><label>Lote fabricante *</label><input type="text" class="rc_lote"></div>
-        <div class="rc_cadWrap" style="display:none;"><label>Caducidad *</label><input type="date" class="rc_cad"></div>
-        <div class="rc_recetaWrap" style="display:none;"><label>Folio receta *</label><input type="text" class="rc_receta"></div>
-      </div>
-    </div>`;
+    <tr data-iditem="${artEsc(it.idOCItem)}">
+      <td style="font-size:11px;color:var(--text-muted);max-width:130px;">${artEsc(it.descripcion||'(sin artículo)')}<br>pide ${porRecibir} ${artEsc(it.unidad||'')}</td>
+      <td><select class="rc_art" onchange="rcArtChange(this)" style="min-width:150px;font-size:12px;">${artOpts(it.idArticulo)}</select></td>
+      <td><input type="number" step="any" min="0" value="${porRecibir}" class="rc_cant" style="width:62px;"></td>
+      <td><input type="number" step="any" min="0" value="${Number(it.precioUnitario)||0}" class="rc_precio" style="width:78px;"></td>
+      <td><input type="text" class="rc_barras" placeholder="escanear…" autocomplete="off" style="width:120px;"></td>
+      <td class="rc_loteCell"><input type="text" class="rc_lote" placeholder="lote" style="width:96px;"><span class="rc_na" style="display:none;color:var(--text-muted);">—</span></td>
+      <td class="rc_cadCell"><input type="date" class="rc_cad" style="width:135px;"><span class="rc_na" style="display:none;color:var(--text-muted);">—</span></td>
+      <td class="rc_recetaCell"><input type="text" class="rc_receta" placeholder="folio" style="width:90px;"><span class="rc_na" style="display:none;color:var(--text-muted);">—</span></td>
+    </tr>`;
   }).join('');
   cont.innerHTML = `
     <div style="background:var(--teal-light);padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:12px;color:var(--navy);">
-      Proveedor <strong>${artEsc(o.nombreProveedor||'')}</strong>. Ajusta artículo, cantidad y precio según lo que realmente llegó (deja la cantidad en 0 para no recibir esa partida). Al confirmar, lo recibido entra a inventario. Medicamentos y controlados exigen lote y caducidad (receta si es controlado).
+      Proveedor <strong>${artEsc(o.nombreProveedor||'')}</strong>. Ajusta por partida lo que realmente llegó (artículo, cantidad, precio y código de barras). Cantidad 0 = no recibir esa partida. Lote/caducidad solo aplican a medicamentos; receta a controlados.
     </div>
     <form onsubmit="event.preventDefault();submitRecibirOC('${artEsc(folioOC)}')">
-      ${rows}
-      <div class="form-grid"><div><label>Fecha de recepción</label><input type="date" id="rc_fecha" value="${todayISO()}"></div></div>
+      <div style="overflow-x:auto;">
+        <table style="font-size:12px;width:100%;"><thead><tr>
+          <th>Pedido</th><th>Artículo recibido</th><th>Cant.</th><th>Precio</th><th>Código de barras</th><th>Lote</th><th>Caducidad</th><th>Receta</th>
+        </tr></thead><tbody>${rows}</tbody></table>
+      </div>
+      <div class="form-grid" style="margin-top:10px;"><div><label>Fecha de recepción</label><input type="date" id="rc_fecha" value="${todayISO()}"></div></div>
       <div class="form-actions">
         <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
         <button type="submit" class="btn btn-accent">Confirmar recepción</button>
       </div>
     </form>`;
-  // Inicializar el toggle de lote/receta según el artículo de cada partida
+  // Inicializar lote/caducidad/receta de cada partida según su artículo
   document.querySelectorAll('#ocRecibir .rc_art').forEach(sel => rcArtChange(sel));
 }
 
-// Ajusta los campos de lote/caducidad/receta de una partida según el artículo elegido
+// Muestra/oculta el input de una celda (lote/caducidad/receta) según si aplica
+function rcToggleCelda(cell, req) {
+  if (!cell) return;
+  const input = cell.querySelector('input');
+  const na = cell.querySelector('.rc_na');
+  if (input) input.style.display = req ? '' : 'none';
+  if (na) na.style.display = req ? 'none' : '';
+}
+
+// Ajusta lote/caducidad/receta de una partida según el artículo elegido (formato tabla)
 function rcArtChange(sel) {
-  const card = sel.closest('[data-iditem]'); if (!card) return;
+  const row = sel.closest('[data-iditem]'); if (!row) return;
   const id = sel.value;
   const cat = id ? ocCategoriaArticulo(id) : '';
   const reqLote = artRequiereLote(cat);
   const reqReceta = (cat === 'MEDICAMENTO_CONTROLADO');
-  const loteW = card.querySelector('.rc_loteWrap'), cadW = card.querySelector('.rc_cadWrap'), recW = card.querySelector('.rc_recetaWrap');
-  if (loteW) loteW.style.display = reqLote ? '' : 'none';
-  if (cadW) cadW.style.display = reqLote ? '' : 'none';
-  if (recW) recW.style.display = reqReceta ? '' : 'none';
-  const hint = card.querySelector('.rc_hint');
-  if (hint) hint.textContent = reqReceta ? '🔒 controlado: lote, caducidad y receta obligatorios' : (reqLote ? '💊 requiere lote y caducidad' : (id ? 'insumo / otro: sin lote' : ''));
+  rcToggleCelda(row.querySelector('.rc_loteCell'), reqLote);
+  rcToggleCelda(row.querySelector('.rc_cadCell'), reqLote);
+  rcToggleCelda(row.querySelector('.rc_recetaCell'), reqReceta);
 }
 
 async function submitRecibirOC(folioOC) {
@@ -5138,15 +5144,19 @@ async function submitRecibirOC(folioOC) {
     const cad = (b.querySelector('.rc_cad')||{}).value || '';
     const receta = (b.querySelector('.rc_receta')||{}).value || '';
     const precio = parseFloat((b.querySelector('.rc_precio')||{}).value);
+    const barras = (b.querySelector('.rc_barras')||{}).value || '';
     if (reqLote && (!lote.trim() || !cad)) { showToast('Falta lote o caducidad en una partida', 'error'); return; }
     if (reqReceta && !receta.trim()) { showToast('Falta folio de receta en una partida controlada', 'error'); return; }
-    items.push({ idOCItem: b.dataset.iditem, idArticulo, cantidadRecibida: cant, precioUnitario: (isNaN(precio) ? null : precio), loteFabricante: lote.trim(), fechaCaducidad: cad, folioReceta: receta.trim() });
+    items.push({ idOCItem: b.dataset.iditem, idArticulo, cantidadRecibida: cant, precioUnitario: (isNaN(precio) ? null : precio), codigoBarras: barras.trim(), loteFabricante: lote.trim(), fechaCaducidad: cad, folioReceta: receta.trim() });
   }
   if (!items.length) { showToast('Captura al menos una cantidad a recibir', 'error'); return; }
   const data = { folioOC, items, fecha: document.getElementById('rc_fecha').value, capturadoPor: currentUser.nombre };
   const resp = await apiPost('recibirOrdenCompra', data);
-  if (resp.ok) { showToast('✓ Recepción registrada (' + resp.entradas + ' entradas). Estado: ' + resp.estado); closeModal(); loadCompras(); }
-  else { showToast('Error: ' + resp.error, 'error'); }
+  if (resp.ok) {
+    showToast('✓ Recepción registrada (' + resp.entradas + ' entradas). Estado: ' + resp.estado);
+    if (resp.avisos && resp.avisos.length) showToast('⚠ Códigos de barras: ' + resp.avisos.join(' · '), 'warn');
+    closeModal(); loadCompras();
+  } else { showToast('Error: ' + resp.error, 'error'); }
 }
 
 // ============================================================

@@ -1973,33 +1973,39 @@ function setCodigoBarras(d) {
     return errorSinPermiso(d.rolUsuario, 'editar_articulo');
   }
   if (!d.idArticulo) return { ok: false, error: 'Falta el artículo' };
-  var nuevo = String(d.codigoBarras == null ? '' : d.codigoBarras).trim();
   ensureArticulosSheet_();
   var lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    if (nuevo) {
-      var dup = sheetToObjects(SHEETS.ARTICULOS).filter(function (a) {
-        return String(a.ID_Articulo) !== String(d.idArticulo) && String(a.Codigo_Barras || '').trim() === nuevo;
-      })[0];
-      if (dup) return { ok: false, error: 'Ese código de barras ya está asignado a: ' + (dup.Nombre || dup.ID_Articulo) };
-    }
-    var sh = getSheet(SHEETS.ARTICULOS);
-    var data = sh.getDataRange().getValues();
-    var H = data[0];
-    var cId = H.indexOf('ID_Articulo');
-    var cBar = H.indexOf('Codigo_Barras');
-    if (cBar === -1) return { ok: false, error: 'No existe la columna Codigo_Barras en CAT_Articulos' };
-    for (var i = 1; i < data.length; i++) {
-      if (String(data[i][cId]) === String(d.idArticulo)) {
-        sh.getRange(i + 1, cBar + 1).setValue(nuevo);
-        return { ok: true, idArticulo: d.idArticulo, codigoBarras: nuevo };
-      }
-    }
-    return { ok: false, error: 'Artículo no encontrado: ' + d.idArticulo };
+    return asignarCodigoBarras_(d.idArticulo, d.codigoBarras);
   } finally {
     lock.releaseLock();
   }
+}
+
+/** Núcleo (sin lock ni permiso): asigna el código de barras a un artículo, con unicidad. */
+function asignarCodigoBarras_(idArticulo, codigoBarras) {
+  var nuevo = String(codigoBarras == null ? '' : codigoBarras).trim();
+  ensureArticulosSheet_();
+  if (nuevo) {
+    var dup = sheetToObjects(SHEETS.ARTICULOS).filter(function (a) {
+      return String(a.ID_Articulo) !== String(idArticulo) && String(a.Codigo_Barras || '').trim() === nuevo;
+    })[0];
+    if (dup) return { ok: false, error: 'Código ' + nuevo + ' ya es de "' + (dup.Nombre || dup.ID_Articulo) + '"' };
+  }
+  var sh = getSheet(SHEETS.ARTICULOS);
+  var data = sh.getDataRange().getValues();
+  var H = data[0];
+  var cId = H.indexOf('ID_Articulo');
+  var cBar = H.indexOf('Codigo_Barras');
+  if (cBar === -1) return { ok: false, error: 'No existe la columna Codigo_Barras en CAT_Articulos' };
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][cId]) === String(idArticulo)) {
+      sh.getRange(i + 1, cBar + 1).setValue(nuevo);
+      return { ok: true, idArticulo: idArticulo, codigoBarras: nuevo };
+    }
+  }
+  return { ok: false, error: 'Artículo no encontrado: ' + idArticulo };
 }
 
 /**
@@ -3495,6 +3501,7 @@ function recibirOrdenCompra(d) {
     preparados.push({
       art: art, cant: cant, entradaData: entradaData, itOC: itOC,
       precioUnitario: (r.precioUnitario != null && r.precioUnitario !== '') ? num_(r.precioUnitario) : null,
+      codigoBarras: (r.codigoBarras != null) ? String(r.codigoBarras).trim() : '',
       nuevoArticulo: cambioArt ? { idArticulo: idArt, codigo: art.Codigo || idArt, descripcion: art.Nombre || '', unidad: art.Unidad || '' } : null
     });
   }
@@ -3503,11 +3510,16 @@ function recibirOrdenCompra(d) {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    var entradas = 0;
+    var entradas = 0, avisos = [];
     preparados.forEach(function(p, idx){
       p.entradaData._seq = idx; // sufijo único para IDs de lote/movimiento en lote
       entradaArticuloEscribir_(p.art, p.cant, p.entradaData);
       entradas++;
+      // Asignar código de barras al artículo recibido si se capturó/escaneó
+      if (p.codigoBarras) {
+        var rb = asignarCodigoBarras_(p.entradaData.idArticulo, p.codigoBarras);
+        if (rb && !rb.ok) avisos.push(rb.error);
+      }
     });
 
     // Actualizar Cantidad_Recibida / Estado_Item por partida
@@ -3565,7 +3577,7 @@ function recibirOrdenCompra(d) {
     });
     if (precioCambio) recalcularTotalesOC_(d.folioOC);
 
-    return { ok: true, folioOC: d.folioOC, estado: nuevoEstado, entradas: entradas };
+    return { ok: true, folioOC: d.folioOC, estado: nuevoEstado, entradas: entradas, avisos: avisos };
   } finally {
     lock.releaseLock();
   }
