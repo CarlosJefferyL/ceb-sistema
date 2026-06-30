@@ -4348,12 +4348,12 @@ function renderArticulos() {
     const col = CATEGORIA_COLOR[a.categoria] || '#8A8F98';
     const badgeCat = `<span style="background:${col};color:#fff;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700;">${CATEGORIA_LABEL[a.categoria]||a.categoria}</span>`;
     let acc = `<button class="btn btn-secondary btn-sm" onclick="openModalPreciosArticulo('${artEsc(a.idArticulo)}','${artEsc(a.nombre)}')">💲 Precios</button> `;
-    if (puedeEditarArt) acc += `<button class="btn btn-secondary btn-sm" onclick="openModalCodigoBarras('${escJs(a.idArticulo)}','${escJs(a.nombre)}','${escJs(a.codigoBarras||'')}')" title="${a.codigoBarras ? 'Código: ' + artEsc(a.codigoBarras) : 'Sin código de barras'}">🏷 ${a.codigoBarras ? 'Código ✓' : 'Código'}</button> `;
+    if (puedeEditarArt) acc += `<button class="btn btn-secondary btn-sm" onclick="openModalCodigoBarras('${escJs(a.idArticulo)}','${escJs(a.nombre)}')" title="Códigos de barras del artículo">🏷 Códigos${a.numCodigos ? ' (' + a.numCodigos + ')' : ''}</button> `;
     if (puedeEntrada) acc += `<button class="btn btn-secondary btn-sm" onclick="openModalEntradaArticulo('${artEsc(a.idArticulo)}')">↓ Entrada</button> `;
     if (puedeSalida) acc += `<button class="btn btn-secondary btn-sm" onclick="openModalMovimientoArticulo('${artEsc(a.idArticulo)}','SALIDA')">↑ Salida</button> `;
     return `
     <tr style="${a.alerta ? 'background:var(--warn-bg);' : ''}">
-      <td><strong>${artEsc(a.codigo)}</strong>${a.codigoBarras ? `<br><small style="color:var(--text-muted);">🏷 ${artEsc(a.codigoBarras)}</small>` : ''}</td>
+      <td><strong>${artEsc(a.codigo)}</strong>${a.numCodigos ? `<br><small style="color:var(--text-muted);">🏷 ${a.numCodigos} código(s)</small>` : ''}</td>
       <td>${artEsc(a.nombre)}${a.sustancia?`<br><small style="color:var(--text-muted);">${artEsc(a.sustancia)}</small>`:''}</td>
       <td>${badgeCat}</td>
       <td><strong style="font-size:16px;color:${a.alerta?'var(--danger)':'var(--navy)'};">${a.saldo}</strong> ${artEsc(a.unidad||'')}</td>
@@ -4451,32 +4451,57 @@ async function submitAltaArticulo() {
 }
 
 // MODAL: ASIGNAR / ESCANEAR CÓDIGO DE BARRAS DE UN ARTÍCULO
-function openModalCodigoBarras(idArticulo, nombre, actual) {
-  openModal('Código de barras · ' + artEsc(nombre), `
-    <div style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">Pon el cursor en el campo y dispara el escáner (o tecléalo). Déjalo vacío para quitar el código.</div>
-    <div class="form-grid"><div class="full">
-      <label>Código de barras</label>
-      <input type="text" id="cb_codigo" value="${artEsc(actual || '')}" placeholder="Escanea aquí…" autocomplete="off"
-             onkeydown="if(event.key==='Enter'){event.preventDefault();submitCodigoBarras('${escJs(idArticulo)}');}">
-    </div></div>
-    <div class="form-actions">
-      <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-      <button type="button" class="btn btn-accent" onclick="submitCodigoBarras('${escJs(idArticulo)}')">Guardar</button>
+let cbCtx = { idArticulo: '', nombre: '' };
+
+// Administrador de códigos de barras de un artículo (varios, uno por proveedor)
+function openModalCodigoBarras(idArticulo, nombre) {
+  cbCtx = { idArticulo: idArticulo, nombre: nombre };
+  openModal('Códigos de barras · ' + artEsc(nombre), `
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Un artículo puede tener <b>varios códigos</b> (cada proveedor usa el suyo). Escanea o teclea el código, opcionalmente con el proveedor, y agrégalo.</div>
+    <div class="form-grid">
+      <div><label>Código de barras</label><input type="text" id="cb_codigo" placeholder="Escanea aquí…" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();cbAgregar();}"></div>
+      <div><label>Proveedor (opcional)</label><input type="text" id="cb_prov" placeholder="Ej: NADRO" autocomplete="off"></div>
+      <div style="display:flex;align-items:end;"><button type="button" class="btn btn-accent btn-sm" onclick="cbAgregar()">+ Agregar</button></div>
     </div>
+    <div id="cb_lista" style="margin-top:12px;"><div class="loading"><div class="spinner"></div></div></div>
+    <div class="form-actions"><button type="button" class="btn btn-secondary" onclick="closeModal()">Cerrar</button></div>
   `);
-  setTimeout(() => { const el = document.getElementById('cb_codigo'); if (el) { el.focus(); el.select(); } }, 60);
+  cbCargarLista();
+  setTimeout(() => { const el = document.getElementById('cb_codigo'); if (el) el.focus(); }, 60);
 }
 
-async function submitCodigoBarras(idArticulo) {
+async function cbCargarLista() {
+  const cont = document.getElementById('cb_lista'); if (!cont) return;
+  const resp = await apiGet('getCodigosBarras', { idArticulo: cbCtx.idArticulo });
+  const lista = (resp && resp.ok) ? (resp.data || []) : [];
+  if (!lista.length) { cont.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:8px 0;">Sin códigos asignados aún.</div>'; return; }
+  cont.innerHTML = '<table style="font-size:13px;"><thead><tr><th>Código</th><th>Proveedor</th><th></th></tr></thead><tbody>' +
+    lista.map(c => `<tr><td><strong>${artEsc(c.codigo)}</strong></td><td>${artEsc(c.proveedor || '—')}</td><td style="text-align:right;"><button class="btn btn-secondary btn-sm" onclick="cbQuitar('${escJs(c.codigo)}')">Quitar</button></td></tr>`).join('') +
+    '</tbody></table>';
+}
+
+async function cbAgregar() {
   const codigo = ((document.getElementById('cb_codigo') || {}).value || '').trim();
-  const resp = await apiPost('setCodigoBarras', { idArticulo: idArticulo, codigoBarras: codigo });
+  const proveedor = ((document.getElementById('cb_prov') || {}).value || '').trim();
+  if (!codigo) { showToast('Escanea o teclea un código', 'error'); return; }
+  const resp = await apiPost('agregarCodigoBarras', { idArticulo: cbCtx.idArticulo, codigoBarras: codigo, proveedor: proveedor });
   if (resp && resp.ok) {
-    showToast(codigo ? '✓ Código de barras guardado' : '✓ Código de barras eliminado');
-    closeModal();
+    showToast(resp.yaExistia ? 'Ese código ya estaba en el artículo' : '✓ Código agregado');
+    document.getElementById('cb_codigo').value = '';
+    document.getElementById('cb_prov').value = '';
+    document.getElementById('cb_codigo').focus();
+    cbCargarLista();
     loadArticulos();
   } else {
-    showToast('Error: ' + ((resp && resp.error) || 'no se pudo guardar'), 'error');
+    showToast('Error: ' + ((resp && resp.error) || 'no se pudo agregar'), 'error');
   }
+}
+
+async function cbQuitar(codigo) {
+  if (!confirm('¿Quitar el código ' + codigo + '?')) return;
+  const resp = await apiPost('quitarCodigoBarras', { idArticulo: cbCtx.idArticulo, codigoBarras: codigo });
+  if (resp && resp.ok) { showToast('Código quitado'); cbCargarLista(); loadArticulos(); }
+  else { showToast('Error: ' + ((resp && resp.error) || 'no se pudo quitar'), 'error'); }
 }
 
 // MODAL: ENTRADA DE ARTÍCULO (lote/caducidad/receta condicionales)
@@ -4559,8 +4584,8 @@ function artEntradaToggle() {
   if (wrap && barrasInput) {
     if (art) {
       wrap.style.display = '';
-      barrasInput.value = art.codigoBarras || '';
-      if (hint) hint.textContent = art.codigoBarras ? 'Ya tiene código asignado. Puedes corregirlo.' : 'Sin código — escanéalo para asignarlo a este artículo.';
+      barrasInput.value = '';
+      if (hint) hint.textContent = (art.numCodigos ? 'Ya tiene ' + art.numCodigos + ' código(s). ' : '') + 'Escanea para agregar otro (un proveedor puede usar otro código).';
     } else {
       wrap.style.display = 'none';
       barrasInput.value = '';
@@ -4603,10 +4628,10 @@ async function submitEntradaArticulo() {
   };
   const resp = await apiPost('registrarEntradaArticulo', data);
   if (resp.ok) {
-    // Si se capturó/escaneó un código de barras nuevo, asignarlo al artículo.
+    // Si se capturó/escaneó un código de barras, agregarlo al artículo (etiquetado con el proveedor).
     const barras = ((document.getElementById('ea_barras') || {}).value || '').trim();
-    if (barras && barras !== (art.codigoBarras || '')) {
-      const r2 = await apiPost('setCodigoBarras', { idArticulo: id, codigoBarras: barras });
+    if (barras) {
+      const r2 = await apiPost('agregarCodigoBarras', { idArticulo: id, codigoBarras: barras, proveedor: ((document.getElementById('ea_proveedor')||{}).value || '').trim() });
       if (r2 && !r2.ok) showToast('Entrada OK, pero el código de barras no se guardó: ' + (r2.error || ''), 'warn');
     }
     showToast('✓ Entrada registrada. Saldo: ' + resp.saldoNuevo); closeModal(); loadArticulos();

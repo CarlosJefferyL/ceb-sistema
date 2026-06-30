@@ -43,6 +43,7 @@ var SHEETS = {
   INV_MOV: 'Inventario_Mov',
   INV_SALDO: 'Inventario_Saldo',
   ARTICULOS: 'CAT_Articulos',
+  CODIGOS_BARRAS: 'Codigos_Barras',
   // ---- Módulo Compras ----
   PROVEEDORES: 'CAT_Proveedores',
   ORDENES_COMPRA: 'Ordenes_Compra',
@@ -226,6 +227,7 @@ function doGet(e) {
       case 'getPedidos':     result = getPedidos(e.parameter.estado, e.parameter.desde, e.parameter.hasta); break;
       case 'getPedido':      result = getPedido(e.parameter.idPedido); break;
       case 'buscarArticuloPorBarras': result = buscarArticuloPorBarras(e.parameter.codigo); break;
+      case 'getCodigosBarras': result = getCodigosBarras(e.parameter.idArticulo); break;
       case 'getMaterialDevolverPaciente': result = getMaterialDevolverPaciente(e.parameter.idPaciente); break;
       default:             result = { ok: false, error: 'Acción no reconocida: ' + action };
     }
@@ -295,6 +297,8 @@ function doPost(e) {
       case 'guardarPlantillaBOM': result = guardarPlantillaBOM(payload.data); break;
       case 'crearPedido':        result = crearPedido(payload.data); break;
       case 'setCodigoBarras':    result = setCodigoBarras(payload.data); break;
+      case 'agregarCodigoBarras': result = agregarCodigoBarras(payload.data); break;
+      case 'quitarCodigoBarras':  result = quitarCodigoBarras(payload.data); break;
       case 'surtirPedido':       result = surtirPedido(payload.data); break;
       case 'surtirPedidoConEscaneo': result = surtirPedidoConEscaneo(payload.data); break;
       case 'cancelarPedido':     result = cancelarPedido(payload.data); break;
@@ -1769,6 +1773,12 @@ function ensureArticulosSheet_() {
   ensureSheetConHeaders_(SHEETS.ARTICULOS, ARTICULOS_HEADERS);
 }
 
+// Códigos de barras MÚLTIPLES por artículo (un proveedor puede usar otra nomenclatura).
+var CODIGOS_BARRAS_HEADERS = ['ID_Codigo','ID_Articulo','Codigo_Barras','Proveedor','Activo','Capturado_Por','Timestamp_Captura'];
+function ensureCodigosBarrasSheet_() {
+  ensureSheetConHeaders_(SHEETS.CODIGOS_BARRAS, CODIGOS_BARRAS_HEADERS);
+}
+
 /**
  * Migración idempotente: vuelca CAT_Medicamentos (controlados) y
  * CAT_Insumos al catálogo único CAT_Articulos, conservando los IDs
@@ -1864,17 +1874,25 @@ function getArticuloRaw_(idArticulo) {
  */
 function getInventarioGeneral(categoria, ubicacion) {
   ensureArticulosSheet_();
+  ensureCodigosBarrasSheet_();
   var filtro = categoria ? normCategoria_(categoria) : null;
   var ubi = (ubicacion && String(ubicacion).trim()) ? String(ubicacion).trim() : null;
+  // Conteo de códigos de barras (hoja múltiple) por artículo
+  var cbCount = {};
+  sheetToObjects(SHEETS.CODIGOS_BARRAS).forEach(function(c){
+    if (esActivo(c.Activo)) { var k = String(c.ID_Articulo); cbCount[k] = (cbCount[k] || 0) + 1; }
+  });
   var arts = sheetToObjects(SHEETS.ARTICULOS).filter(function(a){ return esActivo(a.Activo); });
   var data = arts.map(function(a){
     var cat = normCategoria_(a.Categoria);
     var saldo = calcularSaldo(a.ID_Articulo, ubi);
     var minimo = parseFloat(a.Stock_Minimo) || 0;
+    var legacy = String(a.Codigo_Barras || '').trim();
     return {
       idArticulo: a.ID_Articulo,
       codigo: a.Codigo || a.ID_Articulo,
-      codigoBarras: a.Codigo_Barras || '',
+      codigoBarras: legacy,
+      numCodigos: (cbCount[String(a.ID_Articulo)] || 0) + (legacy ? 1 : 0),
       nombre: a.Nombre,
       categoria: cat,
       sustancia: a.Sustancia_Activa,
@@ -1965,68 +1983,120 @@ function altaArticulo(d) {
 }
 
 /**
- * Asigna/actualiza el código de barras de un artículo. Garantiza unicidad:
- * un mismo código de barras no puede apuntar a dos artículos distintos.
+ * Núcleo (sin lock ni permiso): AGREGA un código de barras a un artículo en la
+ * hoja Codigos_Barras (un artículo puede tener varios, p. ej. uno por proveedor).
+ * Garantiza unicidad: un mismo código no puede apuntar a dos artículos distintos.
  */
-function setCodigoBarras(d) {
-  if (!tienePermiso(d.rolUsuario, 'editar_articulo')) {
-    return errorSinPermiso(d.rolUsuario, 'editar_articulo');
+function agregarCodigoBarras_(idArticulo, codigoBarras, proveedor, capturadoPor) {
+  var nuevo = String(codigoBarras == null ? '' : codigoBarras).trim();
+  if (!idArticulo) return { ok: false, error: 'Falta el artículo' };
+  if (!nuevo) return { ok: false, error: 'Código vacío' };
+  ensureCodigosBarrasSheet_();
+  // ¿el código ya pertenece a otro artículo? (hoja múltiple o columna legacy)
+  var enSheet = sheetToObjects(SHEETS.CODIGOS_BARRAS).filter(function (c) {
+    return esActivo(c.Activo) && String(c.Codigo_Barras || '').trim() === nuevo;
+  })[0];
+  if (enSheet && String(enSheet.ID_Articulo) !== String(idArticulo)) {
+    return { ok: false, error: 'Código ' + nuevo + ' ya es de otro artículo (' + enSheet.ID_Articulo + ')' };
   }
-  if (!d.idArticulo) return { ok: false, error: 'Falta el artículo' };
-  ensureArticulosSheet_();
+  if (enSheet && String(enSheet.ID_Articulo) === String(idArticulo)) {
+    return { ok: true, idArticulo: idArticulo, codigoBarras: nuevo, yaExistia: true };
+  }
+  var dupCol = sheetToObjects(SHEETS.ARTICULOS).filter(function (a) {
+    return String(a.ID_Articulo) !== String(idArticulo) && String(a.Codigo_Barras || '').trim() === nuevo;
+  })[0];
+  if (dupCol) return { ok: false, error: 'Código ' + nuevo + ' ya es de "' + (dupCol.Nombre || dupCol.ID_Articulo) + '"' };
+
+  var num = 0;
+  sheetToObjects(SHEETS.CODIGOS_BARRAS).forEach(function (c) {
+    var m = String(c.ID_Codigo || '').match(/^CB-?(\d+)$/);
+    if (m) num = Math.max(num, parseInt(m[1], 10) || 0);
+  });
+  appendRowByHeader(SHEETS.CODIGOS_BARRAS, {
+    'ID_Codigo': 'CB-' + String(num + 1).padStart(4, '0'),
+    'ID_Articulo': idArticulo, 'Codigo_Barras': nuevo, 'Proveedor': proveedor || '',
+    'Activo': 'SI', 'Capturado_Por': capturadoPor || '', 'Timestamp_Captura': nowTs()
+  });
+  return { ok: true, idArticulo: idArticulo, codigoBarras: nuevo };
+}
+
+/** Acción: agrega un código de barras a un artículo (con permiso + lock). */
+function agregarCodigoBarras(d) {
+  if (!tienePermiso(d.rolUsuario, 'editar_articulo')) return errorSinPermiso(d.rolUsuario, 'editar_articulo');
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try { return agregarCodigoBarras_(d.idArticulo, d.codigoBarras, d.proveedor, d.capturadoPor || d.rolUsuario); }
+  finally { lock.releaseLock(); }
+}
+
+/** Compat: "fijar" un código de barras = agregar uno (ya no sobrescribe). */
+function setCodigoBarras(d) { return agregarCodigoBarras(d); }
+
+/** Acción: quita un código de barras de un artículo (de la hoja y de la columna legacy). */
+function quitarCodigoBarras(d) {
+  if (!tienePermiso(d.rolUsuario, 'editar_articulo')) return errorSinPermiso(d.rolUsuario, 'editar_articulo');
+  var codigo = String(d.codigoBarras || '').trim();
+  if (!d.idArticulo || !codigo) return { ok: false, error: 'Falta artículo o código' };
+  ensureCodigosBarrasSheet_();
   var lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    return asignarCodigoBarras_(d.idArticulo, d.codigoBarras);
-  } finally {
-    lock.releaseLock();
-  }
+    var quitados = 0;
+    var sh = getSheet(SHEETS.CODIGOS_BARRAS);
+    var data = sh.getDataRange().getValues();
+    var cId = data[0].indexOf('ID_Articulo'), cCod = data[0].indexOf('Codigo_Barras');
+    for (var i = data.length - 1; i >= 1; i--) {
+      if (String(data[i][cId]) === String(d.idArticulo) && String(data[i][cCod]).trim() === codigo) { sh.deleteRow(i + 1); quitados++; }
+    }
+    // Si el código estaba en la columna legacy de CAT_Articulos, limpiarlo
+    var ash = getSheet(SHEETS.ARTICULOS);
+    var ad = ash.getDataRange().getValues();
+    var aId = ad[0].indexOf('ID_Articulo'), aBar = ad[0].indexOf('Codigo_Barras');
+    if (aBar !== -1) {
+      for (var j = 1; j < ad.length; j++) {
+        if (String(ad[j][aId]) === String(d.idArticulo) && String(ad[j][aBar]).trim() === codigo) { ash.getRange(j + 1, aBar + 1).setValue(''); quitados++; }
+      }
+    }
+    return { ok: true, quitados: quitados };
+  } finally { lock.releaseLock(); }
 }
 
-/** Núcleo (sin lock ni permiso): asigna el código de barras a un artículo, con unicidad. */
-function asignarCodigoBarras_(idArticulo, codigoBarras) {
-  var nuevo = String(codigoBarras == null ? '' : codigoBarras).trim();
-  ensureArticulosSheet_();
-  if (nuevo) {
-    var dup = sheetToObjects(SHEETS.ARTICULOS).filter(function (a) {
-      return String(a.ID_Articulo) !== String(idArticulo) && String(a.Codigo_Barras || '').trim() === nuevo;
-    })[0];
-    if (dup) return { ok: false, error: 'Código ' + nuevo + ' ya es de "' + (dup.Nombre || dup.ID_Articulo) + '"' };
+/** Lista los códigos de barras de un artículo (hoja múltiple + columna legacy como "principal"). */
+function getCodigosBarras(idArticulo) {
+  if (!idArticulo) return { ok: false, error: 'Falta el artículo' };
+  ensureCodigosBarrasSheet_();
+  var lista = sheetToObjects(SHEETS.CODIGOS_BARRAS)
+    .filter(function (c) { return esActivo(c.Activo) && String(c.ID_Articulo) === String(idArticulo); })
+    .map(function (c) { return { codigo: String(c.Codigo_Barras || '').trim(), proveedor: c.Proveedor || '' }; });
+  var art = getArticuloRaw_(idArticulo);
+  if (art && String(art.Codigo_Barras || '').trim()) {
+    var leg = String(art.Codigo_Barras).trim();
+    if (!lista.some(function (x) { return x.codigo === leg; })) lista.push({ codigo: leg, proveedor: '(principal)' });
   }
-  var sh = getSheet(SHEETS.ARTICULOS);
-  var data = sh.getDataRange().getValues();
-  var H = data[0];
-  var cId = H.indexOf('ID_Articulo');
-  var cBar = H.indexOf('Codigo_Barras');
-  if (cBar === -1) return { ok: false, error: 'No existe la columna Codigo_Barras en CAT_Articulos' };
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][cId]) === String(idArticulo)) {
-      sh.getRange(i + 1, cBar + 1).setValue(nuevo);
-      return { ok: true, idArticulo: idArticulo, codigoBarras: nuevo };
-    }
-  }
-  return { ok: false, error: 'Artículo no encontrado: ' + idArticulo };
+  return { ok: true, data: lista };
 }
 
 /**
- * Busca un artículo activo por código escaneado. Prioriza el código de barras
- * exacto; si no, cae al código interno o al ID. Lo usan los flujos de escaneo.
+ * Busca un artículo activo por código escaneado. Revisa primero la hoja de
+ * códigos múltiples, luego la columna legacy, y por último el código interno o ID.
  */
 function buscarArticuloPorBarras(codigo) {
   ensureArticulosSheet_();
+  ensureCodigosBarrasSheet_();
   var q = String(codigo == null ? '' : codigo).trim();
   if (!q) return { ok: false, error: 'Código vacío' };
   var arts = sheetToObjects(SHEETS.ARTICULOS).filter(function (a) { return esActivo(a.Activo); });
-  var hit = arts.filter(function (a) { return String(a.Codigo_Barras || '').trim() === q; })[0];
-  if (!hit) hit = arts.filter(function (a) {
-    return String(a.Codigo || '').trim() === q || String(a.ID_Articulo).trim() === q;
-  })[0];
+  var hit = null;
+  var cb = sheetToObjects(SHEETS.CODIGOS_BARRAS).filter(function (c) { return esActivo(c.Activo) && String(c.Codigo_Barras || '').trim() === q; })[0];
+  if (cb) hit = arts.filter(function (a) { return String(a.ID_Articulo) === String(cb.ID_Articulo); })[0];
+  if (!hit) hit = arts.filter(function (a) { return String(a.Codigo_Barras || '').trim() === q; })[0];
+  if (!hit) hit = arts.filter(function (a) { return String(a.Codigo || '').trim() === q || String(a.ID_Articulo).trim() === q; })[0];
   if (!hit) return { ok: false, error: 'Código no reconocido: ' + q };
   var cat = normCategoria_(hit.Categoria);
   return { ok: true, articulo: {
     idArticulo: hit.ID_Articulo,
     codigo: hit.Codigo || hit.ID_Articulo,
-    codigoBarras: hit.Codigo_Barras || '',
+    codigoBarras: q,
     nombre: hit.Nombre,
     categoria: cat,
     unidad: hit.Unidad,
@@ -3515,9 +3585,9 @@ function recibirOrdenCompra(d) {
       p.entradaData._seq = idx; // sufijo único para IDs de lote/movimiento en lote
       entradaArticuloEscribir_(p.art, p.cant, p.entradaData);
       entradas++;
-      // Asignar código de barras al artículo recibido si se capturó/escaneó
+      // Agregar el código de barras al artículo recibido (etiquetado con el proveedor de la OC)
       if (p.codigoBarras) {
-        var rb = asignarCodigoBarras_(p.entradaData.idArticulo, p.codigoBarras);
+        var rb = agregarCodigoBarras_(p.entradaData.idArticulo, p.codigoBarras, oc.Nombre_Proveedor || '', d.capturadoPor || '');
         if (rb && !rb.ok) avisos.push(rb.error);
       }
     });
